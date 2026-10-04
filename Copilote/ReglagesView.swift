@@ -9,6 +9,8 @@ struct ReglagesView: View {
     @State private var resultatsTest: [Cles.Service: (ok: Bool, message: String)] = [:]
     @State private var testEnCours = false
     @State private var referent = Cles.referentTripadvisor
+    @State private var messageSchema = ""
+    @State private var schemaEnCours = false
 
     private func etat(_ service: Cles.Service, saisie: String) -> Cles.Etat {
         saisie.isEmpty ? .absente : Cles.etat(service)
@@ -72,6 +74,24 @@ struct ReglagesView: View {
                 } footer: {
                     Text("Envoie une requête de test à Google et à Tripadvisor avec les clés saisies ci-dessus, et affiche leur réponse.")
                 }
+
+                #if ICLOUD && DEBUG
+                Section {
+                    Button(schemaEnCours ? "Envoi en cours…" : "Préparer le schéma iCloud", systemImage: "wrench.and.screwdriver") {
+                        Task {
+                            schemaEnCours = true
+                            messageSchema = await PartageCloud.shared.initialiserSchema()
+                            schemaEnCours = false
+                        }
+                    }
+                    .disabled(schemaEnCours)
+                    if !messageSchema.isEmpty { Text(messageSchema).font(.footnote).foregroundStyle(.secondary) }
+                } header: {
+                    Text("Développeur")
+                } footer: {
+                    Text("Visible seulement dans les versions lancées depuis Xcode. À faire avant de déployer le schéma en production.")
+                }
+                #endif
 
                 if let avertissement {
                     Section {

@@ -185,7 +185,8 @@ final class PartageCloud {
 
     func appliquer(enregistrements: [CKRecord], suppressions: [CKRecord.ID]) {
         guard let contexte else { return }
-        var aTraiter = orphelins + enregistrements
+        // Seules les zones de voyages nous concernent (pas la zone temporaire de l'outil de schéma).
+        var aTraiter = (orphelins + enregistrements).filter { $0.recordID.zoneID.zoneName.hasPrefix("voyage-") }
         orphelins = []
 
         for record in aTraiter where record is CKShare {
