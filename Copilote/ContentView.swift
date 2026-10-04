@@ -34,7 +34,9 @@ struct ContentView: View {
                                        description: Text("Crée un voyage pour commencer à le préparer avec ton groupe."))
             }
         }
+        #if os(macOS)
         .frame(minWidth: 700, minHeight: 450)
+        #endif
     }
 
     private func supprimer(_ voyage: Voyage) {
