@@ -6,5 +6,4 @@ Ouvrir `Copilote.xcodeproj` dans Xcode et lancer (⌘R).
 
 ## Partage avec le groupe
 
-La synchronisation et le partage iCloud sont écrits mais désactivés par défaut (ils demandent un compte
-Apple Developer payant). Voir [SETUP-ICLOUD.md](SETUP-ICLOUD.md).
+La synchronisation et le partage passent par iCloud (CloudKit). Voir [SETUP-ICLOUD.md](SETUP-ICLOUD.md).

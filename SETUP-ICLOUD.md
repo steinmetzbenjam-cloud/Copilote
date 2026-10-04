@@ -1,38 +1,21 @@
 # Activer le partage iCloud
 
-Le partage entre voyageurs passe par iCloud (CloudKit). Tout le code est déjà dans l'app, mais il est
-désactivé tant que l'option de compilation `ICLOUD` n'est pas posée : une équipe Xcode gratuite
-(« Personal Team ») ne peut pas utiliser iCloud, et l'app ne se compilerait plus sur l'appareil.
+**État : activé.** L'option de compilation `ICLOUD`, les autorisations iCloud (CloudKit, notifications) et le
+conteneur `iCloud.fr.steinmetz.Copilote` sont déjà réglés dans le projet, avec l'équipe payante `26SUT848P6`.
+Xcode crée tout seul les profils de signature (`-allowProvisioningUpdates` ou signature automatique).
 
-## 1. S'inscrire
+Si un jour l'équipe redevient gratuite ou change, retirer `ICLOUD` de
+« Active Compilation Conditions » et les clés iCloud des deux fichiers `.entitlements` : l'app se compile
+alors sans synchronisation.
 
-S'inscrire à l'**Apple Developer Program** (99 €/an) sur developer.apple.com/programs avec l'Apple ID
-utilisé dans Xcode. La validation prend de quelques heures à quelques jours.
+## Essayer le partage
 
-## 2. Régler Xcode
-
-1. Xcode → Réglages → Comptes : l'équipe payante doit apparaître (sinon se reconnecter).
-2. Ouvrir `Copilote.xcodeproj`, cible **Copilote**, onglet **Signing & Capabilities** :
-   - **Team** : choisir l'équipe payante (pour iOS et macOS).
-   - Si Xcode propose de changer l'identifiant de l'app (`fr.steinmetz.Copilote`), accepter ou en choisir un autre ;
-     le conteneur iCloud ci-dessous doit alors porter le même nom (`iCloud.` + identifiant).
-3. **+ Capability → iCloud**, cocher **CloudKit**, puis ajouter le conteneur `iCloud.fr.steinmetz.Copilote`.
-4. **+ Capability → Push Notifications** (les modifications des autres arrivent par notification silencieuse).
-5. **+ Capability → Background Modes**, cocher **Remote notifications** (iOS).
-
-Faire la même chose pour la plateforme macOS (les capacités se règlent par plateforme dans l'onglet).
-
-## 3. Poser l'option de compilation
-
-Cible Copilote → **Build Settings** → rechercher « Active Compilation Conditions » et ajouter `ICLOUD`
-(en Debug et en Release).
-
-## 4. Essayer
-
-1. Lancer l'app sur deux appareils, chacun connecté à **un compte iCloud différent**.
+1. Lancer l'app (⌘R) sur deux appareils, chacun connecté à **un compte iCloud différent**.
 2. Sur chacun : icône clé → **Synchroniser avec iCloud**.
 3. Sur le premier : ouvrir un voyage → **Infos → Inviter des voyageurs**, envoyer le lien par Messages.
-4. Sur le second : ouvrir le lien. Le voyage apparaît, et les modifications des deux côtés se synchronisent.
+4. Sur le second : ouvrir le lien. Le voyage apparaît ; les modifications des deux côtés se synchronisent.
+
+Dans la fiche Dépenses, chacun choisit « Qui es-tu ? » sur son appareil.
 
 ## Bon à savoir
 
