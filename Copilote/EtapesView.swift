@@ -45,6 +45,9 @@ struct EtapesView: View {
     }
 
     /// Entre deux étapes : le transport prévu, ou un bouton pour en ajouter un.
+    /// Les lignes de transport se distinguent des étapes par leur couleur.
+    private static let couleurTransport = Color.indigo
+
     private func ligneTransport(_ depart: Etape, _ arrivee: Etape) -> some View {
         Button { transportEnEdition = PaireEtapes(depart: depart, arrivee: arrivee) } label: {
             HStack(spacing: 8) {
@@ -61,11 +64,12 @@ struct EtapesView: View {
                 }
             }
             .font(.subheadline)
-            .foregroundStyle(depart.transport == nil ? Color.accentColor : Color.secondary)
+            .foregroundStyle(Self.couleurTransport)
             .padding(.leading, 6)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .listRowBackground(Self.couleurTransport.opacity(0.12))
     }
 
     private func descriptif(_ t: Transport) -> String {
