@@ -53,6 +53,8 @@ final class Etape {
     var siteWeb: String?
     var creeLe: Date
     var uid: String = ""
+    /// Position dans la journée (réglée en glissant les étapes).
+    var ordre: Double = 0
     var voyage: Voyage?
 
     init(titre: String, jour: Date, categorie: CategorieEtape = .visite) {

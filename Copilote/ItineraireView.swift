@@ -7,6 +7,9 @@ struct ItineraireView: View {
     @Environment(\.modelContext) private var contexte
     @State private var etapeEnEdition: Etape?
     @State private var jourEnEdition: JourVoyage?
+    /// Étape au-dessus de laquelle on s'apprête à déposer (trait d'insertion), ou jour survolé.
+    @State private var etapeVisee: String?
+    @State private var jourVise: Date?
 
     private let cal = Calendar.current
 
@@ -52,7 +55,6 @@ struct ItineraireView: View {
                     HStack(alignment: .firstTextBaseline) {
                         Text("JOUR \(numero)").font(.caption.bold()).foregroundStyle(.tint)
                         Spacer()
-                        Image(systemName: "pencil.circle").foregroundStyle(.secondary)
                     }
                     Text(premiereLettreEnMajuscule(jour.formatted(.dateTime.weekday(.wide).day().month(.wide))))
                         .font(.title3.bold()).foregroundStyle(.primary)
@@ -89,7 +91,7 @@ struct ItineraireView: View {
                 Text("Aucune étape").font(.footnote).foregroundStyle(.tertiary)
             } else {
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(etapes) { ligne($0) }
+                    ForEach(etapes) { ligneGlissable($0, jour: jour) }
                 }
             }
 
@@ -100,6 +102,67 @@ struct ItineraireView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(FondDeCarte())
+        .overlay(alignment: .topTrailing) { menuDuJour(jour, infos: infos) }
+        .overlay {
+            if let jourVise, cal.isDate(jourVise, inSameDayAs: jour) {
+                RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.tint, lineWidth: 2)
+            }
+        }
+        .dropDestination(for: String.self) { elements, _ in
+            recevoir(elements, jour: jour, avant: nil)
+        } isTargeted: { visee in
+            if visee { jourVise = jour } else if let actuel = jourVise, cal.isDate(actuel, inSameDayAs: jour) { jourVise = nil }
+        }
+    }
+
+    // MARK: Glisser-déposer
+
+    private static let prefixe = "copilote-etape:"
+
+    private func ligneGlissable(_ etape: Etape, jour: Date) -> some View {
+        ligne(etape)
+            .draggable(Self.prefixe + etape.uid) {
+                Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
+                    .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+            .overlay(alignment: .top) {
+                if etapeVisee == etape.uid {
+                    Capsule().fill(.tint).frame(height: 3).offset(y: -7)
+                }
+            }
+            .dropDestination(for: String.self) { elements, _ in
+                recevoir(elements, jour: jour, avant: etape)
+            } isTargeted: { visee in
+                if visee { etapeVisee = etape.uid } else if etapeVisee == etape.uid { etapeVisee = nil }
+            }
+    }
+
+    /// Menu de la carte : modifier le jour, ou remettre ses étapes dans l'ordre des heures.
+    private func menuDuJour(_ jour: Date, infos: JourVoyage?) -> some View {
+        Menu {
+            Button("Modifier le jour", systemImage: "pencil") { jourEnEdition = infos ?? creerInfos(jour) }
+            Button("Trier par heure", systemImage: "clock") { trierParHeure(jour) }
+                .disabled(voyage.etapes(du: jour).count < 2)
+        } label: {
+            Image(systemName: "ellipsis.circle").font(.title3).foregroundStyle(.secondary).padding(12)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private func recevoir(_ elements: [String], jour: Date, avant cible: Etape?) -> Bool {
+        defer { etapeVisee = nil; jourVise = nil }
+        guard let uid = elements.first(where: { $0.hasPrefix(Self.prefixe) })?.dropFirst(Self.prefixe.count) else { return false }
+        return deplacer(String(uid), vers: jour, avant: cible)
+    }
+
+    private func deplacer(_ uid: String, vers jour: Date, avant cible: Etape?) -> Bool {
+        guard let etape = voyage.etapes.first(where: { $0.uid == uid }) else { return false }
+        return withAnimation { voyage.deplacer(etape, vers: jour, avant: cible) }
+    }
+
+    private func trierParHeure(_ jour: Date) {
+        withAnimation { voyage.trierParHeure(jour) }
     }
 
     private func ligne(_ etape: Etape) -> some View {
@@ -158,6 +221,7 @@ struct ItineraireView: View {
 
     private func ajouter(le jour: Date) {
         let etape = Etape(titre: "", jour: jour)
+        etape.ordre = voyage.prochainOrdre(du: jour)
         etape.voyage = voyage
         contexte.insert(etape)
         etapeEnEdition = etape

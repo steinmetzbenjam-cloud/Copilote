@@ -156,6 +156,7 @@ enum Codec {
             r["titre"] = e.titre; r["lieu"] = e.lieu; r["jour"] = e.jour; r["heure"] = e.heure
             r["categorie"] = e.categorie.rawValue; r["notes"] = e.notes
             r["latitude"] = e.latitude; r["longitude"] = e.longitude
+            r["ordre"] = e.ordre
             r["resume"] = e.resume; r["horaires"] = e.horaires; r["photoURL"] = e.photoURL
             r["noteGoogle"] = e.noteGoogle; r["avisGoogle"] = e.avisGoogle; r["lienGoogle"] = e.lienGoogle
             r["noteTripadvisor"] = e.noteTripadvisor; r["avisTripadvisor"] = e.avisTripadvisor; r["lienTripadvisor"] = e.lienTripadvisor
@@ -242,7 +243,7 @@ enum Codec {
             }()
             e.titre = texte("titre"); e.lieu = texte("lieu"); e.jour = date("jour") ?? e.jour; e.heure = date("heure")
             e.categorie = CategorieEtape(rawValue: texte("categorie")) ?? .autre; e.notes = texte("notes")
-            e.latitude = nombre("latitude"); e.longitude = nombre("longitude")
+            e.latitude = nombre("latitude"); e.longitude = nombre("longitude"); e.ordre = nombre("ordre") ?? 0
             e.resume = r["resume"] as? String; e.horaires = r["horaires"] as? String; e.photoURL = r["photoURL"] as? String
             e.noteGoogle = nombre("noteGoogle"); e.avisGoogle = entier("avisGoogle"); e.lienGoogle = r["lienGoogle"] as? String
             e.noteTripadvisor = nombre("noteTripadvisor"); e.avisTripadvisor = entier("avisTripadvisor")
