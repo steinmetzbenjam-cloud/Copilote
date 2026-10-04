@@ -11,7 +11,7 @@ struct DocumentsSection: View {
 
     @Environment(\.modelContext) private var contexte
     @State private var importOuvert = false
-    @State private var apercu: URL?
+    @State private var apercu: FichierAApercevoir?
     @State private var erreur: String?
 
     private var documents: [Document] {
@@ -42,13 +42,15 @@ struct DocumentsSection: View {
             .onDelete { indices in
                 for i in indices { contexte.delete(documents[i]) }
             }
+            // Sélecteur de fichiers et aperçu sont attachés à CE bouton seulement : posés sur la section,
+            // ils seraient répétés sur chaque ligne et se disputeraient la présentation.
             Button("Ajouter un document", systemImage: "paperclip") { importOuvert = true }
+                .fileImporter(isPresented: $importOuvert, allowedContentTypes: [.pdf, .image, .data], allowsMultipleSelection: true) { resultat in
+                    importer(resultat)
+                }
+                .sheet(item: $apercu) { fichier in ApercuDocumentView(fichier: fichier) }
             if let erreur { Text(erreur).font(.footnote).foregroundStyle(.red) }
         }
-        .fileImporter(isPresented: $importOuvert, allowedContentTypes: [.pdf, .image, .data], allowsMultipleSelection: true) { resultat in
-            importer(resultat)
-        }
-        .quickLookPreview($apercu)
     }
 
     private func importer(_ resultat: Result<[URL], Error>) {
@@ -78,13 +80,13 @@ struct DocumentsSection: View {
     }
 
     private func ouvrir(_ doc: Document) {
-        let dossier = FileManager.default.temporaryDirectory.appendingPathComponent(doc.persistentModelID.hashValue.description, isDirectory: true)
+        let dossier = FileManager.default.temporaryDirectory.appendingPathComponent(doc.uid.isEmpty ? UUID().uuidString : doc.uid, isDirectory: true)
         try? FileManager.default.createDirectory(at: dossier, withIntermediateDirectories: true)
         let nom = doc.extensionFichier.isEmpty ? doc.nom : "\(doc.nom).\(doc.extensionFichier)"
         let fichier = dossier.appendingPathComponent(nom)
         do {
             try doc.donnees.write(to: fichier)
-            apercu = fichier
+            apercu = FichierAApercevoir(url: fichier, titre: doc.nom)
         } catch {
             erreur = "Impossible d'ouvrir ce document."
         }
