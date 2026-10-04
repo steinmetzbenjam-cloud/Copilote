@@ -82,13 +82,16 @@ struct ItineraireView: View {
     private func carte(numero: Int, jour: Date) -> some View {
         let infos = voyage.infos(du: jour)
         let etapes = voyage.etapes(du: jour)
+        // Même couleur et mêmes numéros que le tracé et les repères sur la carte.
+        let couleur = CarteDuVoyage.couleur(du: numero - 1)
+        let placees = etapes.filter { $0.coordonnee != nil }
         return VStack(alignment: .leading, spacing: 10) {
             Button {
                 withAnimation(.easeInOut(duration: 0.25)) { jourSelectionne = estSelectionne(jour) ? nil : jour }
             } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
-                        Text("JOUR \(numero)").font(.caption.bold()).foregroundStyle(.tint)
+                        Text("JOUR \(numero)").font(.caption.bold()).foregroundStyle(couleur)
                         Spacer()
                     }
                     Text(premiereLettreEnMajuscule(jour.formatted(.dateTime.weekday(.wide).day().month(.wide))))
@@ -103,8 +106,8 @@ struct ItineraireView: View {
                                     .labelStyle(.titleAndIcon)
                                     .font(.footnote.weight(.medium))
                                     .padding(.horizontal, 10).padding(.vertical, 5)
-                                    .background(.tint.opacity(0.12), in: Capsule())
-                                    .foregroundStyle(.tint)
+                                    .background(couleur.opacity(0.14), in: Capsule())
+                                    .foregroundStyle(couleur)
                             }
                         }
                     } else {
@@ -126,26 +129,33 @@ struct ItineraireView: View {
                 Text("Aucune étape").font(.footnote).foregroundStyle(.tertiary)
             } else {
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(etapes) { ligneGlissable($0, jour: jour) }
+                    ForEach(etapes) { etape in
+                        ligneGlissable(etape, jour: jour, couleur: couleur,
+                                       rang: placees.firstIndex { $0 === etape })
+                    }
                 }
             }
 
             Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouter(le: jour) }
                 .buttonStyle(.borderless)
+                .tint(couleur)
                 .padding(.top, 2)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(FondDeCarte())
+        .overlay(alignment: .leading) {
+            Capsule().fill(couleur).frame(width: 5).padding(.vertical, 16).padding(.leading, 5)
+        }
         .overlay(alignment: .topTrailing) { menuDuJour(jour, infos: infos) }
         .overlay {
             if estSelectionne(jour) {
-                RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.tint, lineWidth: 2.5)
+                RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(couleur, lineWidth: 2.5)
             }
         }
         .overlay {
             if let jourVise, cal.isDate(jourVise, inSameDayAs: jour) {
-                RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.tint, lineWidth: 2)
+                RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(couleur, lineWidth: 2)
             }
         }
         .dropDestination(for: String.self) { elements, _ in
@@ -159,8 +169,8 @@ struct ItineraireView: View {
 
     private static let prefixe = "copilote-etape:"
 
-    private func ligneGlissable(_ etape: Etape, jour: Date) -> some View {
-        ligne(etape)
+    private func ligneGlissable(_ etape: Etape, jour: Date, couleur: Color, rang: Int?) -> some View {
+        ligne(etape, couleur: couleur, rang: rang)
             .draggable(Self.prefixe + etape.uid) {
                 Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
                     .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -205,12 +215,23 @@ struct ItineraireView: View {
         withAnimation { voyage.trierParHeure(jour) }
     }
 
-    private func ligne(_ etape: Etape) -> some View {
+    /// `rang` : numéro du repère sur la carte (étapes placées seulement) ; sinon l'icône de la catégorie.
+    private func ligne(_ etape: Etape, couleur: Color = .accentColor, rang: Int? = nil) -> some View {
         Button { etapeEnEdition = etape } label: {
             HStack(spacing: 12) {
-                Image(systemName: etape.categorie.symbole)
-                    .frame(width: 24)
-                    .foregroundStyle(.tint)
+                Group {
+                    if let rang {
+                        Text("\(rang + 1)")
+                            .font(.caption.bold())
+                            .foregroundStyle(.white)
+                            .frame(width: 24, height: 24)
+                            .background(couleur, in: Circle())
+                    } else {
+                        Image(systemName: etape.categorie.symbole)
+                            .frame(width: 24, height: 24)
+                            .foregroundStyle(couleur)
+                    }
+                }
                 VStack(alignment: .leading, spacing: 2) {
                     Text(etape.titre.isEmpty ? "Sans titre" : etape.titre).font(.headline).foregroundStyle(.primary)
                     if etape.noteGoogle != nil || etape.noteTripadvisor != nil {
