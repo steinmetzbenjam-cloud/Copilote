@@ -65,15 +65,22 @@ struct CarteDuVoyage: View {
         let tirets: [CGFloat]
     }
 
-    /// Couples d'étapes consécutives d'un jour, avec le transport prévu entre elles.
+    /// Couples d'éléments consécutifs d'un jour, hébergement compris, avec le transport prévu entre eux.
     private var paires: [(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] {
         voyage.jours.flatMap { jour -> [(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] in
-            let liste = voyage.etapes(du: jour)
-            return zip(liste, liste.dropFirst()).compactMap { d, a in
+            liens(du: jour).compactMap { d, a in
                 guard let mode = d.transport?.mode, let ca = d.coordonnee, let cb = a.coordonnee else { return nil }
                 return (ca, cb, mode)
             }
         }
+    }
+
+    /// Chaque élément du jour avec sa suivante : les étapes, puis l'hébergement, puis la première étape du lendemain.
+    private func liens(du jour: Date) -> [(Etape, Etape)] {
+        let liste = voyage.etapes(du: jour) + (voyage.hebergements(apres: jour).first.map { [$0] } ?? [])
+        var r = Array(zip(liste, liste.dropFirst()))
+        if let h = voyage.hebergements(apres: jour).first, let suivante = voyage.suivante(de: h) { r.append((h, suivante)) }
+        return r
     }
 
     private var clesItineraires: String {
@@ -90,20 +97,28 @@ struct CarteDuVoyage: View {
             // Prochaine étape localisée ; le transport ne compte que si c'est la suivante directe.
             guard let j = liste[(i + 1)...].firstIndex(where: { $0.coordonnee != nil }), let b = liste[j].coordonnee else { continue }
             let mode = j == i + 1 ? depart.transport?.mode : nil
-            let id = "\(depart.uid)-\(liste[j].uid)"
-            switch mode {
-            case .avion:
-                resultat.append(Segment(id: id, points: Itineraires.arc(a, b), tirets: [7, 6]))
-            case .voiture, .pied, .velo:
-                let trajet = Itineraires.shared.trajet(a, b, mode!)
-                resultat.append(Segment(id: id, points: trajet?.points ?? [a, b], tirets: mode == .voiture ? [] : [1, 6]))
-            case .commun:
-                resultat.append(Segment(id: id, points: [a, b], tirets: [10, 5]))
-            case nil:
-                resultat.append(Segment(id: id, points: [a, b], tirets: []))
-            }
+            resultat.append(segment("\(depart.uid)-\(liste[j].uid)", a, b, mode))
+        }
+        // Liaisons avec l'hébergement : tracées seulement quand un transport est prévu.
+        for (d, s) in liens(du: jour) where d.apresJour || s.apresJour {
+            guard let mode = d.transport?.mode, let a = d.coordonnee, let b = s.coordonnee else { continue }
+            resultat.append(segment("\(d.uid)-\(s.uid)", a, b, mode))
         }
         return resultat
+    }
+
+    private func segment(_ id: String, _ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, _ mode: ModeTransport?) -> Segment {
+        switch mode {
+        case .avion:
+            return Segment(id: id, points: Itineraires.arc(a, b), tirets: [7, 6])
+        case .voiture, .pied, .velo:
+            let trajet = Itineraires.shared.trajet(a, b, mode!)
+            return Segment(id: id, points: trajet?.points ?? [a, b], tirets: mode == .voiture ? [] : [1, 6])
+        case .commun:
+            return Segment(id: id, points: [a, b], tirets: [10, 5])
+        case nil:
+            return Segment(id: id, points: [a, b], tirets: [])
+        }
     }
 
     var body: some View {

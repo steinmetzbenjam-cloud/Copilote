@@ -353,7 +353,7 @@ struct ItineraireView: View {
     }
 
     private func demanderNuit(_ etape: Etape, apres jour: Date) -> Bool {
-        let perdus = voyage.transportsPerdus(deplacant: etape, vers: nil, avant: nil)
+        let perdus = voyage.transportsPerdus(deplacant: etape, vers: jour, avant: nil, nuit: true)
         let d = DeplacementEnAttente(etape: etape, jour: jour, cible: nil, perdus: perdus, nuit: true)
         if perdus.isEmpty { return appliquer(d) }
         deplacementEnAttente = d

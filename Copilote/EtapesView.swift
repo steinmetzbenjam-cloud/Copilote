@@ -34,7 +34,7 @@ struct EtapesView: View {
                         ForEach(Array(etapes.enumerated()), id: \.element.id) { i, etape in
                             ligne(etape)
                                 .listRowBackground(couleur.opacity(0.14))
-                            if i + 1 < etapes.count { ligneTransport(etape, etapes[i + 1]) }
+                            if let suivante = voyage.suivante(de: etape) { ligneTransport(etape, suivante) }
                         }
                     } header: {
                         HStack(spacing: 8) {
@@ -48,6 +48,7 @@ struct EtapesView: View {
                     let nuits = voyage.hebergements(apres: jour)
                     ForEach(nuits) { h in
                         ligne(h).listRowBackground(Self.couleurNuit.opacity(0.18))
+                        if let suivante = voyage.suivante(de: h) { ligneTransport(h, suivante) }
                     }
                     if nuits.isEmpty {
                         Button("Ajouter un hébergement", systemImage: "moon.zzz.fill") { ajouterHebergement(apres: jour) }
