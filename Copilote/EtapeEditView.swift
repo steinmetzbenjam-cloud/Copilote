@@ -222,7 +222,7 @@ private struct TailleDePage: ViewModifier {
 
 
 /// Bulle d'heure : vide tant qu'on n'a rien choisi. Un toucher ouvre le choix de l'heure ; rien n'est enregistré avant « OK ».
-private struct BulleHeure: View {
+struct BulleHeure: View {
     @Binding var valeur: Date?
     let jour: Date
     let heureDeDepart: Int

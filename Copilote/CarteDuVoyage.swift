@@ -57,6 +57,55 @@ struct CarteDuVoyage: View {
                          largeur: taille.width.rounded(), hauteur: taille.height.rounded(), pays: voyage.pays)
     }
 
+    // MARK: Tracés entre étapes
+
+    private struct Segment: Identifiable {
+        let id: String
+        let points: [CLLocationCoordinate2D]
+        let tirets: [CGFloat]
+    }
+
+    /// Couples d'étapes consécutives d'un jour, avec le transport prévu entre elles.
+    private var paires: [(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] {
+        voyage.jours.flatMap { jour -> [(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] in
+            let liste = voyage.etapes(du: jour)
+            return zip(liste, liste.dropFirst()).compactMap { d, a in
+                guard let mode = d.transport?.mode, let ca = d.coordonnee, let cb = a.coordonnee else { return nil }
+                return (ca, cb, mode)
+            }
+        }
+    }
+
+    private var clesItineraires: String {
+        paires.filter { $0.mode.aUnItineraire }.map { Itineraires.cle($0.a, $0.b, $0.mode) }.joined(separator: ";")
+    }
+
+    /// Une ligne entre chaque étape localisée : arc pour l'avion, itinéraire pour la voiture, la marche et le vélo,
+    /// pointillés pour les transports en commun, trait droit sans transport.
+    private func segments(du jour: Date) -> [Segment] {
+        let liste = voyage.etapes(du: jour)
+        var resultat: [Segment] = []
+        for (i, depart) in liste.enumerated() {
+            guard let a = depart.coordonnee else { continue }
+            // Prochaine étape localisée ; le transport ne compte que si c'est la suivante directe.
+            guard let j = liste[(i + 1)...].firstIndex(where: { $0.coordonnee != nil }), let b = liste[j].coordonnee else { continue }
+            let mode = j == i + 1 ? depart.transport?.mode : nil
+            let id = "\(depart.uid)-\(liste[j].uid)"
+            switch mode {
+            case .avion:
+                resultat.append(Segment(id: id, points: Itineraires.arc(a, b), tirets: [7, 6]))
+            case .voiture, .pied, .velo:
+                let trajet = Itineraires.shared.trajet(a, b, mode!)
+                resultat.append(Segment(id: id, points: trajet?.points ?? [a, b], tirets: mode == .voiture ? [] : [1, 6]))
+            case .commun:
+                resultat.append(Segment(id: id, points: [a, b], tirets: [10, 5]))
+            case nil:
+                resultat.append(Segment(id: id, points: [a, b], tirets: []))
+            }
+        }
+        return resultat
+    }
+
     var body: some View {
         GeometryReader { geo in
             Map(position: $position) {
@@ -87,9 +136,10 @@ struct CarteDuVoyage: View {
                         }
                     }
                     let etapes = voyage.etapes(du: jour).filter { $0.coordonnee != nil }
-                    if etapes.count > 1 {
-                        MapPolyline(coordinates: etapes.compactMap(\.coordonnee))
-                            .stroke(Self.couleur(du: index).opacity(attenue ? 0.2 : 0.65), lineWidth: focus && jourFocus != nil ? 4 : 3)
+                    ForEach(segments(du: jour)) { s in
+                        MapPolyline(coordinates: s.points)
+                            .stroke(Self.couleur(du: index).opacity(attenue ? 0.2 : 0.65),
+                                    style: StrokeStyle(lineWidth: focus && jourFocus != nil ? 4 : 3, lineCap: .round, dash: s.tirets))
                     }
                     ForEach(Array(etapes.enumerated()), id: \.element.id) { rang, etape in
                         Annotation(etape.titre, coordinate: etape.coordonnee!) {
@@ -110,6 +160,11 @@ struct CarteDuVoyage: View {
             .mapControls {
                 MapCompass()
                 MapScaleView()
+            }
+            .task(id: clesItineraires) {
+                for p in paires where p.mode.aUnItineraire {
+                    await Itineraires.shared.charger(p.a, p.b, p.mode)
+                }
             }
             .task(id: signature(geo.size)) {
                 await recadrer(taille: geo.size)

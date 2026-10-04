@@ -56,6 +56,8 @@ final class Etape {
     var siteWeb: String?
     var creeLe: Date
     var uid: String = ""
+    /// Transport vers l'étape suivante, en JSON (voir Transport).
+    var transportJSON: String?
     /// Position dans la journée (réglée en glissant les étapes).
     var ordre: Double = 0
     var voyage: Voyage?
