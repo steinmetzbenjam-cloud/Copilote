@@ -7,6 +7,6 @@ struct CopiloteApp: App {
         WindowGroup {
             ContentView()
         }
-        .modelContainer(for: [Voyage.self, Membre.self, Etape.self])
+        .modelContainer(for: [Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self])
     }
 }

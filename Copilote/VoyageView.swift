@@ -13,6 +13,7 @@ struct VoyageView: View {
     enum Onglet: String, CaseIterable, Identifiable {
         case itineraire = "Itinéraire"
         case carte = "Carte"
+        case reservations = "Réserv."
         case infos = "Infos"
         var id: String { rawValue }
     }
@@ -22,6 +23,7 @@ struct VoyageView: View {
             switch onglet {
             case .itineraire: ItineraireView(voyage: voyage)
             case .carte: CarteView(voyage: voyage)
+            case .reservations: ReservationsView(voyage: voyage)
             case .infos: VoyageDetailView(voyage: voyage)
             }
         }
@@ -32,7 +34,7 @@ struct VoyageView: View {
                     ForEach(Onglet.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 320)
+                .frame(maxWidth: 380)
             }
         }
     }

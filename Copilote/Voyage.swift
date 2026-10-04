@@ -15,6 +15,10 @@ final class Voyage {
     var membres: [Membre] = []
     @Relationship(deleteRule: .cascade, inverse: \Etape.voyage)
     var etapes: [Etape] = []
+    @Relationship(deleteRule: .cascade, inverse: \Reservation.voyage)
+    var reservations: [Reservation] = []
+    @Relationship(deleteRule: .cascade, inverse: \Document.voyage)
+    var documents: [Document] = []
 
     init(titre: String, destination: String = "", debut: Date = .now, fin: Date = .now.addingTimeInterval(7 * 86_400)) {
         self.titre = titre
