@@ -50,13 +50,17 @@ enum Cles {
     }
 
     static func lire(_ service: Service) -> String? {
-        if let valeur = lireTexte(service, protege: true) { return valeur }
-        // Clé saisie avant la synchronisation : on la reprend et on la range dans le trousseau iCloud.
-        if let ancienne = lireTexte(service, protege: false) {
-            enregistrer(ancienne, pour: service)
-            return ancienne
-        }
-        return nil
+        // La clé du trousseau iCloud passe en premier. L'ancienne clé locale (saisie avant la synchronisation) ne sert
+        // que s'il n'y en a pas : on ne la range jamais d'office dans iCloud, car elle pourrait écraser une clé plus récente
+        // saisie sur un autre appareil. Elle n'y entre que quand tu valides les réglages.
+        lireTexte(service, protege: true) ?? lireTexte(service, protege: false)
+    }
+
+    /// Longueur et fin de la clé, pour comparer deux appareils sans l'afficher en entier.
+    static func empreinte(_ valeur: String) -> String {
+        let v = valeur.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !v.isEmpty else { return "aucune clé" }
+        return "\(v.count) caractères, se termine par « …\(v.suffix(4)) »"
     }
 
     private static func existeSynchronisee(_ service: Service) -> Bool {
@@ -67,8 +71,7 @@ enum Cles {
 
     static func etat(_ service: Service) -> Etat {
         if existeSynchronisee(service) { return .synchronisee }
-        guard lire(service) != nil else { return .absente }   // la lecture migre une ancienne clé locale
-        return existeSynchronisee(service) ? .synchronisee : .locale
+        return lire(service) == nil ? .absente : .locale
     }
 
     /// Enregistre la clé dans le trousseau iCloud. Renvoie `true` si elle sera synchronisée, `false` si elle

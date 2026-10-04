@@ -14,11 +14,13 @@ struct ReglagesView: View {
         saisie.isEmpty ? .absente : Cles.etat(service)
     }
 
+    private func apercu(_ saisie: String) -> String { "Clé affichée ici : " + Cles.empreinte(saisie) + "." }
+
     private func texteEtat(_ etat: Cles.Etat) -> String {
         switch etat {
         case .absente: ""
         case .synchronisee: "Synchronisée avec tes autres appareils (trousseau iCloud)."
-        case .locale: "Gardée sur cet appareil seulement : active le trousseau iCloud pour la retrouver ailleurs."
+        case .locale: "Gardée sur cet appareil seulement : valide avec OK pour la synchroniser (le trousseau iCloud doit être activé)."
         }
     }
 
@@ -32,7 +34,7 @@ struct ReglagesView: View {
                 } header: {
                     Text("Google Places")
                 } footer: {
-                    Text("Active « Places API (New) » dans ton projet Google Cloud, puis crée une clé. Notes, avis, photos, horaires et descriptions.\n\(texteEtat(etat(.google, saisie: google)))")
+                    Text("Active « Places API (New) » dans ton projet Google Cloud, puis crée une clé. Notes, avis, photos, horaires et descriptions.\n\(apercu(google)) \(texteEtat(etat(.google, saisie: google)))")
                 }
 
                 Section {
@@ -48,7 +50,7 @@ struct ReglagesView: View {
                 } header: {
                     Text("Tripadvisor")
                 } footer: {
-                    Text("Clé « Content API » du portail développeurs Tripadvisor. Notes, avis, classement, descriptions.\n\(texteEtat(etat(.tripadvisor, saisie: tripadvisor)))")
+                    Text("Clé « Content API » du portail développeurs Tripadvisor. Notes, avis, classement, descriptions.\n\(apercu(tripadvisor)) \(texteEtat(etat(.tripadvisor, saisie: tripadvisor)))")
                 }
 
                 Section {
