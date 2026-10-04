@@ -32,6 +32,8 @@ struct SuggestionsView: View {
         return etape.lieu.split(separator: ",").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
     }
 
+    private var lieuxDuJour: [LieuReference] { voyage?.infos(du: etape.jour)?.lieux ?? [] }
+
     private var aDesCles: Bool { Cles.lire(.google) != nil || Cles.lire(.tripadvisor) != nil }
 
     var body: some View {
@@ -49,6 +51,19 @@ struct SuggestionsView: View {
                     TextField("Autour de… (ville, quartier)", text: $autour)
                         .onSubmit { Task { await relancer(depuisTexte: true) } }
                         .autocorrectionDisabled()
+                    if lieuxDuJour.count > 1 {
+                        Menu {
+                            ForEach(lieuxDuJour) { lieu in
+                                Button(lieu.etiquette) {
+                                    autour = lieu.nom
+                                    centre = lieu.coordonnee
+                                    Task { await relancer(depuisTexte: false) }
+                                }
+                            }
+                        } label: {
+                            Label("Lieux du jour", systemImage: "mappin.and.ellipse")
+                        }
+                    }
                 }
 
                 if !aDesCles {
@@ -127,12 +142,15 @@ struct SuggestionsView: View {
 
     /// Point de départ : le lieu de l'étape, sinon les étapes du jour, sinon la destination du voyage.
     private func preparer() async {
+        let lieuxDuJour = voyage?.infos(du: etape.jour)?.lieux ?? []
         if autour.isEmpty {
-            autour = voyage?.destination.isEmpty == false ? voyage!.destination : ""
+            autour = lieuxDuJour.first?.nom ?? (voyage?.destination.isEmpty == false ? voyage!.destination : "")
         }
         if let c = etape.coordonnee {
             centre = c
             if autour.isEmpty { autour = etape.lieu }
+        } else if let premier = lieuxDuJour.first {
+            centre = premier.coordonnee
         } else if let voyage, let c = Self.centroide(voyage.etapes(du: etape.jour).compactMap(\.coordonnee)) {
             centre = c
         } else if !autour.isEmpty {

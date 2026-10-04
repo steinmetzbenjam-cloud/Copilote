@@ -21,6 +21,8 @@ final class Voyage {
     var membres: [Membre] = []
     @Relationship(deleteRule: .cascade, inverse: \Etape.voyage)
     var etapes: [Etape] = []
+    @Relationship(deleteRule: .cascade, inverse: \JourVoyage.voyage)
+    var infosJours: [JourVoyage] = []
     @Relationship(deleteRule: .cascade, inverse: \Reservation.voyage)
     var reservations: [Reservation] = []
     @Relationship(deleteRule: .cascade, inverse: \Document.voyage)

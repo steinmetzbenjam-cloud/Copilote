@@ -12,7 +12,14 @@ struct CarteView: View {
     @State private var regionPays: MKCoordinateRegion?
 
     private var aucuneEtapePlacee: Bool {
-        voyage.etapes.allSatisfy { $0.coordonnee == nil }
+        voyage.etapes.allSatisfy { $0.coordonnee == nil } && lieuxAffiches.isEmpty
+    }
+
+    /// Lieux de référence des jours affichés (pays, villes, endroits précis).
+    private var lieuxAffiches: [(index: Int, lieu: LieuReference)] {
+        joursAffiches.flatMap { entree in
+            (voyage.infos(du: entree.jour)?.lieux ?? []).map { (index: entree.index, lieu: $0) }
+        }
     }
 
     private func recadrer() {
@@ -40,6 +47,16 @@ struct CarteView: View {
 
     var body: some View {
         Map(position: $position) {
+            ForEach(lieuxAffiches, id: \.lieu.id) { index, lieu in
+                Annotation(lieu.nom, coordinate: lieu.coordonnee) {
+                    Image(systemName: lieu.estPays ? "flag.fill" : "scope")
+                        .font(.caption)
+                        .foregroundStyle(couleur(du: index))
+                        .padding(5)
+                        .background(.background, in: Circle())
+                        .overlay(Circle().stroke(couleur(du: index), lineWidth: 1.5))
+                }
+            }
             ForEach(joursAffiches, id: \.jour) { index, jour in
                 let etapes = voyage.etapes(du: jour).filter { $0.coordonnee != nil }
                 if etapes.count > 1 {

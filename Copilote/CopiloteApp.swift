@@ -13,7 +13,7 @@ struct CopiloteApp: App {
 
     init() {
         do {
-            conteneur = try ModelContainer(for: Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self)
+            conteneur = try ModelContainer(for: Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self)
         } catch {
             fatalError("Impossible d'ouvrir la base de données : \(error)")
         }

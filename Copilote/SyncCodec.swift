@@ -3,7 +3,7 @@ import SwiftData
 import CloudKit
 
 enum TypeCloud: String, CaseIterable {
-    case voyage = "Voyage", membre = "Membre", reservation = "Reservation", etape = "Etape", document = "Document"
+    case voyage = "Voyage", jour = "Jour", membre = "Membre", reservation = "Reservation", etape = "Etape", document = "Document"
 }
 
 /// Donne un identifiant stable aux objets créés avant l'arrivée de la synchronisation.
@@ -19,6 +19,7 @@ enum Identifiants {
         remplir(Etape.self, \.uid)
         remplir(Reservation.self, \.uid)
         remplir(Document.self, \.uid)
+        remplir(JourVoyage.self, \.uid)
         try? contexte.save()
     }
 }
@@ -67,6 +68,7 @@ enum Codec {
         case .reservation: return try? contexte.fetch(FetchDescriptor<Reservation>(predicate: #Predicate { $0.uid == uid })).first
         case .etape: return try? contexte.fetch(FetchDescriptor<Etape>(predicate: #Predicate { $0.uid == uid })).first
         case .document: return try? contexte.fetch(FetchDescriptor<Document>(predicate: #Predicate { $0.uid == uid })).first
+        case .jour: return try? contexte.fetch(FetchDescriptor<JourVoyage>(predicate: #Predicate { $0.uid == uid })).first
         }
     }
 
@@ -87,6 +89,7 @@ enum Codec {
         for v in (try? contexte.fetch(FetchDescriptor<Voyage>())) ?? [] where !v.uid.isEmpty {
             let zone = zone(de: v)
             ajouter(v, .voyage, v.uid, zone)
+            for j in v.infosJours { ajouter(j, .jour, j.uid, zone) }
             for m in v.membres { ajouter(m, .membre, m.uid, zone) }
             for r in v.reservations { ajouter(r, .reservation, r.uid, zone) }
             for e in v.etapes { ajouter(e, .etape, e.uid, zone) }
@@ -139,6 +142,11 @@ enum Codec {
             r["debut"] = v.debut; r["fin"] = v.fin; r["notes"] = v.notes
             r["pays"] = v.pays; r["creeLe"] = v.creeLe
             return r
+        case let j as JourVoyage:
+            let r = base(.jour, j.uid, zone, systeme)
+            r["date"] = j.date; r["titre"] = j.titre; r["notes"] = j.notes; r["creeLe"] = j.creeLe
+            r["lieux"] = lieuxEnTexte(j.lieux); r["voyageUID"] = j.voyage?.uid
+            return r
         case let m as Membre:
             let r = base(.membre, m.uid, zone, systeme)
             r["nom"] = m.nom; r["creeLe"] = m.creeLe; r["voyageUID"] = m.voyage?.uid
@@ -174,6 +182,16 @@ enum Codec {
         }
     }
 
+    static func lieuxEnTexte(_ lieux: [LieuReference]) -> String {
+        let encodeur = JSONEncoder()
+        encodeur.outputFormatting = .sortedKeys
+        return (try? encodeur.encode(lieux)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
+
+    static func lieuxDepuisTexte(_ texte: String?) -> [LieuReference] {
+        texte.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode([LieuReference].self, from: $0) } ?? []
+    }
+
     // MARK: Enregistrement → objet
 
     /// Crée ou met à jour l'objet local. Renvoie nil si l'objet parent n'est pas encore arrivé.
@@ -199,6 +217,15 @@ enum Codec {
             let proprietaire = r.recordID.zoneID.ownerName
             v.zoneProprietaire = proprietaire == CKCurrentUserDefaultName ? "" : proprietaire
             return v
+
+        case .jour:
+            guard let parent else { return nil }
+            let j = (objet(recordName: r.recordID.recordName, contexte) as? JourVoyage) ?? {
+                let nouveau = JourVoyage(date: .now); nouveau.uid = uid; contexte.insert(nouveau); return nouveau
+            }()
+            j.date = date("date") ?? j.date; j.titre = texte("titre"); j.notes = texte("notes")
+            j.lieux = lieuxDepuisTexte(r["lieux"] as? String); j.creeLe = date("creeLe") ?? j.creeLe; j.voyage = parent
+            return j
 
         case .membre:
             guard let parent else { return nil }

@@ -4,6 +4,7 @@ import MapKit
 struct RechercheLieuView: View {
     var requeteInitiale: String
     var pays: [String] = []
+    var invite = "Aéroport, hôtel, musée, adresse…"
     var onChoix: (LieuTrouve) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -22,7 +23,7 @@ struct RechercheLieuView: View {
             List {
                 Section {
                     HStack {
-                        TextField("Aéroport, hôtel, musée, adresse…", text: $texte)
+                        TextField(invite, text: $texte)
                             .focused($champActif)
                             .autocorrectionDisabled()
                         if !texte.isEmpty {
