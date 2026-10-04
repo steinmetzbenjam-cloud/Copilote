@@ -10,6 +10,8 @@ struct ItineraireView: View {
     /// Étape au-dessus de laquelle on s'apprête à déposer (trait d'insertion), ou jour survolé.
     @State private var etapeVisee: String?
     @State private var jourVise: Date?
+    /// Jour sur lequel la carte est cadrée ; nil = tout le voyage.
+    @State private var jourSelectionne: Date?
 
     private let cal = Calendar.current
 
@@ -18,24 +20,25 @@ struct ItineraireView: View {
     }
 
     var body: some View {
-        ScrollView {
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 340), spacing: 16, alignment: .top)], spacing: 16) {
-                ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
-                    carte(numero: index + 1, jour: jour)
+        GeometryReader { geo in
+            let panneauLateral = geo.size.width >= 700
+            if panneauLateral {
+                // iPad, Mac : la carte en fond, les jours empilés dans un panneau à gauche.
+                ZStack(alignment: .leading) {
+                    fondDeCarte(margeGauche: Self.largeurPanneau)
+                    ScrollView { listeDesJours.padding(12) }
+                        .frame(width: Self.largeurPanneau)
+                        .scrollIndicators(.hidden)
                 }
-                if !horsDates.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Hors des dates du voyage").font(.headline)
-                        ForEach(horsDates) { ligne($0) }
-                    }
-                    .padding(16)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .modifier(FondDeCarte())
+            } else {
+                // iPhone : la carte en haut, les jours dessous.
+                VStack(spacing: 0) {
+                    fondDeCarte(margeGauche: 0).frame(height: max(220, geo.size.height * 0.36))
+                    ScrollView { listeDesJours.padding(12) }
+                        .background(FondDePage.couleur)
                 }
             }
-            .padding(16)
         }
-        .background(FondDePage.couleur)
         .sheet(item: $etapeEnEdition, onDismiss: nettoyer) { etape in
             EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
         }
@@ -44,13 +47,45 @@ struct ItineraireView: View {
         }
     }
 
+    private static let largeurPanneau: CGFloat = 404
+
+    private func fondDeCarte(margeGauche: CGFloat) -> some View {
+        CarteDuVoyage(voyage: voyage, jourFocus: jourSelectionne, masquerAutresJours: false, margeGauche: margeGauche) { etape in
+            etapeEnEdition = etape
+        }
+    }
+
+    /// Les jours, les uns au-dessus des autres.
+    private var listeDesJours: some View {
+        LazyVStack(spacing: 12) {
+            ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
+                carte(numero: index + 1, jour: jour)
+            }
+            if !horsDates.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Hors des dates du voyage").font(.headline)
+                    ForEach(horsDates) { ligne($0) }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .modifier(FondDeCarte())
+            }
+        }
+    }
+
+    private func estSelectionne(_ jour: Date) -> Bool {
+        jourSelectionne.map { cal.isDate($0, inSameDayAs: jour) } ?? false
+    }
+
     // MARK: Carte d'un jour
 
     private func carte(numero: Int, jour: Date) -> some View {
         let infos = voyage.infos(du: jour)
         let etapes = voyage.etapes(du: jour)
         return VStack(alignment: .leading, spacing: 10) {
-            Button { jourEnEdition = infos ?? creerInfos(jour) } label: {
+            Button {
+                withAnimation(.easeInOut(duration: 0.25)) { jourSelectionne = estSelectionne(jour) ? nil : jour }
+            } label: {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
                         Text("JOUR \(numero)").font(.caption.bold()).foregroundStyle(.tint)
@@ -103,6 +138,11 @@ struct ItineraireView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(FondDeCarte())
         .overlay(alignment: .topTrailing) { menuDuJour(jour, infos: infos) }
+        .overlay {
+            if estSelectionne(jour) {
+                RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.tint, lineWidth: 2.5)
+            }
+        }
         .overlay {
             if let jourVise, cal.isDate(jourVise, inSameDayAs: jour) {
                 RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(.tint, lineWidth: 2)
