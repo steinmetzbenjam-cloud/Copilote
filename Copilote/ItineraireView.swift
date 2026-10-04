@@ -42,6 +42,10 @@ struct ItineraireView: View {
                     .foregroundStyle(.tint)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(etape.titre.isEmpty ? "Sans titre" : etape.titre).font(.headline)
+                    if etape.noteGoogle != nil || etape.noteTripadvisor != nil {
+                        NotesView(google: etape.noteGoogle.flatMap { n in etape.avisGoogle.map { (n, $0) } },
+                                  tripadvisor: etape.noteTripadvisor.flatMap { n in etape.avisTripadvisor.map { (n, $0) } })
+                    }
                     if !etape.lieu.isEmpty {
                         Text(etape.lieu).lineLimit(1).font(.subheadline).foregroundStyle(.secondary)
                     }

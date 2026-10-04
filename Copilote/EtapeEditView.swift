@@ -9,6 +9,7 @@ struct EtapeEditView: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var titreActif: Bool
     @State private var rechercheOuverte = false
+    @State private var suggestionsOuvertes = false
 
     private var heureActivee: Binding<Bool> {
         Binding(get: { etape.heure != nil },
@@ -41,12 +42,14 @@ struct EtapeEditView: View {
                             etape.longitude = nil
                         }
                     }
+                    Button("Idées de lieux à visiter", systemImage: "sparkles") { suggestionsOuvertes = true }
                     Picker("Catégorie", selection: $etape.categorie) {
                         ForEach(CategorieEtape.allCases) { c in
                             Label(c.libelle, systemImage: c.symbole).tag(c)
                         }
                     }
                 }
+                if etape.aDesInfosDeLieu { infosDuLieu }
                 Section {
                     Picker("Jour", selection: $etape.jour) {
                         ForEach(jours, id: \.self) { j in
@@ -79,6 +82,9 @@ struct EtapeEditView: View {
                 }
             }
         }
+        .sheet(isPresented: $suggestionsOuvertes) {
+            SuggestionsView(voyage: etape.voyage, etape: etape) { etape.appliquer($0) }
+        }
         .sheet(isPresented: $rechercheOuverte) {
             RechercheLieuView(requeteInitiale: etape.lieu.isEmpty ? etape.titre : etape.lieu,
                               pays: etape.voyage?.pays ?? []) { lieu in
@@ -92,5 +98,25 @@ struct EtapeEditView: View {
         #if os(macOS)
         .frame(minWidth: 420, minHeight: 480)
         #endif
+    }
+
+    @ViewBuilder private var infosDuLieu: some View {
+        Section("Infos du lieu") {
+            if let url = etape.photoURL.flatMap(URL.init) {
+                AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { Color.secondary.opacity(0.15) }
+                    .frame(height: 170)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+            }
+            NotesView(google: etape.noteGoogle.flatMap { n in etape.avisGoogle.map { (n, $0) } },
+                      tripadvisor: etape.noteTripadvisor.flatMap { n in etape.avisTripadvisor.map { (n, $0) } })
+            if let resume = etape.resume { Text(resume).font(.callout) }
+            if let horaires = etape.horaires {
+                DisclosureGroup("Horaires") { Text(horaires).font(.footnote) }
+            }
+            if let url = etape.siteWeb.flatMap(URL.init) { Link("Site web", destination: url) }
+            if let url = etape.lienGoogle.flatMap(URL.init) { Link("Voir sur Google", destination: url) }
+            if let url = etape.lienTripadvisor.flatMap(URL.init) { Link("Voir sur Tripadvisor", destination: url) }
+        }
     }
 }

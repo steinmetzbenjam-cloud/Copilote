@@ -5,6 +5,7 @@ struct ContentView: View {
     @Environment(\.modelContext) private var contexte
     @Query(sort: \Voyage.debut) private var voyages: [Voyage]
     @State private var selection: Voyage?
+    @State private var reglagesOuverts = false
 
     var body: some View {
         NavigationSplitView {
@@ -24,6 +25,7 @@ struct ContentView: View {
             }
             .navigationTitle("Voyages")
             .toolbar {
+                Button("Réglages", systemImage: "key") { reglagesOuverts = true }
                 Button("Nouveau voyage", systemImage: "plus", action: ajouter)
             }
         } detail: {
@@ -34,6 +36,7 @@ struct ContentView: View {
                                        description: Text("Crée un voyage pour commencer à le préparer avec ton groupe."))
             }
         }
+        .sheet(isPresented: $reglagesOuverts) { ReglagesView() }
         #if os(macOS)
         .frame(minWidth: 700, minHeight: 450)
         #endif

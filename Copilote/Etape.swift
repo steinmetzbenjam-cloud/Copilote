@@ -40,6 +40,17 @@ final class Etape {
     var notes: String
     var latitude: Double?
     var longitude: Double?
+    // Infos récupérées via les suggestions (Google, Tripadvisor).
+    var resume: String?
+    var horaires: String?
+    var photoURL: String?
+    var noteGoogle: Double?
+    var avisGoogle: Int?
+    var lienGoogle: String?
+    var noteTripadvisor: Double?
+    var avisTripadvisor: Int?
+    var lienTripadvisor: String?
+    var siteWeb: String?
     var creeLe: Date
     var voyage: Voyage?
 
@@ -55,6 +66,30 @@ final class Etape {
 }
 
 extension Etape {
+    var aDesInfosDeLieu: Bool {
+        resume != nil || horaires != nil || photoURL != nil || noteGoogle != nil || noteTripadvisor != nil || siteWeb != nil
+    }
+
+    /// Reprend dans l'étape ce que l'on sait d'un lieu proposé.
+    func appliquer(_ lieu: LieuPropose) {
+        if titre.trimmingCharacters(in: .whitespaces).isEmpty { titre = lieu.nom }
+        self.lieu = lieu.adresse.isEmpty ? lieu.nom : "\(lieu.nom), \(lieu.adresse)"
+        latitude = lieu.coordonnee.latitude
+        longitude = lieu.coordonnee.longitude
+        categorie = lieu.type == .restaurant ? .repas : .visite
+        resume = lieu.resume
+        horaires = lieu.horaires.isEmpty ? nil : lieu.horaires.joined(separator: "\n")
+        photoURL = lieu.photos.first?.absoluteString
+        let google = lieu.avis(de: .google), tripadvisor = lieu.avis(de: .tripadvisor)
+        noteGoogle = google?.note
+        avisGoogle = google?.nombre
+        lienGoogle = google?.lien?.absoluteString
+        noteTripadvisor = tripadvisor?.note
+        avisTripadvisor = tripadvisor?.nombre
+        lienTripadvisor = tripadvisor?.lien?.absoluteString
+        siteWeb = lieu.siteWeb?.absoluteString
+    }
+
     var coordonnee: CLLocationCoordinate2D? {
         guard let latitude, let longitude else { return nil }
         return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
