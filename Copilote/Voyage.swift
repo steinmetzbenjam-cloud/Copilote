@@ -68,6 +68,38 @@ extension Voyage {
         etapes.filter { $0.jour == nil }.sorted { ($0.ordre, $0.creeLe) < ($1.ordre, $1.creeLe) }
     }
 
+    /// Étapes dont le transport (vers l'étape suivante) serait perdu si on déplaçait `etape` à cet endroit
+    /// (`jour` nil : on la retire de son jour).
+    func transportsPerdus(deplacant etape: Etape, vers jour: Date?, avant cible: Etape?) -> [Etape] {
+        func suivantes(_ liste: [Etape]) -> [String: String] {
+            Dictionary(uniqueKeysWithValues: zip(liste, liste.dropFirst()).map { ($0.uid, $1.uid) })
+        }
+        var avant: [Etape] = [], apres: [Etape] = []
+        var apresSuivantes: [String: String] = [:], avantSuivantes: [String: String] = [:]
+        func ajouterJour(_ j: Date, insertion: Bool) {
+            let actuelle = etapes(du: j)
+            avantSuivantes.merge(suivantes(actuelle)) { a, _ in a }
+            var liste = actuelle.filter { $0 !== etape }
+            if insertion {
+                let index = cible.flatMap { c in liste.firstIndex { $0 === c } } ?? liste.count
+                liste.insert(etape, at: index)
+            }
+            apresSuivantes.merge(suivantes(liste)) { a, _ in a }
+            avant += actuelle; apres += liste
+        }
+        if let ancien = etape.jour { ajouterJour(ancien, insertion: false) }
+        if let jour, !(etape.jour.map { Calendar.current.isDate($0, inSameDayAs: jour) } ?? false) { ajouterJour(jour, insertion: true) }
+        else if let jour, etape.jour != nil {
+            // Même jour : on remplace la simulation sans insertion par celle avec insertion.
+            avantSuivantes = [:]; apresSuivantes = [:]; avant = []; apres = []
+            ajouterJour(jour, insertion: true)
+        }
+        // Une étape sans jour n'a pas de suivante.
+        var concernees = Set(avant.map(\.uid)).union(apres.map(\.uid))
+        concernees.insert(etape.uid)
+        return etapes.filter { concernees.contains($0.uid) && $0.transport != nil && avantSuivantes[$0.uid] != apresSuivantes[$0.uid] }
+    }
+
     /// Enlève l'étape de son jour : elle redevient « à placer », sans jour ni horaires.
     @discardableResult
     func retirerDuJour(_ etape: Etape) -> Bool {

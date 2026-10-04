@@ -14,6 +14,16 @@ struct ItineraireView: View {
     @State private var jourSelectionne: Date?
     /// Étape dont on affiche l'explication de l'avertissement d'horaire.
     @State private var avertissementOuvert: String?
+    /// Déplacement qui effacerait des transports : en attente de confirmation.
+    @State private var deplacementEnAttente: DeplacementEnAttente?
+
+    private struct DeplacementEnAttente: Identifiable {
+        let id = UUID()
+        let etape: Etape
+        let jour: Date?
+        let cible: Etape?
+        let perdus: [Etape]
+    }
 
     private let cal = Calendar.current
 
@@ -54,7 +64,13 @@ struct ItineraireView: View {
         .dropDestination(for: String.self) { elements, _ in
             guard let uid = elements.first(where: { $0.hasPrefix(Self.prefixe) })?.dropFirst(Self.prefixe.count),
                   let etape = voyage.etapes.first(where: { $0.uid == String(uid) }) else { return false }
-            return withAnimation { voyage.retirerDuJour(etape) }
+            return demander(etape, vers: nil, avant: nil)
+        }
+        .confirmationDialog("Effacer le transport ?", isPresented: Binding(get: { deplacementEnAttente != nil }, set: { if !$0 { deplacementEnAttente = nil } }), titleVisibility: .visible, presenting: deplacementEnAttente) { d in
+            Button("Déplacer et effacer le transport", role: .destructive) { appliquer(d) }
+            Button("Annuler", role: .cancel) {}
+        } message: { d in
+            Text(d.perdus.count == 1 ? "Ce déplacement efface le transport prévu après « \(d.perdus[0].titre) »." : "Ce déplacement efface \(d.perdus.count) transports prévus entre des étapes.")
         }
         .sheet(item: $etapeEnEdition, onDismiss: nettoyer) { etape in
             EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
@@ -257,7 +273,27 @@ struct ItineraireView: View {
 
     private func deplacer(_ uid: String, vers jour: Date, avant cible: Etape?) -> Bool {
         guard let etape = voyage.etapes.first(where: { $0.uid == uid }) else { return false }
-        return withAnimation { voyage.deplacer(etape, vers: jour, avant: cible) }
+        return demander(etape, vers: jour, avant: cible)
+    }
+
+    /// Déplace tout de suite, ou demande confirmation si des transports entre étapes seraient effacés.
+    private func demander(_ etape: Etape, vers jour: Date?, avant cible: Etape?) -> Bool {
+        if cible === etape { return false }
+        let perdus = voyage.transportsPerdus(deplacant: etape, vers: jour, avant: cible)
+        if perdus.isEmpty {
+            return appliquer(DeplacementEnAttente(etape: etape, jour: jour, cible: cible, perdus: []))
+        }
+        deplacementEnAttente = DeplacementEnAttente(etape: etape, jour: jour, cible: cible, perdus: perdus)
+        return true
+    }
+
+    @discardableResult
+    private func appliquer(_ d: DeplacementEnAttente) -> Bool {
+        withAnimation {
+            for e in d.perdus { e.transport = nil }
+            if let jour = d.jour { return voyage.deplacer(d.etape, vers: jour, avant: d.cible) }
+            return voyage.retirerDuJour(d.etape)
+        }
     }
 
     private func trierParHeure(_ jour: Date) {
