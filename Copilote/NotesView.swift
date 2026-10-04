@@ -1,4 +1,9 @@
 import SwiftUI
+#if os(iOS)
+import UIKit
+#else
+import AppKit
+#endif
 
 /// Petite ligne de notes : ★ 4,6 Google (1 234) · ★ 4,5 Tripadvisor (890).
 struct NotesView: View {
@@ -37,5 +42,26 @@ struct PhotoLieu: View {
         }
         .frame(width: taille, height: taille)
         .clipShape(RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+/// Affiche une image dont on a les octets (photo rapatriée d'un lieu).
+struct ImageDonnees: View {
+    var donnees: Data
+
+    var body: some View {
+        #if os(iOS)
+        if let image = UIImage(data: donnees) {
+            Image(uiImage: image).resizable().scaledToFill()
+        } else {
+            Color.secondary.opacity(0.15)
+        }
+        #else
+        if let image = NSImage(data: donnees) {
+            Image(nsImage: image).resizable().scaledToFill()
+        } else {
+            Color.secondary.opacity(0.15)
+        }
+        #endif
     }
 }

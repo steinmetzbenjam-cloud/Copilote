@@ -56,6 +56,8 @@ final class Etape {
     /// Position dans la journée (réglée en glissant les étapes).
     var ordre: Double = 0
     var voyage: Voyage?
+    @Relationship(deleteRule: .cascade, inverse: \Document.etape)
+    var photos: [Document] = []
 
     init(titre: String, jour: Date, categorie: CategorieEtape = .visite) {
         self.titre = titre
@@ -71,10 +73,10 @@ final class Etape {
 
 extension Etape {
     var aDesInfosDeLieu: Bool {
-        resume != nil || horaires != nil || photoURL != nil || noteGoogle != nil || noteTripadvisor != nil || siteWeb != nil
+        resume != nil || horaires != nil || photoURL != nil || !photos.isEmpty || noteGoogle != nil || noteTripadvisor != nil || siteWeb != nil
     }
 
-    /// Reprend dans l'étape ce que l'on sait d'un lieu proposé.
+    /// Reprend dans l'étape ce que l'on sait d'un lieu proposé : titre, lieu, position, catégorie, et tout le reste dans les notes.
     func appliquer(_ lieu: LieuPropose) {
         if titre.trimmingCharacters(in: .whitespaces).isEmpty { titre = lieu.nom }
         self.lieu = lieu.adresse.isEmpty ? lieu.nom : "\(lieu.nom), \(lieu.adresse)"
@@ -83,7 +85,6 @@ extension Etape {
         categorie = lieu.type == .restaurant ? .repas : .visite
         resume = lieu.resume
         horaires = lieu.horaires.isEmpty ? nil : lieu.horaires.joined(separator: "\n")
-        photoURL = lieu.photos.first?.absoluteString
         let google = lieu.avis(de: .google), tripadvisor = lieu.avis(de: .tripadvisor)
         noteGoogle = google?.note
         avisGoogle = google?.nombre
@@ -92,6 +93,41 @@ extension Etape {
         avisTripadvisor = tripadvisor?.nombre
         lienTripadvisor = tripadvisor?.lien?.absoluteString
         siteWeb = lieu.siteWeb?.absoluteString
+        ajouterAuxNotes(Self.notes(pour: lieu))
+    }
+
+    /// Ajoute un bloc aux notes sans écraser ce qui y est déjà, et sans le répéter si on valide deux fois le même lieu.
+    private func ajouterAuxNotes(_ bloc: String) {
+        let entete = bloc.split(separator: "\n", maxSplits: 1).first.map(String.init) ?? bloc
+        guard !notes.contains(entete) else { return }
+        notes = notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? bloc : notes + "\n\n———\n\n" + bloc
+    }
+
+    /// Fiche texte d'un lieu : description, notes des avis, horaires, adresse, liens.
+    static func notes(pour lieu: LieuPropose) -> String {
+        func note(_ a: AvisSource) -> String {
+            "\(a.source.rawValue) : \(a.note.formatted(.number.precision(.fractionLength(1))))/5 (\(a.nombre.formatted()) avis)"
+        }
+        var lignes = ["📍 \(lieu.nom)"]
+        let genre = [lieu.genre, lieu.prix].compactMap { $0 }.joined(separator: " · ")
+        if !genre.isEmpty { lignes.append(genre) }
+        if let resume = lieu.resume, !resume.isEmpty { lignes += ["", resume] }
+        if !lieu.avis.isEmpty { lignes += ["", "Avis"] + lieu.avis.map(note) }
+        if let classement = lieu.classementTripadvisor { lignes.append(classement) }
+        if !lieu.horaires.isEmpty { lignes += ["", "Horaires"] + lieu.horaires }
+        if !lieu.adresse.isEmpty { lignes += ["", "Adresse : \(lieu.adresse)"] }
+        var liens: [String] = []
+        if let site = lieu.siteWeb { liens.append("Site : \(site.absoluteString)") }
+        for a in lieu.avis { if let url = a.lien { liens.append("\(a.source.rawValue) : \(url.absoluteString)") } }
+        liens.append("Vidéos : \(lienVideos(pour: lieu.nom).absoluteString)")
+        return (lignes + [""] + liens).joined(separator: "\n")
+    }
+
+    /// Les API de Google et Tripadvisor ne fournissent pas de vidéos : on renvoie vers une recherche.
+    static func lienVideos(pour nom: String) -> URL {
+        var composants = URLComponents(string: "https://www.youtube.com/results")!
+        composants.queryItems = [URLQueryItem(name: "search_query", value: nom)]
+        return composants.url!
     }
 
     var coordonnee: CLLocationCoordinate2D? {

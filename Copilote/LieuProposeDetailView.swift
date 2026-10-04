@@ -49,6 +49,7 @@ struct LieuProposeDetailView: View {
 
                     VStack(alignment: .leading, spacing: 6) {
                         if let url = lieu.siteWeb { Link("Site web", destination: url) }
+                        Link("Chercher des vidéos", destination: Etape.lienVideos(pour: lieu.nom))
                         ForEach(lieu.avis, id: \.source) { a in
                             if let url = a.lien { Link("Voir sur \(a.source.rawValue)", destination: url) }
                         }
@@ -61,10 +62,18 @@ struct LieuProposeDetailView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .toolbar {
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Ajouter à l'étape") { onAjouter(lieu) }
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 6) {
+                    Button { onAjouter(lieu) } label: {
+                        Label("Valider ce lieu", systemImage: "checkmark.circle.fill").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    Text("Reprend le titre, l'adresse, les infos dans les notes et les photos.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
+                .padding()
+                .background(.bar)
             }
             .task { await completerPhotos() }
     }

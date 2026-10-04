@@ -87,6 +87,8 @@ final class Document {
     var uid: String = ""
     var voyage: Voyage?
     var reservation: Reservation?
+    /// Renseigné pour les photos rapatriées d'un lieu proposé.
+    var etape: Etape?
 
     init(nom: String, extensionFichier: String, donnees: Data) {
         self.nom = nom

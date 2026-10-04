@@ -10,6 +10,7 @@ struct EtapeEditView: View {
     @FocusState private var titreActif: Bool
     @State private var rechercheOuverte = false
     @State private var suggestionsOuvertes = false
+    @State private var photosEnCours = false
     @Environment(\.horizontalSizeClass) private var tailleHorizontale
 
     /// Écran large (iPad, Mac) : les idées s'affichent dans un panneau à droite de la fiche.
@@ -35,7 +36,7 @@ struct EtapeEditView: View {
             formulaire
             if suggestionsOuvertes && panneauLateral {
                 Divider()
-                SuggestionsView(voyage: etape.voyage, etape: etape, onChoix: { etape.appliquer($0) },
+                SuggestionsView(voyage: etape.voyage, etape: etape, onChoix: { valider($0) },
                                 onFermer: { withAnimation { suggestionsOuvertes = false } })
                     .frame(minWidth: 380, idealWidth: 440, maxWidth: 480)
                     .transition(.move(edge: .trailing))
@@ -43,7 +44,7 @@ struct EtapeEditView: View {
         }
         .animation(.default, value: suggestionsOuvertes)
         .sheet(isPresented: Binding(get: { suggestionsOuvertes && !panneauLateral }, set: { suggestionsOuvertes = $0 })) {
-            SuggestionsView(voyage: etape.voyage, etape: etape, onChoix: { etape.appliquer($0) },
+            SuggestionsView(voyage: etape.voyage, etape: etape, onChoix: { valider($0) },
                             onFermer: { suggestionsOuvertes = false })
         }
         .sheet(isPresented: $rechercheOuverte) {
@@ -126,9 +127,46 @@ struct EtapeEditView: View {
         }
     }
 
+    /// Valide un lieu proposé : l'étape reprend titre, adresse, position, notes, et on rapatrie les photos.
+    private func valider(_ lieu: LieuPropose) {
+        etape.appliquer(lieu)
+        let urls = Array(lieu.photos.prefix(6))
+        guard !urls.isEmpty else { return }
+        photosEnCours = true
+        Task { @MainActor in
+            let images = await PhotosLieu.telecharger(urls)
+            rangerPhotos(images, de: lieu)
+            photosEnCours = false
+        }
+    }
+
+    @MainActor private func rangerPhotos(_ images: [PhotosLieu.Image], de lieu: LieuPropose) {
+        guard let contexte = etape.modelContext, let voyage = etape.voyage else { return }
+        for ancienne in etape.photos where ancienne.nom.hasPrefix("\(lieu.nom) – photo") { contexte.delete(ancienne) }
+        for (i, image) in images.enumerated() {
+            let photo = Document(nom: "\(lieu.nom) – photo \(i + 1)", extensionFichier: image.extensionFichier, donnees: image.donnees)
+            photo.voyage = voyage
+            photo.etape = etape
+            contexte.insert(photo)
+        }
+    }
+
     @ViewBuilder private var infosDuLieu: some View {
         Section("Infos du lieu") {
-            if let url = etape.photoURL.flatMap(URL.init) {
+            if !etape.photos.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(etape.photos.sorted { $0.nom < $1.nom }) { photo in
+                            ImageDonnees(donnees: photo.donnees)
+                                .frame(width: 220, height: 150)
+                                .clipShape(RoundedRectangle(cornerRadius: 10))
+                                .contextMenu {
+                                    Button("Supprimer la photo", systemImage: "trash", role: .destructive) { etape.modelContext?.delete(photo) }
+                                }
+                        }
+                    }
+                }
+            } else if let url = etape.photoURL.flatMap(URL.init) {
                 AsyncImage(url: url) { $0.resizable().scaledToFill() } placeholder: { Color.secondary.opacity(0.15) }
                     .frame(height: 170)
                     .frame(maxWidth: .infinity)
@@ -143,6 +181,10 @@ struct EtapeEditView: View {
             if let url = etape.siteWeb.flatMap(URL.init) { Link("Site web", destination: url) }
             if let url = etape.lienGoogle.flatMap(URL.init) { Link("Voir sur Google", destination: url) }
             if let url = etape.lienTripadvisor.flatMap(URL.init) { Link("Voir sur Tripadvisor", destination: url) }
+            Link("Chercher des vidéos", destination: Etape.lienVideos(pour: etape.titre.isEmpty ? etape.lieu : etape.titre))
+            if photosEnCours {
+                Label("Téléchargement des photos…", systemImage: "arrow.down.circle").font(.footnote).foregroundStyle(.secondary)
+            }
         }
     }
 }

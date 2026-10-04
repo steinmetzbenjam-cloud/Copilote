@@ -15,7 +15,7 @@ struct DocumentsSection: View {
     @State private var erreur: String?
 
     private var documents: [Document] {
-        let tous = reservation?.documents ?? voyage.documents.filter { $0.reservation == nil }
+        let tous = reservation?.documents ?? voyage.documents.filter { $0.reservation == nil && $0.etape == nil }
         return tous.sorted { $0.creeLe < $1.creeLe }
     }
 

@@ -183,6 +183,7 @@ enum Codec {
             let r = base(.document, d.uid, zone, systeme)
             r["nom"] = d.nom; r["extensionFichier"] = d.extensionFichier; r["taille"] = d.donnees.count
             r["creeLe"] = d.creeLe; r["voyageUID"] = d.voyage?.uid; r["reservationUID"] = d.reservation?.uid
+            r["etapeUID"] = d.etape?.uid
             if avecAsset {
                 let fichier = FileManager.default.temporaryDirectory.appending(path: "\(d.uid).\(d.extensionFichier)")
                 if (try? d.donnees.write(to: fichier)) != nil { r["donnees"] = CKAsset(fileURL: fichier) }
@@ -300,13 +301,16 @@ enum Codec {
             let reservationUID = r["reservationUID"] as? String
             let reservation = reservationUID.flatMap { objet(recordName: nom(.reservation, $0), contexte) as? Reservation }
             if reservationUID != nil && reservation == nil { return nil }
+            let etapeUID = r["etapeUID"] as? String
+            let etape = etapeUID.flatMap { objet(recordName: nom(.etape, $0), contexte) as? Etape }
+            if etapeUID != nil && etape == nil { return nil }
             let d = (objet(recordName: r.recordID.recordName, contexte) as? Document) ?? {
                 let nouveau = Document(nom: "", extensionFichier: "", donnees: Data()); nouveau.uid = uid
                 contexte.insert(nouveau); return nouveau
             }()
             d.nom = texte("nom"); d.extensionFichier = texte("extensionFichier"); d.creeLe = date("creeLe") ?? d.creeLe
             if let fichier = (r["donnees"] as? CKAsset)?.fileURL, let donnees = try? Data(contentsOf: fichier) { d.donnees = donnees }
-            d.voyage = parent; d.reservation = reservation
+            d.voyage = parent; d.reservation = reservation; d.etape = etape
             return d
         }
     }
