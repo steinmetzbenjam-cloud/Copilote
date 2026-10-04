@@ -56,6 +56,7 @@ final class Reservation {
     var notes: String
     var ajouteeAItineraire: Bool
     var creeLe: Date
+    var uid: String = ""
     var voyage: Voyage?
     @Relationship(deleteRule: .cascade, inverse: \Document.reservation)
     var documents: [Document] = []
@@ -73,6 +74,7 @@ final class Reservation {
         self.notes = ""
         self.ajouteeAItineraire = false
         self.creeLe = .now
+        self.uid = UUID().uuidString
     }
 }
 
@@ -82,6 +84,7 @@ final class Document {
     var extensionFichier: String
     @Attribute(.externalStorage) var donnees: Data
     var creeLe: Date
+    var uid: String = ""
     var voyage: Voyage?
     var reservation: Reservation?
 
@@ -90,6 +93,7 @@ final class Document {
         self.extensionFichier = extensionFichier
         self.donnees = donnees
         self.creeLe = .now
+        self.uid = UUID().uuidString
     }
 
     var estImage: Bool { ["jpg", "jpeg", "png", "heic", "gif", "webp"].contains(extensionFichier.lowercased()) }

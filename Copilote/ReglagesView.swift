@@ -4,6 +4,7 @@ struct ReglagesView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var google = Cles.lire(.google) ?? ""
     @State private var tripadvisor = Cles.lire(.tripadvisor) ?? ""
+    private var cloud = PartageCloud.shared
 
     var body: some View {
         NavigationStack {
@@ -26,6 +27,21 @@ struct ReglagesView: View {
                     Text("Tripadvisor")
                 } footer: {
                     Text("Clé « Content API » du portail développeurs Tripadvisor. Notes, avis, classement, descriptions.")
+                }
+
+                Section {
+                    Toggle("Synchroniser avec iCloud", isOn: Binding(get: { cloud.actif }, set: { cloud.definirActif($0) }))
+                        .disabled(!PartageCloud.disponible)
+                    if !PartageCloud.disponible {
+                        Text("Indisponible dans cette version de l'app : il faut un compte Apple Developer payant (voir SETUP-ICLOUD.md).")
+                            .font(.footnote).foregroundStyle(.secondary)
+                    } else if !cloud.statut.isEmpty {
+                        Text(cloud.statut).font(.footnote).foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("iCloud")
+                } footer: {
+                    Text("Garde tes voyages à jour sur tous tes appareils et permet de les partager avec ton groupe.")
                 }
 
                 Section {

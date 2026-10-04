@@ -11,6 +11,12 @@ final class Voyage {
     /// Codes ISO des pays visités (FR, IT…), dans l'ordre choisi.
     var pays: [String] = []
     var creeLe: Date
+    /// Identifiant stable, commun à tous les appareils (synchronisation iCloud).
+    var uid: String = ""
+    /// Vide si le voyage est le mien ; sinon, propriétaire iCloud du voyage reçu.
+    var zoneProprietaire: String = ""
+    var partage: Bool = false
+    var participantsCloud: [String] = []
     @Relationship(deleteRule: .cascade, inverse: \Membre.voyage)
     var membres: [Membre] = []
     @Relationship(deleteRule: .cascade, inverse: \Etape.voyage)
@@ -27,7 +33,10 @@ final class Voyage {
         self.fin = fin
         self.notes = ""
         self.creeLe = .now
+        self.uid = UUID().uuidString
     }
+
+    var estRecu: Bool { !zoneProprietaire.isEmpty }
 
     /// Chaque jour du voyage, du départ au retour.
     var jours: [Date] {

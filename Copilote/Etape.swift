@@ -52,6 +52,7 @@ final class Etape {
     var lienTripadvisor: String?
     var siteWeb: String?
     var creeLe: Date
+    var uid: String = ""
     var voyage: Voyage?
 
     init(titre: String, jour: Date, categorie: CategorieEtape = .visite) {
@@ -62,6 +63,7 @@ final class Etape {
         self.categorie = categorie
         self.notes = ""
         self.creeLe = .now
+        self.uid = UUID().uuidString
     }
 }
 

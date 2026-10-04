@@ -10,9 +10,22 @@
 		A10000000000000000000001 /* Copilote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Copilote.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		A10000000000000000000009 /* Exceptions for "Copilote" folder in "Copilote" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = A10000000000000000000007 /* Copilote */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000003 /* Copilote */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				A10000000000000000000009 /* Exceptions for "Copilote" folder in "Copilote" target */,
+			);
 			path = Copilote;
 			sourceTree = "<group>";
 		};
@@ -162,6 +175,7 @@
 				DEVELOPMENT_TEAM = 26SUT848P6;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Copilote/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Copilote;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.travel";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";
@@ -204,6 +218,7 @@
 				DEVELOPMENT_TEAM = 26SUT848P6;
 				"ENABLE_HARDENED_RUNTIME[sdk=macosx*]" = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Copilote/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Copilote;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.travel";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "";

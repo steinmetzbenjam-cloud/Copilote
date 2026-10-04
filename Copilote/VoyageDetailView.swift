@@ -52,6 +52,8 @@ struct VoyageDetailView: View {
                 Text("La carte et la recherche de lieux se centrent sur ces pays.")
             }
 
+            SectionPartage(voyage: voyage)
+
             Section("Dates") {
                 DatePicker("Départ", selection: $voyage.debut, displayedComponents: .date)
                 DatePicker("Retour", selection: $voyage.fin, in: voyage.debut..., displayedComponents: .date)

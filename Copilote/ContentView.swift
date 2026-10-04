@@ -6,6 +6,7 @@ struct ContentView: View {
     @Query(sort: \Voyage.debut) private var voyages: [Voyage]
     @State private var selection: Voyage?
     @State private var reglagesOuverts = false
+    @State private var voyageASupprimer: Voyage?
 
     var body: some View {
         NavigationSplitView {
@@ -20,7 +21,9 @@ struct ContentView: View {
                 }
                 .tag(voyage)
                 .contextMenu {
-                    Button("Supprimer", role: .destructive) { supprimer(voyage) }
+                    Button(voyage.estRecu ? "Quitter ce voyage" : "Supprimer", role: .destructive) {
+                        if voyage.partage || voyage.estRecu { voyageASupprimer = voyage } else { supprimer(voyage) }
+                    }
                 }
             }
             .navigationTitle("Voyages")
@@ -37,6 +40,18 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $reglagesOuverts) { ReglagesView() }
+        .confirmationDialog(voyageASupprimer?.estRecu == true ? "Quitter ce voyage ?" : "Supprimer ce voyage partagé ?",
+                            isPresented: Binding(get: { voyageASupprimer != nil }, set: { if !$0 { voyageASupprimer = nil } }),
+                            titleVisibility: .visible) {
+            Button(voyageASupprimer?.estRecu == true ? "Quitter" : "Supprimer pour tout le monde", role: .destructive) {
+                if let v = voyageASupprimer { supprimer(v) }
+                voyageASupprimer = nil
+            }
+        } message: {
+            Text(voyageASupprimer?.estRecu == true
+                 ? "Il disparaîtra de tes appareils, mais restera chez les autres voyageurs."
+                 : "Les personnes invitées perdront aussi ce voyage.")
+        }
         #if os(macOS)
         .frame(minWidth: 700, minHeight: 450)
         #endif
