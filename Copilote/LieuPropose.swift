@@ -21,7 +21,10 @@ struct AvisSource: Hashable {
 }
 
 /// Un lieu proposé, fusionnant ce que savent Google, Tripadvisor et Plans à son sujet.
-struct LieuPropose: Identifiable {
+struct LieuPropose: Identifiable, Hashable {
+    static func == (a: LieuPropose, b: LieuPropose) -> Bool { a.id == b.id }
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
     let id = UUID()
     var nom: String
     var adresse: String

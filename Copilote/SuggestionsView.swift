@@ -5,15 +5,32 @@ struct SuggestionsView: View {
     var voyage: Voyage?
     var etape: Etape
     var onChoix: (LieuPropose) -> Void
+    var onFermer: () -> Void
 
-    @Environment(\.dismiss) private var dismiss
-    @State private var type: TypeLieu = .activite
+    @State private var type: TypeLieu
+    @State private var mots: String
     @State private var autour = ""
     @State private var centre: CLLocationCoordinate2D?
     @State private var resultat: Suggestions.Resultat?
     @State private var enCours = false
     @State private var reglagesOuverts = false
     @State private var detail: LieuPropose?
+
+    init(voyage: Voyage?, etape: Etape, onChoix: @escaping (LieuPropose) -> Void, onFermer: @escaping () -> Void) {
+        self.voyage = voyage
+        self.etape = etape
+        self.onChoix = onChoix
+        self.onFermer = onFermer
+        _type = State(initialValue: etape.categorie == .repas ? .restaurant : .activite)
+        _mots = State(initialValue: Self.motsCles(de: etape))
+    }
+
+    /// Le titre de l'étape, sinon le nom du lieu (avant la première virgule de l'adresse).
+    static func motsCles(de etape: Etape) -> String {
+        let titre = etape.titre.trimmingCharacters(in: .whitespaces)
+        if !titre.isEmpty { return titre }
+        return etape.lieu.split(separator: ",").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+    }
 
     private var aDesCles: Bool { Cles.lire(.google) != nil || Cles.lire(.tripadvisor) != nil }
 
@@ -26,6 +43,9 @@ struct SuggestionsView: View {
                     }
                     .pickerStyle(.segmented)
                     .labelsHidden()
+                    TextField("Mot-clé (musée, plage, sushi…)", text: $mots)
+                        .onSubmit { Task { await relancer(depuisTexte: false) } }
+                        .autocorrectionDisabled()
                     TextField("Autour de… (ville, quartier)", text: $autour)
                         .onSubmit { Task { await relancer(depuisTexte: true) } }
                         .autocorrectionDisabled()
@@ -50,13 +70,17 @@ struct SuggestionsView: View {
                         }
                     } footer: {
                         if !resultat.lieux.isEmpty {
-                            Text(resultat.sansNotes ? "Source : Plans (sans notes)." : "Classé selon les notes et le nombre d'avis Google et Tripadvisor.")
+                            Text((resultat.sansNotes ? "Source : Plans (sans notes). " : "Classé selon les notes et le nombre d'avis Google et Tripadvisor. ")
+                                 + (mots.isEmpty ? "" : "Ceux qui correspondent à « \(mots) » sont en premier."))
                         }
                     }
                 }
             }
             .overlay {
-                if enCours && resultat == nil { ProgressView() }
+                if centre == nil && !enCours {
+                    ContentUnavailableView("Où chercher ?", systemImage: "mappin.slash",
+                                           description: Text("Écris une ville dans « Autour de… », ou choisis le pays du voyage dans Infos."))
+                } else if enCours && resultat == nil { ProgressView() }
                 else if let resultat, resultat.lieux.isEmpty, !enCours {
                     ContentUnavailableView("Aucune idée trouvée", systemImage: "magnifyingglass",
                                            description: Text("Essaie une autre ville dans « Autour de… »."))
@@ -67,23 +91,20 @@ struct SuggestionsView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } }
+                ToolbarItem(placement: .cancellationAction) { Button("Fermer", action: onFermer) }
                 ToolbarItem { Button("Réglages", systemImage: "key") { reglagesOuverts = true } }
             }
             .task { await preparer() }
             .onChange(of: type) { Task { await relancer(depuisTexte: false) } }
             .sheet(isPresented: $reglagesOuverts, onDismiss: { Task { await relancer(depuisTexte: false) } }) { ReglagesView() }
-            .sheet(item: $detail) { lieu in
+            .navigationDestination(item: $detail) { lieu in
                 LieuProposeDetailView(lieu: lieu) { choisi in
                     onChoix(choisi)
                     detail = nil
-                    dismiss()
+                    onFermer()
                 }
             }
         }
-        #if os(macOS)
-        .frame(minWidth: 520, minHeight: 600)
-        #endif
     }
 
     private func ligne(_ lieu: LieuPropose) -> some View {
@@ -124,12 +145,13 @@ struct SuggestionsView: View {
     }
 
     private func relancer(depuisTexte: Bool) async {
-        if depuisTexte, !autour.trimmingCharacters(in: .whitespaces).isEmpty {
+        if depuisTexte || centre == nil, !autour.trimmingCharacters(in: .whitespaces).isEmpty {
             centre = await Self.geocoder(autour, pays: voyage?.pays ?? []) ?? centre
         }
         guard let centre else { return }
         enCours = true
-        resultat = await Suggestions.chercher(type: type, autour: autour.isEmpty ? "ici" : autour, centre: centre)
+        resultat = await Suggestions.chercher(type: type, autour: autour.isEmpty ? "ici" : autour, centre: centre,
+                                              mots: mots.trimmingCharacters(in: .whitespaces))
         enCours = false
     }
 

@@ -48,17 +48,35 @@ enum SourceGoogle {
         "places.websiteUri", "places.priceLevel",
     ].joined(separator: ",")
 
-    static func chercher(type: TypeLieu, autour lieu: String, centre: CLLocationCoordinate2D, cle: String) async throws -> [LieuPropose] {
+    /// Avec un mot-clé (titre de l'étape…), on interroge d'abord Google sur ce mot-clé, puis sur les classiques du coin.
+    static func chercher(type: TypeLieu, autour lieu: String, centre: CLLocationCoordinate2D, mots: String, cle: String) async throws -> [LieuPropose] {
+        let generique = type == .restaurant ? "meilleurs restaurants à \(lieu)" : "choses à voir et à faire à \(lieu)"
+        var requetes: [(texte: String, taille: Int)] = [(generique, 20)]
+        if !mots.isEmpty { requetes.insert(("\(mots) \(lieu)", 10), at: 0) }
+
+        let groupes = try await withThrowingTaskGroup(of: (Int, [LieuPropose]).self) { groupe in
+            for (i, r) in requetes.enumerated() {
+                groupe.addTask { (i, try await recherche(texte: r.texte, taille: r.taille, type: type, centre: centre, cle: cle)) }
+            }
+            var sortie: [(Int, [LieuPropose])] = []
+            for try await r in groupe { sortie.append(r) }
+            return sortie.sorted { $0.0 < $1.0 }.map(\.1)
+        }
+        return groupes.reduce(into: [LieuPropose]()) { cumul, liste in
+            for l in liste where !cumul.contains(where: { $0.idGoogle == l.idGoogle }) { cumul.append(l) }
+        }
+    }
+
+    private static func recherche(texte: String, taille: Int, type: TypeLieu, centre: CLLocationCoordinate2D, cle: String) async throws -> [LieuPropose] {
         var requete = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchText")!)
         requete.httpMethod = "POST"
         requete.setValue("application/json", forHTTPHeaderField: "Content-Type")
         requete.setValue(cle, forHTTPHeaderField: "X-Goog-Api-Key")
         requete.setValue(champs, forHTTPHeaderField: "X-Goog-FieldMask")
-        let texte = type == .restaurant ? "meilleurs restaurants à \(lieu)" : "choses à voir et à faire à \(lieu)"
         let corps: [String: Any] = [
             "textQuery": texte,
             "languageCode": "fr",
-            "pageSize": 20,
+            "pageSize": taille,
             "locationBias": ["circle": ["center": ["latitude": centre.latitude, "longitude": centre.longitude], "radius": 20_000.0]],
         ]
         requete.httpBody = try JSONSerialization.data(withJSONObject: corps)
@@ -157,24 +175,30 @@ enum SourceTripadvisor {
         var data: [Entree]?
     }
 
-    static func chercher(type: TypeLieu, centre: CLLocationCoordinate2D, cle: String) async throws -> [LieuPropose] {
-        var composants = URLComponents(string: "\(base)/nearby_search")!
-        composants.queryItems = [
-            .init(name: "key", value: cle),
-            .init(name: "latLong", value: "\(centre.latitude),\(centre.longitude)"),
-            .init(name: "category", value: type == .restaurant ? "restaurants" : "attractions"),
-            .init(name: "radius", value: "15"),
-            .init(name: "radiusUnit", value: "km"),
-            .init(name: "language", value: "fr"),
-        ]
+    private static func identifiants(_ chemin: String, _ parametres: [URLQueryItem], cle: String) async throws -> [String] {
+        var composants = URLComponents(string: "\(base)/\(chemin)")!
+        composants.queryItems = [.init(name: "key", value: cle), .init(name: "radius", value: "15"),
+                                 .init(name: "radiusUnit", value: "km"), .init(name: "language", value: "fr")] + parametres
         var requete = URLRequest(url: composants.url!)
         requete.setValue("application/json", forHTTPHeaderField: "accept")
         let proches = try JSONDecoder().decode(Proches.self, from: try await charger(requete, service: "Tripadvisor"))
-        let ids = (proches.data ?? []).compactMap(\.location_id).prefix(10)
+        return (proches.data ?? []).compactMap(\.location_id)
+    }
 
-        // La liste « proches » ne contient ni note ni avis : une fiche détaillée par lieu, en parallèle.
+    static func chercher(type: TypeLieu, centre: CLLocationCoordinate2D, mots: String, cle: String) async throws -> [LieuPropose] {
+        let categorie = URLQueryItem(name: "category", value: type == .restaurant ? "restaurants" : "attractions")
+        let position = URLQueryItem(name: "latLong", value: "\(centre.latitude),\(centre.longitude)")
+
+        // Recherche par mot-clé d'abord (si on en a un), puis les lieux proches.
+        var ids: [String] = []
+        if !mots.isEmpty {
+            ids += (try? await identifiants("search", [.init(name: "searchQuery", value: mots), categorie, position], cle: cle).prefix(5)) ?? []
+        }
+        for id in try await identifiants("nearby_search", [categorie, position], cle: cle) where !ids.contains(id) { ids.append(id) }
+
+        // Ni note ni avis dans ces listes : une fiche détaillée par lieu, en parallèle.
         return await withTaskGroup(of: (Int, LieuPropose?).self) { groupe in
-            for (i, id) in ids.enumerated() {
+            for (i, id) in ids.prefix(12).enumerated() {
                 groupe.addTask { (i, try? await details(id: id, type: type, cle: cle)) }
             }
             var sortie: [(Int, LieuPropose)] = []
@@ -223,12 +247,20 @@ enum SourceTripadvisor {
 // MARK: - Plans (sans notes, quand aucune clé n'est renseignée)
 
 enum SourceApple {
-    static func chercher(type: TypeLieu, centre: CLLocationCoordinate2D) async -> [LieuPropose] {
-        let requete = MKLocalPointsOfInterestRequest(center: centre, radius: 15_000)
-        requete.pointOfInterestFilter = MKPointOfInterestFilter(including: type == .restaurant
+    static func chercher(type: TypeLieu, centre: CLLocationCoordinate2D, mots: String) async -> [LieuPropose] {
+        let filtre = MKPointOfInterestFilter(including: type == .restaurant
             ? [.restaurant, .cafe, .bakery]
             : [.museum, .park, .nationalPark, .beach, .amusementPark, .zoo, .aquarium, .theater])
-        guard let items = try? await MKLocalSearch(request: requete).start().mapItems else { return [] }
+        var items: [MKMapItem] = []
+        if !mots.isEmpty {
+            let r = MKLocalSearch.Request()
+            r.naturalLanguageQuery = mots
+            r.region = MKCoordinateRegion(center: centre, latitudinalMeters: 30_000, longitudinalMeters: 30_000)
+            items += (try? await MKLocalSearch(request: r).start().mapItems) ?? []
+        }
+        let proches = MKLocalPointsOfInterestRequest(center: centre, radius: 15_000)
+        proches.pointOfInterestFilter = filtre
+        items += (try? await MKLocalSearch(request: proches).start().mapItems) ?? []
         return items.compactMap { item in
             guard let nom = item.name else { return nil }
             var lieu = LieuPropose(nom: nom, adresse: item.placemark.title ?? "", coordonnee: item.placemark.coordinate, type: type)
@@ -247,16 +279,16 @@ enum Suggestions {
         var sansNotes: Bool
     }
 
-    static func chercher(type: TypeLieu, autour lieu: String, centre: CLLocationCoordinate2D) async -> Resultat {
+    static func chercher(type: TypeLieu, autour lieu: String, centre: CLLocationCoordinate2D, mots: String) async -> Resultat {
         let cleGoogle = Cles.lire(.google), cleTripadvisor = Cles.lire(.tripadvisor)
         async let google: ([LieuPropose], String?) = {
             guard let cle = cleGoogle else { return ([], nil) }
-            do { return (try await SourceGoogle.chercher(type: type, autour: lieu, centre: centre, cle: cle), nil) }
+            do { return (try await SourceGoogle.chercher(type: type, autour: lieu, centre: centre, mots: mots, cle: cle), nil) }
             catch { return ([], error.localizedDescription) }
         }()
         async let tripadvisor: ([LieuPropose], String?) = {
             guard let cle = cleTripadvisor else { return ([], nil) }
-            do { return (try await SourceTripadvisor.chercher(type: type, centre: centre, cle: cle), nil) }
+            do { return (try await SourceTripadvisor.chercher(type: type, centre: centre, mots: mots, cle: cle), nil) }
             catch { return ([], error.localizedDescription) }
         }()
         let ((g, erreurGoogle), (t, erreurTripadvisor)) = await (google, tripadvisor)
@@ -264,8 +296,8 @@ enum Suggestions {
 
         var lieux = fusionner(g, t)
         let sansNotes = lieux.isEmpty
-        if sansNotes { lieux = await SourceApple.chercher(type: type, centre: centre) }
-        return Resultat(lieux: classer(lieux), avertissements: avertissements, sansNotes: sansNotes)
+        if sansNotes { lieux = await SourceApple.chercher(type: type, centre: centre, mots: mots) }
+        return Resultat(lieux: classer(lieux, mots: mots), avertissements: avertissements, sansNotes: sansNotes)
     }
 
     private static func simplifier(_ nom: String) -> String {
@@ -318,13 +350,36 @@ enum Suggestions {
         return resultat
     }
 
-    static func classer(_ lieux: [LieuPropose]) -> [LieuPropose] {
-        lieux.enumerated().sorted { a, b in
+    private static let motsVides: Set<String> = ["de", "du", "des", "la", "le", "les", "l", "d", "un", "une", "au", "aux", "en", "et", "a", "el", "los", "las", "del", "y", "the", "of", "and", "in", "at", "to"]
+
+    /// Mots d'une recherche qui portent du sens (on garde « musée », « plage »… contrairement à la fusion des doublons).
+    private static func motsDeRecherche(_ texte: String) -> Set<String> {
+        Set(simplifier(texte).split(separator: " ").map(String.init).filter { !motsVides.contains($0) && !$0.isEmpty })
+    }
+
+    /// Part des mots recherchés que l'on retrouve dans le nom, le genre ou l'adresse du lieu (0 à 1).
+    static func correspondance(_ lieu: LieuPropose, mots: String) -> Double {
+        let voulus = motsDeRecherche(mots)
+        guard !voulus.isEmpty else { return 0 }
+        let nom = motsDeRecherche(lieu.nom)
+        let autour = motsDeRecherche([lieu.genre, lieu.adresse].compactMap { $0 }.joined(separator: " "))
+        let dansNom = Double(voulus.intersection(nom).count)
+        let ailleurs = Double(voulus.intersection(autour).subtracting(nom).count)
+        return (dansNom + 0.5 * ailleurs) / Double(voulus.count)
+    }
+
+    /// Les lieux qui correspondent au titre ou au lieu de l'étape d'abord, puis la meilleure note.
+    static func classer(_ lieux: [LieuPropose], mots: String = "") -> [LieuPropose] {
+        let correspondances = lieux.map { correspondance($0, mots: mots) }
+        return lieux.enumerated().sorted { a, b in
+            let (ca, cb) = (correspondances[a.offset] > 0.34, correspondances[b.offset] > 0.34)
+            if ca != cb { return ca }
+            if ca, correspondances[a.offset] != correspondances[b.offset] { return correspondances[a.offset] > correspondances[b.offset] }
             switch (a.element.score, b.element.score) {
-            case let (x?, y?): x != y ? x > y : a.offset < b.offset
-            case (_?, nil): true
-            case (nil, _?): false
-            case (nil, nil): a.offset < b.offset
+            case let (x?, y?): return x != y ? x > y : a.offset < b.offset
+            case (_?, nil): return true
+            case (nil, _?): return false
+            case (nil, nil): return a.offset < b.offset
             }
         }.map(\.element)
     }

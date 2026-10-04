@@ -10,6 +10,16 @@ struct EtapeEditView: View {
     @FocusState private var titreActif: Bool
     @State private var rechercheOuverte = false
     @State private var suggestionsOuvertes = false
+    @Environment(\.horizontalSizeClass) private var tailleHorizontale
+
+    /// Écran large (iPad, Mac) : les idées s'affichent dans un panneau à droite de la fiche.
+    private var panneauLateral: Bool {
+        #if os(macOS)
+        true
+        #else
+        tailleHorizontale == .regular
+        #endif
+    }
 
     private var heureActivee: Binding<Bool> {
         Binding(get: { etape.heure != nil },
@@ -21,6 +31,38 @@ struct EtapeEditView: View {
     }
 
     var body: some View {
+        HStack(spacing: 0) {
+            formulaire
+            if suggestionsOuvertes && panneauLateral {
+                Divider()
+                SuggestionsView(voyage: etape.voyage, etape: etape, onChoix: { etape.appliquer($0) },
+                                onFermer: { withAnimation { suggestionsOuvertes = false } })
+                    .frame(minWidth: 380, idealWidth: 440, maxWidth: 480)
+                    .transition(.move(edge: .trailing))
+            }
+        }
+        .animation(.default, value: suggestionsOuvertes)
+        .sheet(isPresented: Binding(get: { suggestionsOuvertes && !panneauLateral }, set: { suggestionsOuvertes = $0 })) {
+            SuggestionsView(voyage: etape.voyage, etape: etape, onChoix: { etape.appliquer($0) },
+                            onFermer: { suggestionsOuvertes = false })
+        }
+        .sheet(isPresented: $rechercheOuverte) {
+            RechercheLieuView(requeteInitiale: etape.lieu.isEmpty ? etape.titre : etape.lieu,
+                              pays: etape.voyage?.pays ?? []) { lieu in
+                if etape.titre.trimmingCharacters(in: .whitespaces).isEmpty { etape.titre = lieu.nom }
+                etape.lieu = lieu.adresse.isEmpty ? lieu.nom : "\(lieu.nom), \(lieu.adresse)"
+                etape.latitude = lieu.coordonnee.latitude
+                etape.longitude = lieu.coordonnee.longitude
+            }
+        }
+        .onAppear { if etape.titre.isEmpty { titreActif = true } }
+        .modifier(TailleDePage())
+        #if os(macOS)
+        .frame(minWidth: suggestionsOuvertes ? 940 : 420, minHeight: 520)
+        #endif
+    }
+
+    private var formulaire: some View {
         NavigationStack {
             Form {
                 Section {
@@ -82,22 +124,6 @@ struct EtapeEditView: View {
                 }
             }
         }
-        .sheet(isPresented: $suggestionsOuvertes) {
-            SuggestionsView(voyage: etape.voyage, etape: etape) { etape.appliquer($0) }
-        }
-        .sheet(isPresented: $rechercheOuverte) {
-            RechercheLieuView(requeteInitiale: etape.lieu.isEmpty ? etape.titre : etape.lieu,
-                              pays: etape.voyage?.pays ?? []) { lieu in
-                if etape.titre.trimmingCharacters(in: .whitespaces).isEmpty { etape.titre = lieu.nom }
-                etape.lieu = lieu.adresse.isEmpty ? lieu.nom : "\(lieu.nom), \(lieu.adresse)"
-                etape.latitude = lieu.coordonnee.latitude
-                etape.longitude = lieu.coordonnee.longitude
-            }
-        }
-        .onAppear { if etape.titre.isEmpty { titreActif = true } }
-        #if os(macOS)
-        .frame(minWidth: 420, minHeight: 480)
-        #endif
     }
 
     @ViewBuilder private var infosDuLieu: some View {
@@ -117,6 +143,17 @@ struct EtapeEditView: View {
             if let url = etape.siteWeb.flatMap(URL.init) { Link("Site web", destination: url) }
             if let url = etape.lienGoogle.flatMap(URL.init) { Link("Voir sur Google", destination: url) }
             if let url = etape.lienTripadvisor.flatMap(URL.init) { Link("Voir sur Tripadvisor", destination: url) }
+        }
+    }
+}
+
+/// iPad : fenêtre plus large pour loger la fiche et le panneau d'idées côte à côte.
+private struct TailleDePage: ViewModifier {
+    func body(content: Content) -> some View {
+        if #available(iOS 18.0, macOS 15.0, *) {
+            content.presentationSizing(.page)
+        } else {
+            content
         }
     }
 }

@@ -3,11 +3,9 @@ import SwiftUI
 struct LieuProposeDetailView: View {
     @State var lieu: LieuPropose
     var onAjouter: (LieuPropose) -> Void
-    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ScrollView {
                 VStack(alignment: .leading, spacing: 14) {
                     if !lieu.photos.isEmpty {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -64,16 +62,11 @@ struct LieuProposeDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) { Button("Retour") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Ajouter à l'étape") { onAjouter(lieu) }
                 }
             }
             .task { await completerPhotos() }
-        }
-        #if os(macOS)
-        .frame(minWidth: 480, minHeight: 560)
-        #endif
     }
 
     /// Les photos Tripadvisor demandent un appel de plus : on ne le fait qu'à l'ouverture de la fiche.
