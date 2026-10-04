@@ -6,6 +6,7 @@ struct ContentView: View {
     @Query(sort: \Voyage.debut) private var voyages: [Voyage]
     @State private var selection: Voyage?
     @State private var reglagesOuverts = false
+    @State private var nouveauVoyageOuvert = false
     @State private var voyageASupprimer: Voyage?
 
     var body: some View {
@@ -29,7 +30,7 @@ struct ContentView: View {
             .navigationTitle("Voyages")
             .toolbar {
                 Button("Réglages", systemImage: "key") { reglagesOuverts = true }
-                Button("Nouveau voyage", systemImage: "plus", action: ajouter)
+                Button("Nouveau voyage", systemImage: "plus") { nouveauVoyageOuvert = true }
             }
         } detail: {
             if let voyage = selection {
@@ -40,6 +41,12 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $reglagesOuverts) { ReglagesView() }
+        .sheet(isPresented: $nouveauVoyageOuvert) {
+            NouveauVoyageView { voyage in
+                contexte.insert(voyage)
+                selection = voyage
+            }
+        }
         .confirmationDialog(voyageASupprimer?.estRecu == true ? "Quitter ce voyage ?" : "Supprimer ce voyage partagé ?",
                             isPresented: Binding(get: { voyageASupprimer != nil }, set: { if !$0 { voyageASupprimer = nil } }),
                             titleVisibility: .visible) {
@@ -62,11 +69,6 @@ struct ContentView: View {
         contexte.delete(voyage)
     }
 
-    private func ajouter() {
-        let voyage = Voyage(titre: "Nouveau voyage")
-        contexte.insert(voyage)
-        selection = voyage
-    }
 }
 
 #Preview {

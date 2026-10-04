@@ -5,10 +5,9 @@ struct VoyageView: View {
     @State private var onglet: Onglet
     @Environment(\.horizontalSizeClass) private var tailleHorizontale
 
-    /// Un voyage sans pays s'ouvre sur Infos, pour demander tout de suite où l'on va.
     init(voyage: Voyage) {
         self.voyage = voyage
-        _onglet = State(initialValue: voyage.pays.isEmpty ? .infos : .itineraire)
+        _onglet = State(initialValue: .itineraire)
     }
 
     enum Onglet: String, CaseIterable, Identifiable {
