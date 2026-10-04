@@ -13,7 +13,12 @@ struct CopiloteApp: App {
 
     init() {
         do {
-            conteneur = try ModelContainer(for: Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self)
+            // La synchronisation iCloud est gérée par PartageCloud (partage entre comptes) : on empêche
+            // SwiftData de synchroniser lui-même la base, ce qu'il tente sinon dès que l'app a l'autorisation iCloud.
+            let configuration = ModelConfiguration(cloudKitDatabase: .none)
+            conteneur = try ModelContainer(
+                for: Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self,
+                configurations: configuration)
         } catch {
             fatalError("Impossible d'ouvrir la base de données : \(error)")
         }
