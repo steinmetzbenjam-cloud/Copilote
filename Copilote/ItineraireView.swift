@@ -269,7 +269,8 @@ struct ItineraireView: View {
                                 .presentationCompactAdaptation(.popover)
                             }
                     }
-                    Text(heure.formatted(date: .omitted, time: .shortened))
+                    Text(etape.heureFin.map { "\(heure.formatted(date: .omitted, time: .shortened)) – \($0.formatted(date: .omitted, time: .shortened))" }
+                         ?? heure.formatted(date: .omitted, time: .shortened))
                         .font(.subheadline.monospacedDigit()).foregroundStyle(incoherence == nil ? Color.secondary : Color.orange)
                 }
             }

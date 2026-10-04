@@ -24,7 +24,17 @@ struct EtapeEditView: View {
 
     private var heureActivee: Binding<Bool> {
         Binding(get: { etape.heure != nil },
-                set: { etape.heure = $0 ? (etape.heure ?? Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: etape.jour)) : nil })
+                set: { etape.heure = $0 ? (etape.heure ?? Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: etape.jour)) : nil
+                       if !$0 { etape.heureFin = nil } })
+    }
+
+    private var heureFinActivee: Binding<Bool> {
+        Binding(get: { etape.heureFin != nil },
+                set: { etape.heureFin = $0 ? (etape.heureFin ?? etape.heure.flatMap { Calendar.current.date(byAdding: .hour, value: 1, to: $0) }) : nil })
+    }
+
+    private var heureFinChoisie: Binding<Date> {
+        Binding(get: { etape.heureFin ?? etape.heure ?? etape.jour }, set: { etape.heureFin = $0 })
     }
 
     private var heureChoisie: Binding<Date> {
@@ -101,7 +111,11 @@ struct EtapeEditView: View {
                     }
                     Toggle("Heure", isOn: heureActivee)
                     if etape.heure != nil {
-                        DatePicker("À", selection: heureChoisie, displayedComponents: .hourAndMinute)
+                        DatePicker("Début", selection: heureChoisie, displayedComponents: .hourAndMinute)
+                        Toggle("Heure de fin", isOn: heureFinActivee)
+                        if etape.heureFin != nil {
+                            DatePicker("Fin", selection: heureFinChoisie, displayedComponents: .hourAndMinute)
+                        }
                     }
                 }
                 Section("Notes") {

@@ -36,6 +36,8 @@ final class Etape {
     var lieu: String
     var jour: Date
     var heure: Date?
+    /// Heure de fin (facultative).
+    var heureFin: Date?
     var categorie: CategorieEtape
     var notes: String
     var latitude: Double?
