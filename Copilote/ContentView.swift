@@ -5,12 +5,17 @@ struct ContentView: View {
     @Environment(\.modelContext) private var contexte
     @Query(sort: \Voyage.debut) private var voyages: [Voyage]
     @State private var selection: Voyage?
+    /// Voyage affiché à droite. Distinct de la sélection de la liste : quand on referme le volet, SwiftUI
+    /// vide la sélection de la liste, mais le voyage doit rester ouvert.
+    @State private var voyageOuvert: Voyage?
     @State private var reglagesOuverts = false
     @State private var nouveauVoyageOuvert = false
     @State private var voyageASupprimer: Voyage?
+    /// La liste des voyages se referme quand on en choisit un, pour laisser toute la place au voyage.
+    @State private var colonnes: NavigationSplitViewVisibility = .automatic
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(columnVisibility: $colonnes) {
             List(voyages, selection: $selection) { voyage in
                 VStack(alignment: .leading) {
                     Text(voyage.titre).font(.headline)
@@ -33,7 +38,7 @@ struct ContentView: View {
                 Button("Nouveau voyage", systemImage: "plus") { nouveauVoyageOuvert = true }
             }
         } detail: {
-            if let voyage = selection {
+            if let voyage = voyageOuvert {
                 VoyageView(voyage: voyage).id(voyage.creeLe)
             } else {
                 ContentUnavailableView("Aucun voyage sélectionné", systemImage: "car.fill",
@@ -41,6 +46,11 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $reglagesOuverts) { ReglagesView() }
+        .onChange(of: selection) { _, voyage in
+            guard let voyage else { return }
+            voyageOuvert = voyage
+            withAnimation { colonnes = .detailOnly }
+        }
         .sheet(isPresented: $nouveauVoyageOuvert) {
             NouveauVoyageView { voyage in
                 contexte.insert(voyage)
@@ -66,6 +76,10 @@ struct ContentView: View {
 
     private func supprimer(_ voyage: Voyage) {
         if selection == voyage { selection = nil }
+        if voyageOuvert == voyage {
+            voyageOuvert = nil
+            withAnimation { colonnes = .automatic }
+        }
         contexte.delete(voyage)
     }
 
