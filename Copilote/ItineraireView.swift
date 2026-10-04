@@ -277,9 +277,6 @@ struct ItineraireView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            Button("Supprimer", systemImage: "trash", role: .destructive) { contexte.delete(etape) }
-        }
     }
 
     private func premiereLettreEnMajuscule(_ texte: String) -> String {
