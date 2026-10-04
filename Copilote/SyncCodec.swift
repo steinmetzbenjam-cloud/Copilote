@@ -3,7 +3,7 @@ import SwiftData
 import CloudKit
 
 enum TypeCloud: String, CaseIterable {
-    case voyage = "Voyage", jour = "Jour", membre = "Membre", reservation = "Reservation", etape = "Etape", document = "Document"
+    case voyage = "Voyage", jour = "Jour", membre = "Membre", depense = "Depense", reservation = "Reservation", etape = "Etape", document = "Document"
 }
 
 /// Donne un identifiant stable aux objets créés avant l'arrivée de la synchronisation.
@@ -20,6 +20,7 @@ enum Identifiants {
         remplir(Reservation.self, \.uid)
         remplir(Document.self, \.uid)
         remplir(JourVoyage.self, \.uid)
+        remplir(Depense.self, \.uid)
         try? contexte.save()
     }
 }
@@ -69,6 +70,7 @@ enum Codec {
         case .etape: return try? contexte.fetch(FetchDescriptor<Etape>(predicate: #Predicate { $0.uid == uid })).first
         case .document: return try? contexte.fetch(FetchDescriptor<Document>(predicate: #Predicate { $0.uid == uid })).first
         case .jour: return try? contexte.fetch(FetchDescriptor<JourVoyage>(predicate: #Predicate { $0.uid == uid })).first
+        case .depense: return try? contexte.fetch(FetchDescriptor<Depense>(predicate: #Predicate { $0.uid == uid })).first
         }
     }
 
@@ -90,6 +92,7 @@ enum Codec {
             let zone = zone(de: v)
             ajouter(v, .voyage, v.uid, zone)
             for j in v.infosJours { ajouter(j, .jour, j.uid, zone) }
+            for x in v.depenses { ajouter(x, .depense, x.uid, zone) }
             for m in v.membres { ajouter(m, .membre, m.uid, zone) }
             for r in v.reservations { ajouter(r, .reservation, r.uid, zone) }
             for e in v.etapes { ajouter(e, .etape, e.uid, zone) }
@@ -147,6 +150,13 @@ enum Codec {
             r["date"] = j.date; r["titre"] = j.titre; r["notes"] = j.notes; r["creeLe"] = j.creeLe
             r["lieux"] = lieuxEnTexte(j.lieux); r["voyageUID"] = j.voyage?.uid
             return r
+        case let x as Depense:
+            let r = base(.depense, x.uid, zone, systeme)
+            r["titre"] = x.titre; r["montant"] = x.montant; r["devise"] = x.devise; r["date"] = x.date
+            r["categorie"] = x.categorie.rawValue; r["payeurUID"] = x.payeurUID; r["notes"] = x.notes
+            r["precise"] = x.repartitionPrecise ? 1 : 0; r["remboursement"] = x.estRemboursement ? 1 : 0
+            r["parts"] = partsEnTexte(x.parts); r["creeLe"] = x.creeLe; r["voyageUID"] = x.voyage?.uid
+            return r
         case let m as Membre:
             let r = base(.membre, m.uid, zone, systeme)
             r["nom"] = m.nom; r["creeLe"] = m.creeLe; r["voyageUID"] = m.voyage?.uid
@@ -189,6 +199,16 @@ enum Codec {
         return (try? encodeur.encode(lieux)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
     }
 
+    static func partsEnTexte(_ parts: [PartDepense]) -> String {
+        let encodeur = JSONEncoder()
+        encodeur.outputFormatting = .sortedKeys
+        return (try? encodeur.encode(parts)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
+
+    static func partsDepuisTexte(_ texte: String?) -> [PartDepense] {
+        texte.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode([PartDepense].self, from: $0) } ?? []
+    }
+
     static func lieuxDepuisTexte(_ texte: String?) -> [LieuReference] {
         texte.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode([LieuReference].self, from: $0) } ?? []
     }
@@ -227,6 +247,17 @@ enum Codec {
             j.date = date("date") ?? j.date; j.titre = texte("titre"); j.notes = texte("notes")
             j.lieux = lieuxDepuisTexte(r["lieux"] as? String); j.creeLe = date("creeLe") ?? j.creeLe; j.voyage = parent
             return j
+
+        case .depense:
+            guard let parent else { return nil }
+            let x = (objet(recordName: r.recordID.recordName, contexte) as? Depense) ?? {
+                let nouveau = Depense(devise: "EUR"); nouveau.uid = uid; contexte.insert(nouveau); return nouveau
+            }()
+            x.titre = texte("titre"); x.montant = nombre("montant") ?? 0; x.devise = texte("devise"); x.date = date("date") ?? x.date
+            x.categorie = CategorieDepense(rawValue: texte("categorie")) ?? .autre; x.payeurUID = texte("payeurUID"); x.notes = texte("notes")
+            x.repartitionPrecise = (entier("precise") ?? 0) == 1; x.estRemboursement = (entier("remboursement") ?? 0) == 1
+            x.parts = partsDepuisTexte(r["parts"] as? String); x.creeLe = date("creeLe") ?? x.creeLe; x.voyage = parent
+            return x
 
         case .membre:
             guard let parent else { return nil }

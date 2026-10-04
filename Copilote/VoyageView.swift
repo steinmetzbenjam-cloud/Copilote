@@ -3,6 +3,7 @@ import SwiftUI
 struct VoyageView: View {
     @Bindable var voyage: Voyage
     @State private var onglet: Onglet
+    @Environment(\.horizontalSizeClass) private var tailleHorizontale
 
     /// Un voyage sans pays s'ouvre sur Infos, pour demander tout de suite où l'on va.
     init(voyage: Voyage) {
@@ -14,8 +15,28 @@ struct VoyageView: View {
         case itineraire = "Itinéraire"
         case carte = "Carte"
         case reservations = "Réserv."
+        case depenses = "Dépenses"
         case infos = "Infos"
         var id: String { rawValue }
+
+        var symbole: String {
+            switch self {
+            case .itineraire: "list.bullet.rectangle"
+            case .carte: "map"
+            case .reservations: "ticket"
+            case .depenses: "eurosign.circle"
+            case .infos: "info.circle"
+            }
+        }
+    }
+
+    /// Sur iPhone, des icônes : cinq noms ne tiendraient pas dans la barre.
+    private var iconesSeules: Bool {
+        #if os(iOS)
+        tailleHorizontale == .compact
+        #else
+        false
+        #endif
     }
 
     var body: some View {
@@ -24,6 +45,7 @@ struct VoyageView: View {
             case .itineraire: ItineraireView(voyage: voyage)
             case .carte: CarteView(voyage: voyage)
             case .reservations: ReservationsView(voyage: voyage)
+            case .depenses: DepensesView(voyage: voyage)
             case .infos: VoyageDetailView(voyage: voyage)
             }
         }
@@ -31,10 +53,16 @@ struct VoyageView: View {
         .toolbar {
             ToolbarItem(placement: .principal) {
                 Picker("Section", selection: $onglet) {
-                    ForEach(Onglet.allCases) { Text($0.rawValue).tag($0) }
+                    ForEach(Onglet.allCases) { onglet in
+                        if iconesSeules {
+                            Image(systemName: onglet.symbole).accessibilityLabel(onglet.rawValue).tag(onglet)
+                        } else {
+                            Text(onglet.rawValue).tag(onglet)
+                        }
+                    }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 380)
+                .frame(maxWidth: iconesSeules ? 300 : 460)
             }
         }
     }
