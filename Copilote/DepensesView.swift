@@ -7,6 +7,7 @@ struct DepensesView: View {
     @Environment(\.modelContext) private var contexte
     @State private var enEdition: Depense?
     @State private var moi: String
+    @State private var nouveauVoyageur = ""
 
     init(voyage: Voyage) {
         self.voyage = voyage
@@ -30,8 +31,18 @@ struct DepensesView: View {
         List {
             if membres.count < 2 {
                 Section {
-                    Label("Ajoute au moins deux voyageurs dans l'onglet Infos pour partager des dépenses.", systemImage: "person.2")
-                        .foregroundStyle(.secondary)
+                    ForEach(membres) { Label($0.nom, systemImage: "person.fill") }
+                    HStack {
+                        TextField("Prénom d'un voyageur", text: $nouveauVoyageur)
+                            .onSubmit(ajouterVoyageur)
+                            .autocorrectionDisabled()
+                        Button("Ajouter", action: ajouterVoyageur)
+                            .disabled(nouveauVoyageur.trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                } header: {
+                    Text("Qui partage les frais ?")
+                } footer: {
+                    Text("Écris simplement les prénoms de ceux qui participent aux dépenses, toi compris : il n'est pas nécessaire de les inviter. Il en faut au moins deux pour répartir.")
                 }
             } else {
                 resume
@@ -152,6 +163,15 @@ struct DepensesView: View {
         d.voyage = voyage
         contexte.insert(d)
         enEdition = d
+    }
+
+    private func ajouterVoyageur() {
+        let nom = nouveauVoyageur.trimmingCharacters(in: .whitespaces)
+        guard !nom.isEmpty else { return }
+        let membre = Membre(nom: nom)
+        membre.voyage = voyage
+        contexte.insert(membre)
+        nouveauVoyageur = ""
     }
 
     private func rembourser(_ v: Comptes.Virement, devise: String) {
