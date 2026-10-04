@@ -12,6 +12,12 @@ enum Cles {
         var nom: String { self == .google ? "Google Places" : "Tripadvisor" }
     }
 
+    /// Adresse du site déclaré chez Tripadvisor : à renseigner si la clé y est restreinte à un site (en-tête Referer).
+    static var referentTripadvisor: String {
+        get { UserDefaults.standard.string(forKey: "referentTripadvisor") ?? "" }
+        set { UserDefaults.standard.set(newValue.trimmingCharacters(in: .whitespacesAndNewlines), forKey: "referentTripadvisor") }
+    }
+
     enum Etat {
         case absente
         /// Recopiée sur les autres appareils par le trousseau iCloud.

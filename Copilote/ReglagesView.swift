@@ -8,6 +8,7 @@ struct ReglagesView: View {
     @State private var avertissement: String?
     @State private var resultatsTest: [Cles.Service: (ok: Bool, message: String)] = [:]
     @State private var testEnCours = false
+    @State private var referent = Cles.referentTripadvisor
 
     private func etat(_ service: Cles.Service, saisie: String) -> Cles.Etat {
         saisie.isEmpty ? .absente : Cles.etat(service)
@@ -37,6 +38,12 @@ struct ReglagesView: View {
                 Section {
                     SecureField("Clé d'API", text: $tripadvisor)
                         .autocorrectionDisabled()
+                    TextField("Adresse du site déclaré (facultatif)", text: $referent)
+                        .autocorrectionDisabled()
+                        #if os(iOS)
+                        .keyboardType(.URL)
+                        .textInputAutocapitalization(.never)
+                        #endif
                     Link("Créer une clé Tripadvisor", destination: URL(string: "https://www.tripadvisor.com/developers")!)
                 } header: {
                     Text("Tripadvisor")
@@ -49,7 +56,7 @@ struct ReglagesView: View {
                         Task {
                             testEnCours = true
                             resultatsTest[.google] = await TestCles.tester(.google, cle: google)
-                            resultatsTest[.tripadvisor] = await TestCles.tester(.tripadvisor, cle: tripadvisor)
+                            resultatsTest[.tripadvisor] = await TestCles.tester(.tripadvisor, cle: tripadvisor, referent: referent)
                             testEnCours = false
                         }
                     }
@@ -101,6 +108,7 @@ struct ReglagesView: View {
                     Button("OK") {
                         let g = Cles.enregistrer(google, pour: .google)
                         let t = Cles.enregistrer(tripadvisor, pour: .tripadvisor)
+                        Cles.referentTripadvisor = referent
                         if g && t { dismiss() } else {
                             avertissement = "Clés gardées sur cet appareil seulement : le trousseau iCloud n'est pas disponible. Active-le dans Réglages → ton nom → iCloud → Mots de passe et trousseau."
                         }

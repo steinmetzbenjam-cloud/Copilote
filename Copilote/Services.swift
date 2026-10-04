@@ -29,9 +29,16 @@ private func charger(_ requete: URLRequest, service: String) async throws -> Dat
     }
 }
 
+/// En-têtes communs aux appels Tripadvisor ; `Referer` si une adresse de site est renseignée dans les réglages.
+private func enteteTripadvisor(_ requete: inout URLRequest, referent: String? = nil) {
+    requete.setValue("application/json", forHTTPHeaderField: "accept")
+    let adresse = referent ?? Cles.referentTripadvisor
+    if !adresse.isEmpty { requete.setValue(adresse, forHTTPHeaderField: "Referer") }
+}
+
 /// Essaie une clé avec la requête la plus simple possible, pour dire précisément ce qui ne va pas.
 enum TestCles {
-    static func tester(_ service: Cles.Service, cle: String) async -> (ok: Bool, message: String) {
+    static func tester(_ service: Cles.Service, cle: String, referent: String? = nil) async -> (ok: Bool, message: String) {
         let cle = cle.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cle.isEmpty else { return (false, "Aucune clé saisie.") }
         do {
@@ -48,7 +55,7 @@ enum TestCles {
                 var composants = URLComponents(string: "https://api.content.tripadvisor.com/api/v1/location/search")!
                 composants.queryItems = [.init(name: "key", value: cle), .init(name: "searchQuery", value: "Paris"), .init(name: "language", value: "fr")]
                 var requete = URLRequest(url: composants.url!)
-                requete.setValue("application/json", forHTTPHeaderField: "accept")
+                enteteTripadvisor(&requete, referent: referent)
                 _ = try await charger(requete, service: "Tripadvisor")
             }
             return (true, "La clé fonctionne.")
@@ -221,7 +228,7 @@ enum SourceTripadvisor {
         composants.queryItems = [.init(name: "key", value: cle), .init(name: "radius", value: "15"),
                                  .init(name: "radiusUnit", value: "km"), .init(name: "language", value: "fr")] + parametres
         var requete = URLRequest(url: composants.url!)
-        requete.setValue("application/json", forHTTPHeaderField: "accept")
+        enteteTripadvisor(&requete)
         let proches = try JSONDecoder().decode(Proches.self, from: try await charger(requete, service: "Tripadvisor"))
         return (proches.data ?? []).compactMap(\.location_id)
     }
@@ -252,7 +259,7 @@ enum SourceTripadvisor {
         var composants = URLComponents(string: "\(base)/\(id)/details")!
         composants.queryItems = [.init(name: "key", value: cle), .init(name: "language", value: "fr"), .init(name: "currency", value: "EUR")]
         var requete = URLRequest(url: composants.url!)
-        requete.setValue("application/json", forHTTPHeaderField: "accept")
+        enteteTripadvisor(&requete)
         return convertir(try await charger(requete, service: "Tripadvisor"), type: type)
     }
 
@@ -278,7 +285,7 @@ enum SourceTripadvisor {
         var composants = URLComponents(string: "\(base)/\(id)/photos")!
         composants.queryItems = [.init(name: "key", value: cle), .init(name: "language", value: "fr"), .init(name: "limit", value: "5")]
         var requete = URLRequest(url: composants.url!)
-        requete.setValue("application/json", forHTTPHeaderField: "accept")
+        enteteTripadvisor(&requete)
         guard let donnees = try? await charger(requete, service: "Tripadvisor"),
               let photos = try? JSONDecoder().decode(Photos.self, from: donnees) else { return [] }
         return (photos.data ?? []).compactMap { ($0.images?.large?.url ?? $0.images?.medium?.url).flatMap(URL.init) }
