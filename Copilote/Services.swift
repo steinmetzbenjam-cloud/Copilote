@@ -260,7 +260,11 @@ enum SourceTripadvisor {
         composants.queryItems = [.init(name: "key", value: cle), .init(name: "language", value: "fr"), .init(name: "currency", value: "EUR")]
         var requete = URLRequest(url: composants.url!)
         enteteTripadvisor(&requete)
-        return convertir(try await charger(requete, service: "Tripadvisor"), type: type)
+        // Tripadvisor facture à la fiche consultée : on garde les fiches déjà reçues pendant 30 jours.
+        if let enCache = await CacheTripadvisor.shared.fiche(id: id) { return convertir(enCache, type: type) }
+        let donnees = try await charger(requete, service: "Tripadvisor")
+        await CacheTripadvisor.shared.garder(donnees, id: id)
+        return convertir(donnees, type: type)
     }
 
     static func convertir(_ donnees: Data, type: TypeLieu) -> LieuPropose? {
@@ -430,5 +434,41 @@ enum Suggestions {
             case (nil, nil): return a.offset < b.offset
             }
         }.map(\.element)
+    }
+}
+
+/// Mémoire des fiches Tripadvisor déjà téléchargées (30 jours), pour ne pas repayer le même lieu à chaque recherche.
+actor CacheTripadvisor {
+    static let shared = CacheTripadvisor()
+
+    private struct Entree: Codable { var date: Date; var donnees: Data }
+    private var entrees: [String: Entree] = [:]
+    private var charge = false
+    private let duree: TimeInterval = 30 * 86_400
+
+    private var fichier: URL {
+        let dossier = URL.applicationSupportDirectory.appending(path: "Copilote", directoryHint: .isDirectory)
+        try? FileManager.default.createDirectory(at: dossier, withIntermediateDirectories: true)
+        return dossier.appending(path: "cache-tripadvisor.json")
+    }
+
+    private func chargerSiBesoin() {
+        guard !charge else { return }
+        charge = true
+        if let donnees = try? Data(contentsOf: fichier) { entrees = (try? JSONDecoder().decode([String: Entree].self, from: donnees)) ?? [:] }
+    }
+
+    func fiche(id: String) -> Data? {
+        chargerSiBesoin()
+        guard let e = entrees[id], Date().timeIntervalSince(e.date) < duree else { return nil }
+        return e.donnees
+    }
+
+    func garder(_ donnees: Data, id: String) {
+        chargerSiBesoin()
+        entrees[id] = Entree(date: .now, donnees: donnees)
+        let limite = Date().addingTimeInterval(-duree)
+        entrees = entrees.filter { $0.value.date > limite }
+        if let encode = try? JSONEncoder().encode(entrees) { try? encode.write(to: fichier) }
     }
 }
