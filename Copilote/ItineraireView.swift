@@ -247,6 +247,10 @@ struct ItineraireView: View {
                     }
                 }
                 Spacer()
+                if etape.heure == nil, let fin = etape.heureFin {
+                    Text("→ \(fin.formatted(date: .omitted, time: .shortened))")
+                        .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                }
                 if let heure = etape.heure {
                     if incoherence != nil || chevauche != nil {
                         Image(systemName: "exclamationmark.triangle.fill")
