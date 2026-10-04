@@ -28,7 +28,7 @@ struct ContentView: View {
             }
         } detail: {
             if let voyage = selection {
-                VoyageDetailView(voyage: voyage)
+                VoyageView(voyage: voyage)
             } else {
                 ContentUnavailableView("Aucun voyage sélectionné", systemImage: "car.fill",
                                        description: Text("Crée un voyage pour commencer à le préparer avec ton groupe."))
@@ -52,5 +52,5 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView().modelContainer(for: Voyage.self, inMemory: true)
+    ContentView().modelContainer(for: [Voyage.self, Membre.self, Etape.self], inMemory: true)
 }

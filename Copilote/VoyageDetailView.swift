@@ -47,7 +47,6 @@ struct VoyageDetailView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle(voyage.titre)
         .onChange(of: voyage.debut) { _, debut in
             if voyage.fin < debut { voyage.fin = debut }
         }

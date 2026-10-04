@@ -7,10 +7,12 @@ final class Voyage {
     var destination: String
     var debut: Date
     var fin: Date
-    var notes: String
+    var notes: String = ""
     var creeLe: Date
     @Relationship(deleteRule: .cascade, inverse: \Membre.voyage)
     var membres: [Membre] = []
+    @Relationship(deleteRule: .cascade, inverse: \Etape.voyage)
+    var etapes: [Etape] = []
 
     init(titre: String, destination: String = "", debut: Date = .now, fin: Date = .now.addingTimeInterval(7 * 86_400)) {
         self.titre = titre
@@ -19,6 +21,13 @@ final class Voyage {
         self.fin = fin
         self.notes = ""
         self.creeLe = .now
+    }
+
+    /// Chaque jour du voyage, du départ au retour.
+    var jours: [Date] {
+        let cal = Calendar.current
+        let premier = cal.startOfDay(for: debut)
+        return (0..<nombreDeJours).compactMap { cal.date(byAdding: .day, value: $0, to: premier) }
     }
 
     var nombreDeJours: Int {
