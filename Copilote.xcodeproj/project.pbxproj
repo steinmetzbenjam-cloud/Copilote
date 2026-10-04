@@ -8,29 +8,15 @@
 
 /* Begin PBXFileReference section */
 		A10000000000000000000001 /* Copilote.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Copilote.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		A10000000000000000000002 /* Copilote.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Copilote.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		A10000000000000000000003 /* Copilote */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				A10000000000000000000009 /* Exceptions for "Copilote" folder in "Copilote" target */,
-			);
 			path = Copilote;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
-
-/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		A10000000000000000000009 /* Exceptions for "Copilote" folder in "Copilote" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Copilote.entitlements,
-			);
-			target = A10000000000000000000007 /* Copilote */;
-		};
-/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		A10000000000000000000004 /* Frameworks */ = {
@@ -102,6 +88,7 @@
 			);
 			mainGroup = A10000000000000000000005;
 			minimizedProjectReferenceProxies = 1;
+			preferredProjectObjectVersion = 77;
 			productRefGroup = A10000000000000000000006 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";

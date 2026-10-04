@@ -14,8 +14,13 @@ struct ContentView: View {
                     if !voyage.destination.isEmpty {
                         Text(voyage.destination).font(.subheadline).foregroundStyle(.secondary)
                     }
+                    Text(voyage.debut.formatted(date: .abbreviated, time: .omitted))
+                        .font(.caption).foregroundStyle(.tertiary)
                 }
                 .tag(voyage)
+                .contextMenu {
+                    Button("Supprimer", role: .destructive) { supprimer(voyage) }
+                }
             }
             .navigationTitle("Voyages")
             .toolbar {
@@ -23,13 +28,18 @@ struct ContentView: View {
             }
         } detail: {
             if let voyage = selection {
-                Text(voyage.titre).font(.largeTitle)
+                VoyageDetailView(voyage: voyage)
             } else {
                 ContentUnavailableView("Aucun voyage sélectionné", systemImage: "car.fill",
                                        description: Text("Crée un voyage pour commencer à le préparer avec ton groupe."))
             }
         }
         .frame(minWidth: 700, minHeight: 450)
+    }
+
+    private func supprimer(_ voyage: Voyage) {
+        if selection == voyage { selection = nil }
+        contexte.delete(voyage)
     }
 
     private func ajouter() {
