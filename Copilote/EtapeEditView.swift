@@ -22,27 +22,32 @@ struct EtapeEditView: View {
         #endif
     }
 
+    @State private var horaireOuvert = false
+
     private var horaireActive: Binding<Bool> {
-        Binding(get: { etape.heure != nil || etape.heureFin != nil },
+        Binding(get: { horaireOuvert || etape.heure != nil || etape.heureFin != nil },
                 set: {
-                    if $0 { etape.heure = etape.heure ?? Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: etape.jour) }
-                    else { etape.heure = nil; etape.heureFin = nil }
+                    horaireOuvert = $0
+                    if !$0 { etape.heure = nil; etape.heureFin = nil }
                 })
     }
 
-    private func heureOptionnelle(_ titre: String, _ valeur: Binding<Date?>, parDefaut: Int) -> some View {
-        HStack {
+    /// Bulle d'heure : vide tant qu'on n'a rien choisi ; un toucher la remplit et permet de la régler.
+    private func bulleHeure(_ valeur: Binding<Date?>, parDefaut: Int) -> some View {
+        Group {
             if let date = valeur.wrappedValue {
-                DatePicker(titre, selection: Binding(get: { date }, set: { valeur.wrappedValue = $0 }), displayedComponents: .hourAndMinute)
-                Button { valeur.wrappedValue = nil } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
-                    .buttonStyle(.plain).accessibilityLabel("Retirer l'heure de \(titre.lowercased())")
+                DatePicker("", selection: Binding(get: { date }, set: { valeur.wrappedValue = $0 }), displayedComponents: .hourAndMinute)
+                    .labelsHidden()
             } else {
-                Text(titre)
-                Spacer()
-                Button("Ajouter") {
+                Button {
                     valeur.wrappedValue = Calendar.current.date(bySettingHour: parDefaut, minute: 0, second: 0, of: etape.jour)
+                } label: {
+                    Text("--:--")
+                        .monospacedDigit().foregroundStyle(.secondary)
+                        .padding(.horizontal, 12).padding(.vertical, 6)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(.plain)
             }
         }
     }
@@ -117,8 +122,12 @@ struct EtapeEditView: View {
                     }
                     Toggle("Horaire", isOn: horaireActive)
                     if horaireActive.wrappedValue {
-                        heureOptionnelle("Début", $etape.heure, parDefaut: 9)
-                        heureOptionnelle("Fin", $etape.heureFin, parDefaut: (etape.heure.map { Calendar.current.component(.hour, from: $0) + 1 } ?? 10) % 24)
+                        HStack {
+                            Spacer()
+                            bulleHeure($etape.heure, parDefaut: 9)
+                            Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                            bulleHeure($etape.heureFin, parDefaut: (etape.heure.map { Calendar.current.component(.hour, from: $0) + 1 } ?? 10) % 24)
+                        }
                     }
                 }
                 Section("Notes") {
