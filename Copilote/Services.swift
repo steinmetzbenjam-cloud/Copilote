@@ -6,14 +6,55 @@ struct ErreurService: LocalizedError {
     var errorDescription: String? { message }
 }
 
+/// Phrase d'explication renvoyée par le serveur dans le corps de sa réponse d'erreur (« API key not valid… »).
+private func messageDuServeur(_ donnees: Data) -> String? {
+    guard let json = try? JSONSerialization.jsonObject(with: donnees) as? [String: Any] else {
+        return String(data: donnees, encoding: .utf8).flatMap { $0.isEmpty ? nil : String($0.prefix(200)) }
+    }
+    if let erreur = json["error"] as? [String: Any], let message = erreur["message"] as? String { return String(message.prefix(240)) }
+    if let message = json["error"] as? String { return String(message.prefix(240)) }
+    for cle in ["Message", "message", "error_message"] { if let m = json[cle] as? String { return String(m.prefix(240)) } }
+    return nil
+}
+
 private func charger(_ requete: URLRequest, service: String) async throws -> Data {
     let (donnees, reponse) = try await URLSession.shared.data(for: requete)
     guard let http = reponse as? HTTPURLResponse else { throw ErreurService(message: "\(service) : réponse invalide.") }
+    let detail = messageDuServeur(donnees).map { " — « \($0) »" } ?? ""
     switch http.statusCode {
     case 200..<300: return donnees
-    case 400, 401, 403: throw ErreurService(message: "\(service) a refusé la clé (code \(http.statusCode)). Vérifie-la dans Réglages, et que l'API est bien activée.")
+    case 400, 401, 403: throw ErreurService(message: "\(service) a refusé la requête (code \(http.statusCode))\(detail). Vérifie la clé dans Réglages (bouton « Tester mes clés »).")
     case 429: throw ErreurService(message: "\(service) : trop de requêtes, réessaie dans un instant.")
-    default: throw ErreurService(message: "\(service) a répondu avec le code \(http.statusCode).")
+    default: throw ErreurService(message: "\(service) a répondu avec le code \(http.statusCode)\(detail).")
+    }
+}
+
+/// Essaie une clé avec la requête la plus simple possible, pour dire précisément ce qui ne va pas.
+enum TestCles {
+    static func tester(_ service: Cles.Service, cle: String) async -> (ok: Bool, message: String) {
+        let cle = cle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cle.isEmpty else { return (false, "Aucune clé saisie.") }
+        do {
+            switch service {
+            case .google:
+                var requete = URLRequest(url: URL(string: "https://places.googleapis.com/v1/places:searchText")!)
+                requete.httpMethod = "POST"
+                requete.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                requete.setValue(cle, forHTTPHeaderField: "X-Goog-Api-Key")
+                requete.setValue("places.id", forHTTPHeaderField: "X-Goog-FieldMask")
+                requete.httpBody = try JSONSerialization.data(withJSONObject: ["textQuery": "Paris", "pageSize": 1])
+                _ = try await charger(requete, service: "Google Places")
+            case .tripadvisor:
+                var composants = URLComponents(string: "https://api.content.tripadvisor.com/api/v1/location/search")!
+                composants.queryItems = [.init(name: "key", value: cle), .init(name: "searchQuery", value: "Paris"), .init(name: "language", value: "fr")]
+                var requete = URLRequest(url: composants.url!)
+                requete.setValue("application/json", forHTTPHeaderField: "accept")
+                _ = try await charger(requete, service: "Tripadvisor")
+            }
+            return (true, "La clé fonctionne.")
+        } catch {
+            return (false, error.localizedDescription)
+        }
     }
 }
 

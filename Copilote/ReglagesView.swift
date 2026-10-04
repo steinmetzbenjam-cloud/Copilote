@@ -6,6 +6,8 @@ struct ReglagesView: View {
     @State private var tripadvisor = Cles.lire(.tripadvisor) ?? ""
     private var cloud = PartageCloud.shared
     @State private var avertissement: String?
+    @State private var resultatsTest: [Cles.Service: (ok: Bool, message: String)] = [:]
+    @State private var testEnCours = false
 
     private func etat(_ service: Cles.Service, saisie: String) -> Cles.Etat {
         saisie.isEmpty ? .absente : Cles.etat(service)
@@ -40,6 +42,26 @@ struct ReglagesView: View {
                     Text("Tripadvisor")
                 } footer: {
                     Text("Clé « Content API » du portail développeurs Tripadvisor. Notes, avis, classement, descriptions.\n\(texteEtat(etat(.tripadvisor, saisie: tripadvisor)))")
+                }
+
+                Section {
+                    Button(testEnCours ? "Test en cours…" : "Tester mes clés", systemImage: "checkmark.shield") {
+                        Task {
+                            testEnCours = true
+                            resultatsTest[.google] = await TestCles.tester(.google, cle: google)
+                            resultatsTest[.tripadvisor] = await TestCles.tester(.tripadvisor, cle: tripadvisor)
+                            testEnCours = false
+                        }
+                    }
+                    .disabled(testEnCours || (google.isEmpty && tripadvisor.isEmpty))
+                    ForEach(Cles.Service.allCases) { service in
+                        if let r = resultatsTest[service] {
+                            Label("\(service.nom) : \(r.message)", systemImage: r.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                                .font(.footnote).foregroundStyle(r.ok ? .green : .red)
+                        }
+                    }
+                } footer: {
+                    Text("Envoie une requête de test à Google et à Tripadvisor avec les clés saisies ci-dessus, et affiche leur réponse.")
                 }
 
                 if let avertissement {
