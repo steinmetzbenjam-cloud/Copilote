@@ -26,13 +26,21 @@ struct EtapesView: View {
             } header: {
                 Label("À placer", systemImage: "tray.full")
             }
-            ForEach(voyage.jours, id: \.self) { jour in
+            ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
                 let etapes = voyage.etapes(du: jour)
+                let couleur = CarteDuVoyage.couleur(du: index)
                 if !etapes.isEmpty {
-                    Section(jour.formatted(.dateTime.weekday(.wide).day().month())) {
+                    Section {
                         ForEach(Array(etapes.enumerated()), id: \.element.id) { i, etape in
                             ligne(etape)
+                                .listRowBackground(couleur.opacity(0.14))
                             if i + 1 < etapes.count { ligneTransport(etape, etapes[i + 1]) }
+                        }
+                    } header: {
+                        HStack(spacing: 8) {
+                            Circle().fill(couleur).frame(width: 12, height: 12)
+                            Text("Jour \(index + 1) · " + jour.formatted(.dateTime.weekday(.wide).day().month()))
+                                .font(.headline).foregroundStyle(couleur)
                         }
                     }
                 }
