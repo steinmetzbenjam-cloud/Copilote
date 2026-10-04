@@ -28,7 +28,7 @@ struct ContentView: View {
             }
         } detail: {
             if let voyage = selection {
-                VoyageView(voyage: voyage)
+                VoyageView(voyage: voyage).id(voyage.persistentModelID)
             } else {
                 ContentUnavailableView("Aucun voyage sélectionné", systemImage: "car.fill",
                                        description: Text("Crée un voyage pour commencer à le préparer avec ton groupe."))

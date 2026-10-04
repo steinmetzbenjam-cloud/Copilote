@@ -5,6 +5,7 @@ struct VoyageDetailView: View {
     @Bindable var voyage: Voyage
     @Environment(\.modelContext) private var contexte
     @State private var nouveauMembre = ""
+    @State private var paysAAjouter = ""
 
     private var membresTries: [Membre] {
         voyage.membres.sorted { $0.creeLe < $1.creeLe }
@@ -15,6 +16,40 @@ struct VoyageDetailView: View {
             Section("Voyage") {
                 TextField("Titre", text: $voyage.titre)
                 TextField("Destination", text: $voyage.destination)
+            }
+
+            Section {
+                ForEach(voyage.pays, id: \.self) { code in
+                    if let pays = Pays.avec(code: code) {
+                        HStack {
+                            Text(pays.drapeau)
+                            Text(pays.nom)
+                            Spacer()
+                            Button("Retirer", systemImage: "xmark.circle.fill") {
+                                voyage.pays.removeAll { $0 == code }
+                            }
+                            .labelStyle(.iconOnly)
+                            .foregroundStyle(.secondary)
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+                Picker(voyage.pays.isEmpty ? "Choisir un pays" : "Ajouter un pays", selection: $paysAAjouter) {
+                    Text("—").tag("")
+                    ForEach(Pays.tous.filter { !voyage.pays.contains($0.code) }) { pays in
+                        Text("\(pays.drapeau)  \(pays.nom)").tag(pays.code)
+                    }
+                }
+                .pickerStyle(.menu)
+                .onChange(of: paysAAjouter) { _, code in
+                    guard !code.isEmpty else { return }
+                    voyage.pays.append(code)
+                    paysAAjouter = ""
+                }
+            } header: {
+                Text("Pays")
+            } footer: {
+                Text("La carte et la recherche de lieux se centrent sur ces pays.")
             }
 
             Section("Dates") {

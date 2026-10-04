@@ -20,6 +20,10 @@ final class RechercheLieux: NSObject, MKLocalSearchCompleterDelegate {
         completer.resultTypes = [.address, .pointOfInterest]
     }
 
+    func orienter(vers region: MKCoordinateRegion) {
+        completer.region = region
+    }
+
     func chercher(_ texte: String) {
         erreur = nil
         if texte.trimmingCharacters(in: .whitespaces).isEmpty {
@@ -48,6 +52,7 @@ final class RechercheLieux: NSObject, MKLocalSearchCompleterDelegate {
 
 struct RechercheLieuView: View {
     var requeteInitiale: String
+    var pays: [String] = []
     var onChoix: (LieuTrouve) -> Void
 
     @Environment(\.dismiss) private var dismiss
@@ -105,6 +110,12 @@ struct RechercheLieuView: View {
                 }
             }
             .onChange(of: texte) { _, nouveau in recherche.chercher(nouveau) }
+            .task {
+                if let region = await Pays.regionCarte(pour: pays) {
+                    recherche.orienter(vers: region)
+                    recherche.chercher(texte)
+                }
+            }
             .onAppear {
                 texte = requeteInitiale
                 champActif = true

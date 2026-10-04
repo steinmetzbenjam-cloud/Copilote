@@ -8,6 +8,8 @@ final class Voyage {
     var debut: Date
     var fin: Date
     var notes: String = ""
+    /// Codes ISO des pays visités (FR, IT…), dans l'ordre choisi.
+    var pays: [String] = []
     var creeLe: Date
     @Relationship(deleteRule: .cascade, inverse: \Membre.voyage)
     var membres: [Membre] = []

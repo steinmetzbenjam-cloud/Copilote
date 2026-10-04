@@ -2,7 +2,13 @@ import SwiftUI
 
 struct VoyageView: View {
     @Bindable var voyage: Voyage
-    @State private var onglet: Onglet = .itineraire
+    @State private var onglet: Onglet
+
+    /// Un voyage sans pays s'ouvre sur Infos, pour demander tout de suite où l'on va.
+    init(voyage: Voyage) {
+        self.voyage = voyage
+        _onglet = State(initialValue: voyage.pays.isEmpty ? .infos : .itineraire)
+    }
 
     enum Onglet: String, CaseIterable, Identifiable {
         case itineraire = "Itinéraire"

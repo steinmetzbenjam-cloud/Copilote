@@ -80,7 +80,8 @@ struct EtapeEditView: View {
             }
         }
         .sheet(isPresented: $rechercheOuverte) {
-            RechercheLieuView(requeteInitiale: etape.lieu.isEmpty ? etape.titre : etape.lieu) { lieu in
+            RechercheLieuView(requeteInitiale: etape.lieu.isEmpty ? etape.titre : etape.lieu,
+                              pays: etape.voyage?.pays ?? []) { lieu in
                 if etape.titre.trimmingCharacters(in: .whitespaces).isEmpty { etape.titre = lieu.nom }
                 etape.lieu = lieu.adresse.isEmpty ? lieu.nom : "\(lieu.nom), \(lieu.adresse)"
                 etape.latitude = lieu.coordonnee.latitude

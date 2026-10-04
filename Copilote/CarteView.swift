@@ -8,6 +8,20 @@ struct CarteView: View {
     @State private var position: MapCameraPosition = .automatic
     @State private var etapeEnEdition: Etape?
     @Environment(\.modelContext) private var contexte
+    /// Zone des pays du voyage, utilisée tant qu'aucune étape n'est placée.
+    @State private var regionPays: MKCoordinateRegion?
+
+    private var aucuneEtapePlacee: Bool {
+        voyage.etapes.allSatisfy { $0.coordonnee == nil }
+    }
+
+    private func recadrer() {
+        if aucuneEtapePlacee, let regionPays {
+            position = .region(regionPays)
+        } else {
+            position = .automatic
+        }
+    }
 
     /// Une couleur par jour, qui revient au bout de huit jours.
     private static let couleurs: [Color] = [.blue, .orange, .green, .purple, .red, .teal, .pink, .brown]
@@ -53,12 +67,16 @@ struct CarteView: View {
         }
         .safeAreaInset(edge: .bottom) { barreDesJours }
         .onChange(of: jourChoisi) {
-            withAnimation { position = .automatic }
+            withAnimation { recadrer() }
+        }
+        .task(id: voyage.pays) {
+            regionPays = await Pays.regionCarte(pour: voyage.pays)
+            recadrer()
         }
         .overlay {
-            if voyage.etapes.allSatisfy({ $0.coordonnee == nil }) {
+            if aucuneEtapePlacee && voyage.pays.isEmpty {
                 ContentUnavailableView("Aucune étape sur la carte", systemImage: "map",
-                                       description: Text("Dans l'itinéraire, ouvre une étape et touche « Placer sur la carte »."))
+                                       description: Text("Choisis le pays du voyage dans Infos, puis place tes étapes depuis l'itinéraire."))
                     .background(.regularMaterial)
             }
         }
