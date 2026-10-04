@@ -221,8 +221,7 @@ struct ItineraireView: View {
     /// `rang` : numéro du repère sur la carte (étapes placées seulement) ; sinon l'icône de la catégorie.
     /// `incoherence` : heure de l'étape précédente qui contredit celle-ci (l'étape est placée après une étape plus tardive).
     private func ligne(_ etape: Etape, couleur: Color = .accentColor, rang: Int? = nil, incoherence: Date? = nil) -> some View {
-        Button { etapeEnEdition = etape } label: {
-            HStack(spacing: 12) {
+        HStack(spacing: 12) {
                 Group {
                     if let rang {
                         Text("\(rang + 1)")
@@ -275,8 +274,9 @@ struct ItineraireView: View {
                 }
             }
             .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+        // Pas de Button : sur Mac, un bouton capte le clic et empêche de démarrer un glissé à la souris.
+        .onTapGesture { etapeEnEdition = etape }
+        .accessibilityAddTraits(.isButton)
     }
 
     private func premiereLettreEnMajuscule(_ texte: String) -> String {
