@@ -136,6 +136,19 @@ struct CarteDuVoyage: View {
                         }
                     }
                     let etapes = voyage.etapes(du: jour).filter { $0.coordonnee != nil }
+                    ForEach(voyage.hebergements(apres: jour).filter { $0.coordonnee != nil }) { h in
+                        Annotation(h.titre, coordinate: h.coordonnee!) {
+                            Button { onEtape(h) } label: {
+                                Image(systemName: "bed.double.fill")
+                                    .font(.caption2).foregroundStyle(.white)
+                                    .frame(width: 26, height: 26)
+                                    .background(.mint, in: RoundedRectangle(cornerRadius: 7))
+                                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white, lineWidth: 2))
+                                    .opacity(attenue ? 0.4 : 1)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
                     ForEach(segments(du: jour)) { s in
                         MapPolyline(coordinates: s.points)
                             .stroke(Self.couleur(du: index).opacity(attenue ? 0.2 : 0.65),

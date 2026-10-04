@@ -48,7 +48,7 @@ extension PartageCloud {
         contexte.insert(jour)
 
         let etape = Etape(titre: "x", jour: .now)
-        etape.lieu = "x"; etape.heure = .now; etape.heureFin = .now; etape.transportJSON = "x"; etape.notes = "x"; etape.latitude = 1; etape.longitude = 1; etape.ordre = 1
+        etape.lieu = "x"; etape.heure = .now; etape.heureFin = .now; etape.apresJour = true; etape.transportJSON = "x"; etape.notes = "x"; etape.latitude = 1; etape.longitude = 1; etape.ordre = 1
         etape.resume = "x"; etape.horaires = "x"; etape.photoURL = "x"
         etape.noteGoogle = 1; etape.avisGoogle = 1; etape.lienGoogle = "x"
         etape.noteTripadvisor = 1; etape.avisTripadvisor = 1; etape.lienTripadvisor = "x"; etape.siteWeb = "x"

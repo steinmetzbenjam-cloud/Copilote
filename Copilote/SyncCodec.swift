@@ -163,7 +163,7 @@ enum Codec {
             return r
         case let e as Etape:
             let r = base(.etape, e.uid, zone, systeme)
-            r["titre"] = e.titre; r["lieu"] = e.lieu; r["jour"] = e.jour; r["heure"] = e.heure; r["heureFin"] = e.heureFin; r["transportJSON"] = e.transportJSON
+            r["titre"] = e.titre; r["lieu"] = e.lieu; r["jour"] = e.jour; r["heure"] = e.heure; r["heureFin"] = e.heureFin; r["apresJour"] = e.apresJour ? 1 : 0; r["transportJSON"] = e.transportJSON
             r["categorie"] = e.categorie.rawValue; r["notes"] = e.notes
             r["latitude"] = e.latitude; r["longitude"] = e.longitude
             r["ordre"] = e.ordre
@@ -273,7 +273,7 @@ enum Codec {
             let e = (objet(recordName: r.recordID.recordName, contexte) as? Etape) ?? {
                 let nouveau = Etape(titre: "", jour: .now); nouveau.uid = uid; contexte.insert(nouveau); return nouveau
             }()
-            e.titre = texte("titre"); e.lieu = texte("lieu"); e.jour = date("jour"); e.heure = date("heure"); e.heureFin = date("heureFin"); e.transportJSON = r["transportJSON"] as? String
+            e.titre = texte("titre"); e.lieu = texte("lieu"); e.jour = date("jour"); e.heure = date("heure"); e.heureFin = date("heureFin"); e.apresJour = nombre("apresJour") == 1; e.transportJSON = r["transportJSON"] as? String
             e.categorie = CategorieEtape(rawValue: texte("categorie")) ?? .autre; e.notes = texte("notes")
             e.latitude = nombre("latitude"); e.longitude = nombre("longitude"); e.ordre = nombre("ordre") ?? 0
             e.resume = r["resume"] as? String; e.horaires = r["horaires"] as? String; e.photoURL = r["photoURL"] as? String

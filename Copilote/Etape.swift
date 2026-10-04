@@ -36,6 +36,8 @@ final class Etape {
     var lieu: String
     /// nil : étape préparée, pas encore placée dans un jour.
     var jour: Date?
+    /// Hébergement placé entre `jour` et le jour suivant (la nuit), plutôt que dans le jour.
+    var apresJour: Bool = false
     var heure: Date?
     /// Heure de fin (facultative).
     var heureFin: Date?

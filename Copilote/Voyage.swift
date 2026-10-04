@@ -59,8 +59,24 @@ extension Voyage {
     /// Étapes d'un jour dans l'ordre choisi en les glissant ; à défaut, par heure puis par ordre de création.
     func etapes(du jour: Date) -> [Etape] {
         etapes
-            .filter { $0.jour.map { Calendar.current.isDate($0, inSameDayAs: jour) } ?? false }
+            .filter { !$0.apresJour && ($0.jour.map { Calendar.current.isDate($0, inSameDayAs: jour) } ?? false) }
             .sorted { ($0.ordre, $0.heure ?? .distantFuture, $0.creeLe) < ($1.ordre, $1.heure ?? .distantFuture, $1.creeLe) }
+    }
+
+    /// Hébergements de la nuit qui suit `jour` (entre ce jour et le suivant).
+    func hebergements(apres jour: Date) -> [Etape] {
+        etapes
+            .filter { $0.apresJour && ($0.jour.map { Calendar.current.isDate($0, inSameDayAs: jour) } ?? false) }
+            .sorted { ($0.ordre, $0.creeLe) < ($1.ordre, $1.creeLe) }
+    }
+
+    /// Place l'étape (un hébergement) entre `jour` et le suivant.
+    func placerEntreJours(_ etape: Etape, apres jour: Date) {
+        let ancien = etape.apresJour ? nil : etape.jour
+        etape.apresJour = true
+        etape.jour = Calendar.current.startOfDay(for: jour)
+        etape.ordre = (hebergements(apres: jour).filter { $0 !== etape }.map(\.ordre).max() ?? -1) + 1
+        if let ancien { for (i, e) in etapes(du: ancien).enumerated() { e.ordre = Double(i) } }
     }
 
     /// Étapes préparées sans jour, dans l'ordre où on les a rangées.
@@ -105,6 +121,7 @@ extension Voyage {
     func retirerDuJour(_ etape: Etape) -> Bool {
         guard let ancienJour = etape.jour, etapes.contains(where: { $0 === etape }) else { return false }
         etape.jour = nil
+        etape.apresJour = false
         etape.heure = nil
         etape.heureFin = nil
         etape.ordre = (etapesSansJour.filter { $0 !== etape }.map(\.ordre).max() ?? -1) + 1
@@ -122,6 +139,7 @@ extension Voyage {
         var liste = etapes(du: jour).filter { $0 !== etape }
         let index = cible.flatMap { c in liste.firstIndex { $0 === c } } ?? liste.count
         liste.insert(etape, at: index)
+        etape.apresJour = false
         etape.jour = cal.startOfDay(for: jour)
         for (i, e) in liste.enumerated() { e.ordre = Double(i) }
         if let ancienJour, !cal.isDate(ancienJour, inSameDayAs: jour) {

@@ -29,7 +29,7 @@ struct EtapeEditView: View {
         Binding(get: { etape.jour },
                 set: {
                     etape.jour = $0
-                    if $0 == nil { etape.heure = nil; etape.heureFin = nil; horaireOuvert = false }
+                    if $0 == nil { etape.heure = nil; etape.heureFin = nil; etape.apresJour = false; horaireOuvert = false }
                 })
     }
 
@@ -112,6 +112,14 @@ struct EtapeEditView: View {
                         Text("Pas encore de jour").tag(Date?.none)
                         ForEach(jours, id: \.self) { j in
                             Text(j.formatted(.dateTime.weekday(.wide).day().month())).tag(Date?.some(j))
+                        }
+                    }
+                    if etape.jour != nil, etape.categorie == .hebergement {
+                        Toggle("Entre ce jour et le suivant", isOn: $etape.apresJour)
+                        if etape.apresJour, let jour = etape.jour {
+                            let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
+                            Text("Nuit du \(jour.formatted(.dateTime.day().month(.wide))) au \(lendemain.formatted(.dateTime.day().month(.wide)))")
+                                .font(.footnote).foregroundStyle(.secondary)
                         }
                     }
                     if etape.jour != nil { Toggle("Horaire", isOn: horaireActive) }

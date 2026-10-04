@@ -10,6 +10,7 @@ struct ItineraireView: View {
     /// Étape au-dessus de laquelle on s'apprête à déposer (trait d'insertion), ou jour survolé.
     @State private var etapeVisee: String?
     @State private var jourVise: Date?
+    @State private var nuitVisee: Date?
     /// Jour sur lequel la carte est cadrée ; nil = tout le voyage.
     @State private var jourSelectionne: Date?
     /// Étape dont on affiche l'explication de l'avertissement d'horaire.
@@ -23,6 +24,7 @@ struct ItineraireView: View {
         let jour: Date?
         let cible: Etape?
         let perdus: [Etape]
+        var nuit = false
     }
 
     private let cal = Calendar.current
@@ -93,6 +95,7 @@ struct ItineraireView: View {
         LazyVStack(spacing: 12) {
             ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
                 carte(numero: index + 1, jour: jour)
+                nuit(apres: jour)
             }
             if avecEtapesAPlacer && !voyage.etapesSansJour.isEmpty { etapesAPlacer }
             if !horsDates.isEmpty {
@@ -131,6 +134,64 @@ struct ItineraireView: View {
     private func ajouterSansJour() {
         let etape = Etape(titre: "", jour: nil)
         etape.ordre = (voyage.etapesSansJour.map(\.ordre).max() ?? -1) + 1
+        etape.voyage = voyage
+        contexte.insert(etape)
+        etapeEnEdition = etape
+    }
+
+    // MARK: Hébergements entre deux jours
+
+    private func texteNuit(_ jour: Date) -> String {
+        let lendemain = cal.date(byAdding: .day, value: 1, to: jour) ?? jour
+        return "Nuit du \(jour.formatted(.dateTime.day().month(.abbreviated))) au \(lendemain.formatted(.dateTime.day().month(.abbreviated)))"
+    }
+
+    /// Bande entre deux jours : les hébergements de la nuit, ou un bouton pour en ajouter un.
+    private func nuit(apres jour: Date) -> some View {
+        let hebergements = voyage.hebergements(apres: jour)
+        let vise = nuitVisee.map { cal.isDate($0, inSameDayAs: jour) } ?? false
+        return VStack(alignment: .leading, spacing: 8) {
+            Label(hebergements.isEmpty ? "Hébergement" : texteNuit(jour), systemImage: "moon.zzz.fill")
+                .font(.caption.bold()).foregroundStyle(Self.couleurNuit)
+            ForEach(hebergements) { h in
+                VStack(alignment: .leading, spacing: 2) {
+                    ligne(h)
+                }
+                .draggable(Self.prefixe + h.uid) {
+                    Label(h.titre.isEmpty ? "Hébergement" : h.titre, systemImage: h.categorie.symbole)
+                        .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                }
+            }
+            Button(hebergements.isEmpty ? "Ajouter un hébergement" : "Ajouter un autre hébergement", systemImage: "plus.circle.fill") {
+                ajouterHebergement(apres: jour)
+            }
+            .buttonStyle(.borderless).tint(Self.couleurNuit).font(.footnote)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Self.couleurNuit.opacity(vise ? 0.28 : 0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .strokeBorder(Self.couleurNuit.opacity(0.6), style: StrokeStyle(lineWidth: vise ? 2 : 1, dash: hebergements.isEmpty ? [5, 4] : [])))
+        .dropDestination(for: String.self) { elements, _ in
+            defer { nuitVisee = nil }
+            guard let etape = etapeGlissee(elements), etape.categorie == .hebergement else { return false }
+            return demanderNuit(etape, apres: jour)
+        } isTargeted: { visee in
+            if visee { nuitVisee = jour } else if let actuel = nuitVisee, cal.isDate(actuel, inSameDayAs: jour) { nuitVisee = nil }
+        }
+    }
+
+    private static let couleurNuit = Color.mint
+
+    private func etapeGlissee(_ elements: [String]) -> Etape? {
+        guard let uid = elements.first(where: { $0.hasPrefix(Self.prefixe) })?.dropFirst(Self.prefixe.count) else { return nil }
+        return voyage.etapes.first { $0.uid == String(uid) }
+    }
+
+    private func ajouterHebergement(apres jour: Date) {
+        let etape = Etape(titre: "", jour: jour, categorie: .hebergement)
+        etape.apresJour = true
+        etape.ordre = (voyage.hebergements(apres: jour).map(\.ordre).max() ?? -1) + 1
         etape.voyage = voyage
         contexte.insert(etape)
         etapeEnEdition = etape
@@ -268,6 +329,10 @@ struct ItineraireView: View {
     private func recevoir(_ elements: [String], jour: Date, avant cible: Etape?) -> Bool {
         defer { etapeVisee = nil; jourVise = nil }
         guard let uid = elements.first(where: { $0.hasPrefix(Self.prefixe) })?.dropFirst(Self.prefixe.count) else { return false }
+        // Un hébergement lâché sur un jour va à la fin de ce jour, entre lui et le suivant.
+        if let etape = voyage.etapes.first(where: { $0.uid == String(uid) }), etape.categorie == .hebergement {
+            return demanderNuit(etape, apres: jour)
+        }
         return deplacer(String(uid), vers: jour, avant: cible)
     }
 
@@ -287,10 +352,19 @@ struct ItineraireView: View {
         return true
     }
 
+    private func demanderNuit(_ etape: Etape, apres jour: Date) -> Bool {
+        let perdus = voyage.transportsPerdus(deplacant: etape, vers: nil, avant: nil)
+        let d = DeplacementEnAttente(etape: etape, jour: jour, cible: nil, perdus: perdus, nuit: true)
+        if perdus.isEmpty { return appliquer(d) }
+        deplacementEnAttente = d
+        return true
+    }
+
     @discardableResult
     private func appliquer(_ d: DeplacementEnAttente) -> Bool {
         withAnimation {
             for e in d.perdus { e.transport = nil }
+            if d.nuit, let jour = d.jour { voyage.placerEntreJours(d.etape, apres: jour); return true }
             if let jour = d.jour { return voyage.deplacer(d.etape, vers: jour, avant: d.cible) }
             return voyage.retirerDuJour(d.etape)
         }

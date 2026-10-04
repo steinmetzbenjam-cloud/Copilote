@@ -44,6 +44,19 @@ struct EtapesView: View {
                         }
                     }
                 }
+                Section {
+                    let nuits = voyage.hebergements(apres: jour)
+                    ForEach(nuits) { h in
+                        ligne(h).listRowBackground(Self.couleurNuit.opacity(0.18))
+                    }
+                    Button(nuits.isEmpty ? "Ajouter un hébergement" : "Ajouter un autre hébergement", systemImage: "moon.zzz.fill") {
+                        ajouterHebergement(apres: jour)
+                    }
+                    .foregroundStyle(Self.couleurNuit)
+                    .listRowBackground(Self.couleurNuit.opacity(0.12))
+                } header: {
+                    Label(nuits(jour), systemImage: "moon.zzz.fill").font(.caption).foregroundStyle(Self.couleurNuit)
+                }
             }
         }
         .sheet(item: $transportEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
@@ -110,6 +123,22 @@ struct EtapesView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private static let couleurNuit = Color.mint
+
+    private func nuits(_ jour: Date) -> String {
+        let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
+        return "Nuit du \(jour.formatted(.dateTime.day().month(.abbreviated))) au \(lendemain.formatted(.dateTime.day().month(.abbreviated)))"
+    }
+
+    private func ajouterHebergement(apres jour: Date) {
+        let etape = Etape(titre: "", jour: jour, categorie: .hebergement)
+        etape.apresJour = true
+        etape.ordre = (voyage.hebergements(apres: jour).map(\.ordre).max() ?? -1) + 1
+        etape.voyage = voyage
+        contexte.insert(etape)
+        etapeEnEdition = etape
     }
 
     private func ajouter() {
