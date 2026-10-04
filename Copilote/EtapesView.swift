@@ -49,11 +49,11 @@ struct EtapesView: View {
                     ForEach(nuits) { h in
                         ligne(h).listRowBackground(Self.couleurNuit.opacity(0.18))
                     }
-                    Button(nuits.isEmpty ? "Ajouter un hébergement" : "Ajouter un autre hébergement", systemImage: "moon.zzz.fill") {
-                        ajouterHebergement(apres: jour)
+                    if nuits.isEmpty {
+                        Button("Ajouter un hébergement", systemImage: "moon.zzz.fill") { ajouterHebergement(apres: jour) }
+                            .foregroundStyle(Self.couleurNuit)
+                            .listRowBackground(Self.couleurNuit.opacity(0.12))
                     }
-                    .foregroundStyle(Self.couleurNuit)
-                    .listRowBackground(Self.couleurNuit.opacity(0.12))
                 } header: {
                     Label(nuits(jour), systemImage: "moon.zzz.fill").font(.caption).foregroundStyle(Self.couleurNuit)
                 }

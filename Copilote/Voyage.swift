@@ -73,6 +73,8 @@ extension Voyage {
     /// Place l'étape (un hébergement) entre `jour` et le suivant.
     func placerEntreJours(_ etape: Etape, apres jour: Date) {
         let ancien = etape.apresJour ? nil : etape.jour
+        // Un seul hébergement par nuit : l'éventuel occupant repart dans « Étapes à placer ».
+        for autre in hebergements(apres: jour) where autre !== etape { retirerDuJour(autre) }
         etape.apresJour = true
         etape.jour = Calendar.current.startOfDay(for: jour)
         etape.ordre = (hebergements(apres: jour).filter { $0 !== etape }.map(\.ordre).max() ?? -1) + 1

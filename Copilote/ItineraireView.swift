@@ -162,10 +162,10 @@ struct ItineraireView: View {
                         .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
             }
-            Button(hebergements.isEmpty ? "Ajouter un hébergement" : "Ajouter un autre hébergement", systemImage: "plus.circle.fill") {
-                ajouterHebergement(apres: jour)
+            if hebergements.isEmpty {
+                Button("Ajouter un hébergement", systemImage: "plus.circle.fill") { ajouterHebergement(apres: jour) }
+                    .buttonStyle(.borderless).tint(Self.couleurNuit).font(.footnote)
             }
-            .buttonStyle(.borderless).tint(Self.couleurNuit).font(.footnote)
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)

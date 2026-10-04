@@ -115,7 +115,12 @@ struct EtapeEditView: View {
                         }
                     }
                     if etape.jour != nil, etape.categorie == .hebergement {
-                        Toggle("Entre ce jour et le suivant", isOn: $etape.apresJour)
+                        Toggle("Entre ce jour et le suivant", isOn: Binding(
+                            get: { etape.apresJour },
+                            set: { nouveau in
+                                if nouveau, let jour = etape.jour, let voyage = etape.voyage { voyage.placerEntreJours(etape, apres: jour) }
+                                else { etape.apresJour = false }
+                            }))
                         if etape.apresJour, let jour = etape.jour {
                             let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
                             Text("Nuit du \(jour.formatted(.dateTime.day().month(.wide))) au \(lendemain.formatted(.dateTime.day().month(.wide)))")
