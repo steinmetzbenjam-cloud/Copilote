@@ -88,6 +88,7 @@ struct ItineraireView: View {
         let couleur = CarteDuVoyage.couleur(du: numero - 1)
         let placees = etapes.filter { $0.coordonnee != nil }
         let incoherences = voyage.etapesAuxHorairesIncoherents(du: jour)
+        let chevauchements = voyage.etapesEnChevauchement(du: jour)
         return VStack(alignment: .leading, spacing: 10) {
             Button {
                 withAnimation(.easeInOut(duration: 0.25)) { jourSelectionne = estSelectionne(jour) ? nil : jour }
@@ -134,7 +135,7 @@ struct ItineraireView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(etapes) { etape in
                         ligneGlissable(etape, jour: jour, couleur: couleur,
-                                       rang: placees.firstIndex { $0 === etape }, incoherence: incoherences[etape.uid])
+                                       rang: placees.firstIndex { $0 === etape }, incoherence: incoherences[etape.uid], chevauche: chevauchements[etape.uid])
                     }
                 }
             }
@@ -172,8 +173,8 @@ struct ItineraireView: View {
 
     private static let prefixe = "copilote-etape:"
 
-    private func ligneGlissable(_ etape: Etape, jour: Date, couleur: Color, rang: Int?, incoherence: Date?) -> some View {
-        ligne(etape, couleur: couleur, rang: rang, incoherence: incoherence)
+    private func ligneGlissable(_ etape: Etape, jour: Date, couleur: Color, rang: Int?, incoherence: Date?, chevauche: Etape? = nil) -> some View {
+        ligne(etape, couleur: couleur, rang: rang, incoherence: incoherence, chevauche: chevauche)
             .draggable(Self.prefixe + etape.uid) {
                 Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
                     .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -220,7 +221,7 @@ struct ItineraireView: View {
 
     /// `rang` : numéro du repère sur la carte (étapes placées seulement) ; sinon l'icône de la catégorie.
     /// `incoherence` : heure de l'étape précédente qui contredit celle-ci (l'étape est placée après une étape plus tardive).
-    private func ligne(_ etape: Etape, couleur: Color = .accentColor, rang: Int? = nil, incoherence: Date? = nil) -> some View {
+    private func ligne(_ etape: Etape, couleur: Color = .accentColor, rang: Int? = nil, incoherence: Date? = nil, chevauche: Etape? = nil) -> some View {
         HStack(spacing: 12) {
                 Group {
                     if let rang {
@@ -247,19 +248,24 @@ struct ItineraireView: View {
                 }
                 Spacer()
                 if let heure = etape.heure {
-                    if let incoherence {
+                    if incoherence != nil || chevauche != nil {
                         Image(systemName: "exclamationmark.triangle.fill")
                             .foregroundStyle(.orange)
-                            .accessibilityLabel("Horaire incohérent avec l'ordre des étapes")
-                            .help("Cette étape est prévue avant l'étape précédente")
+                            .accessibilityLabel(chevauche != nil && incoherence == nil ? "Cette étape chevauche la précédente" : "Horaire incohérent avec l'ordre des étapes")
+                            .help(chevauche != nil && incoherence == nil ? "Cette étape commence avant la fin de la précédente" : "Cette étape est prévue avant l'étape précédente")
                             .onTapGesture { avertissementOuvert = etape.uid }
                             .popover(isPresented: Binding(get: { avertissementOuvert == etape.uid },
                                                           set: { if !$0 { avertissementOuvert = nil } })) {
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Label("Horaire incohérent", systemImage: "exclamationmark.triangle.fill")
+                                    Label(incoherence == nil ? "Horaires qui se chevauchent" : "Horaire incohérent", systemImage: "exclamationmark.triangle.fill")
                                         .font(.headline).foregroundStyle(.orange)
+                                    if incoherence == nil, let autre = chevauche, let fin = autre.heureFin {
+                                        Text("Cette étape commence à \(heure.formatted(date: .omitted, time: .shortened)), mais « \(autre.titre) » dure jusqu'à \(fin.formatted(date: .omitted, time: .shortened)). Change une des heures.")
+                                            .font(.subheadline)
+                                    } else if let incoherence {
                                     Text("Cette étape est prévue à \(heure.formatted(date: .omitted, time: .shortened)), mais elle est placée après une étape prévue à \(incoherence.formatted(date: .omitted, time: .shortened)). Change l'heure, ou son rang dans la journée.")
                                         .font(.subheadline)
+                                    }
                                     Text("Le menu « ··· » du jour propose « Trier par heure ».")
                                         .font(.footnote).foregroundStyle(.secondary)
                                 }
@@ -271,7 +277,7 @@ struct ItineraireView: View {
                     }
                     Text(etape.heureFin.map { "\(heure.formatted(date: .omitted, time: .shortened)) – \($0.formatted(date: .omitted, time: .shortened))" }
                          ?? heure.formatted(date: .omitted, time: .shortened))
-                        .font(.subheadline.monospacedDigit()).foregroundStyle(incoherence == nil ? Color.secondary : Color.orange)
+                        .font(.subheadline.monospacedDigit()).foregroundStyle(incoherence == nil && chevauche == nil ? Color.secondary : Color.orange)
                 }
             }
             .contentShape(Rectangle())

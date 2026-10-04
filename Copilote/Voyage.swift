@@ -100,6 +100,26 @@ extension Voyage {
         return resultat
     }
 
+    /// Étapes dont l'heure de début tombe avant la fin d'une étape placée avant elle (les deux se chevauchent).
+    /// Associe l'identifiant de l'étape à l'étape précédente qu'elle chevauche.
+    func etapesEnChevauchement(du jour: Date) -> [String: Etape] {
+        let cal = Calendar.current
+        func minutes(_ d: Date) -> Int { cal.component(.hour, from: d) * 60 + cal.component(.minute, from: d) }
+        var resultat: [String: Etape] = [:]
+        var precedentes: [Etape] = []
+        for etape in etapes(du: jour) {
+            guard let debut = etape.heure else { continue }
+            if let autre = precedentes.last(where: { p in
+                guard let d = p.heure, let f = p.heureFin else { return false }
+                return minutes(debut) >= minutes(d) && minutes(debut) < minutes(f)
+            }) {
+                resultat[etape.uid] = autre
+            }
+            precedentes.append(etape)
+        }
+        return resultat
+    }
+
     /// Remet les étapes d'un jour dans l'ordre des heures (celles sans heure à la fin).
     func trierParHeure(_ jour: Date) {
         let triees = etapes(du: jour).sorted { ($0.heure ?? .distantFuture, $0.creeLe) < ($1.heure ?? .distantFuture, $1.creeLe) }
