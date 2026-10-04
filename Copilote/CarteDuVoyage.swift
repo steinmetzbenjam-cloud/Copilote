@@ -60,6 +60,18 @@ struct CarteDuVoyage: View {
     var body: some View {
         GeometryReader { geo in
             Map(position: $position) {
+                ForEach(voyage.etapesSansJour.filter { $0.coordonnee != nil }) { etape in
+                    Annotation(etape.titre, coordinate: etape.coordonnee!) {
+                        Button { onEtape(etape) } label: {
+                            Image(systemName: etape.categorie.symbole)
+                                .font(.caption2).foregroundStyle(.white)
+                                .frame(width: 24, height: 24)
+                                .background(.gray, in: Circle())
+                                .overlay(Circle().stroke(.white, lineWidth: 2))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
                 ForEach(joursDessines, id: \.jour) { index, jour in
                     let focus = estJourFocus(jour)
                     let attenue = jourFocus != nil && !focus

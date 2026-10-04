@@ -59,8 +59,25 @@ extension Voyage {
     /// Étapes d'un jour dans l'ordre choisi en les glissant ; à défaut, par heure puis par ordre de création.
     func etapes(du jour: Date) -> [Etape] {
         etapes
-            .filter { Calendar.current.isDate($0.jour, inSameDayAs: jour) }
+            .filter { $0.jour.map { Calendar.current.isDate($0, inSameDayAs: jour) } ?? false }
             .sorted { ($0.ordre, $0.heure ?? .distantFuture, $0.creeLe) < ($1.ordre, $1.heure ?? .distantFuture, $1.creeLe) }
+    }
+
+    /// Étapes préparées sans jour, dans l'ordre où on les a rangées.
+    var etapesSansJour: [Etape] {
+        etapes.filter { $0.jour == nil }.sorted { ($0.ordre, $0.creeLe) < ($1.ordre, $1.creeLe) }
+    }
+
+    /// Enlève l'étape de son jour : elle redevient « à placer », sans jour ni horaires.
+    @discardableResult
+    func retirerDuJour(_ etape: Etape) -> Bool {
+        guard let ancienJour = etape.jour, etapes.contains(where: { $0 === etape }) else { return false }
+        etape.jour = nil
+        etape.heure = nil
+        etape.heureFin = nil
+        etape.ordre = (etapesSansJour.filter { $0 !== etape }.map(\.ordre).max() ?? -1) + 1
+        for (i, e) in etapes(du: ancienJour).enumerated() { e.ordre = Double(i) }
+        return true
     }
 
     /// Place l'étape à son nouvel endroit (dans le même jour ou un autre), juste avant `cible` ou en fin de journée,
@@ -75,7 +92,7 @@ extension Voyage {
         liste.insert(etape, at: index)
         etape.jour = cal.startOfDay(for: jour)
         for (i, e) in liste.enumerated() { e.ordre = Double(i) }
-        if !cal.isDate(ancienJour, inSameDayAs: jour) {
+        if let ancienJour, !cal.isDate(ancienJour, inSameDayAs: jour) {
             for (i, e) in etapes(du: ancienJour).enumerated() { e.ordre = Double(i) }
         }
         return true

@@ -273,7 +273,7 @@ enum Codec {
             let e = (objet(recordName: r.recordID.recordName, contexte) as? Etape) ?? {
                 let nouveau = Etape(titre: "", jour: .now); nouveau.uid = uid; contexte.insert(nouveau); return nouveau
             }()
-            e.titre = texte("titre"); e.lieu = texte("lieu"); e.jour = date("jour") ?? e.jour; e.heure = date("heure"); e.heureFin = date("heureFin")
+            e.titre = texte("titre"); e.lieu = texte("lieu"); e.jour = date("jour"); e.heure = date("heure"); e.heureFin = date("heureFin")
             e.categorie = CategorieEtape(rawValue: texte("categorie")) ?? .autre; e.notes = texte("notes")
             e.latitude = nombre("latitude"); e.longitude = nombre("longitude"); e.ordre = nombre("ordre") ?? 0
             e.resume = r["resume"] as? String; e.horaires = r["horaires"] as? String; e.photoURL = r["photoURL"] as? String

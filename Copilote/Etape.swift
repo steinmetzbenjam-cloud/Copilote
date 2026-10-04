@@ -34,7 +34,8 @@ enum CategorieEtape: String, Codable, CaseIterable, Identifiable {
 final class Etape {
     var titre: String
     var lieu: String
-    var jour: Date
+    /// nil : étape préparée, pas encore placée dans un jour.
+    var jour: Date?
     var heure: Date?
     /// Heure de fin (facultative).
     var heureFin: Date?
@@ -61,10 +62,10 @@ final class Etape {
     @Relationship(deleteRule: .cascade, inverse: \Document.etape)
     var photos: [Document] = []
 
-    init(titre: String, jour: Date, categorie: CategorieEtape = .visite) {
+    init(titre: String, jour: Date?, categorie: CategorieEtape = .visite) {
         self.titre = titre
         self.lieu = ""
-        self.jour = Calendar.current.startOfDay(for: jour)
+        self.jour = jour.map { Calendar.current.startOfDay(for: $0) }
         self.heure = nil
         self.categorie = categorie
         self.notes = ""

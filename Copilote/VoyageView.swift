@@ -12,6 +12,7 @@ struct VoyageView: View {
 
     enum Onglet: String, CaseIterable, Identifiable {
         case itineraire = "Itinéraire"
+        case etapes = "Étapes"
         case carte = "Carte"
         case reservations = "Réserv."
         case depenses = "Dépenses"
@@ -21,6 +22,7 @@ struct VoyageView: View {
         var symbole: String {
             switch self {
             case .itineraire: "list.bullet.rectangle"
+            case .etapes: "mappin.and.ellipse"
             case .carte: "map"
             case .reservations: "ticket"
             case .depenses: "eurosign.circle"
@@ -42,6 +44,7 @@ struct VoyageView: View {
         Group {
             switch onglet {
             case .itineraire: ItineraireView(voyage: voyage)
+            case .etapes: EtapesView(voyage: voyage)
             case .carte: CarteView(voyage: voyage)
             case .reservations: ReservationsView(voyage: voyage)
             case .depenses: DepensesView(voyage: voyage)
@@ -61,7 +64,7 @@ struct VoyageView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: iconesSeules ? 300 : 460)
+                .frame(maxWidth: iconesSeules ? 340 : 540)
             }
         }
     }

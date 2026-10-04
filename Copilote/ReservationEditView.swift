@@ -127,7 +127,7 @@ struct ReservationEditView: View {
         if !reservation.numeroConfirmation.isEmpty {
             etape.notes = "Confirmation : \(reservation.numeroConfirmation)"
         }
-        etape.ordre = voyage.prochainOrdre(du: etape.jour)
+        etape.ordre = voyage.prochainOrdre(du: reservation.debut)
         etape.voyage = voyage
         contexte.insert(etape)
         reservation.ajouteeAItineraire = true

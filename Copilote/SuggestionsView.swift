@@ -32,7 +32,7 @@ struct SuggestionsView: View {
         return etape.lieu.split(separator: ",").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
     }
 
-    private var lieuxDuJour: [LieuReference] { voyage?.infos(du: etape.jour)?.lieux ?? [] }
+    private var lieuxDuJour: [LieuReference] { etape.jour.flatMap { voyage?.infos(du: $0) }?.lieux ?? [] }
 
     private var aDesCles: Bool { Cles.lire(.google) != nil || Cles.lire(.tripadvisor) != nil }
 
@@ -142,7 +142,7 @@ struct SuggestionsView: View {
 
     /// Point de départ : le lieu de l'étape, sinon les étapes du jour, sinon la destination du voyage.
     private func preparer() async {
-        let lieuxDuJour = voyage?.infos(du: etape.jour)?.lieux ?? []
+        let lieuxDuJour = etape.jour.flatMap { voyage?.infos(du: $0) }?.lieux ?? []
         if autour.isEmpty {
             autour = lieuxDuJour.first?.nom ?? (voyage?.destination.isEmpty == false ? voyage!.destination : "")
         }
@@ -151,7 +151,7 @@ struct SuggestionsView: View {
             if autour.isEmpty { autour = etape.lieu }
         } else if let premier = lieuxDuJour.first {
             centre = premier.coordonnee
-        } else if let voyage, let c = Self.centroide(voyage.etapes(du: etape.jour).compactMap(\.coordonnee)) {
+        } else if let voyage, let c = Self.centroide((etape.jour.map { voyage.etapes(du: $0) } ?? voyage.etapes).compactMap(\.coordonnee)) {
             centre = c
         } else if !autour.isEmpty {
             centre = await Self.geocoder(autour, pays: voyage?.pays ?? [])

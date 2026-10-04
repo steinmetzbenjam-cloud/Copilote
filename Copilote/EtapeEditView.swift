@@ -24,6 +24,15 @@ struct EtapeEditView: View {
 
     @State private var horaireOuvert = false
 
+    /// Sans jour, l'étape n'a pas non plus d'horaires.
+    private var jourChoisi: Binding<Date?> {
+        Binding(get: { etape.jour },
+                set: {
+                    etape.jour = $0
+                    if $0 == nil { etape.heure = nil; etape.heureFin = nil; horaireOuvert = false }
+                })
+    }
+
     private var horaireActive: Binding<Bool> {
         Binding(get: { horaireOuvert || etape.heure != nil || etape.heureFin != nil },
                 set: {
@@ -33,7 +42,7 @@ struct EtapeEditView: View {
     }
 
     private func bulleHeure(_ valeur: Binding<Date?>, depart: Int) -> some View {
-        BulleHeure(valeur: valeur, jour: etape.jour, heureDeDepart: depart)
+        BulleHeure(valeur: valeur, jour: etape.jour ?? .now, heureDeDepart: depart)
     }
 
     var body: some View {
@@ -99,13 +108,14 @@ struct EtapeEditView: View {
                 }
                 if etape.aDesInfosDeLieu { infosDuLieu }
                 Section {
-                    Picker("Jour", selection: $etape.jour) {
+                    Picker("Jour", selection: jourChoisi) {
+                        Text("Pas encore de jour").tag(Date?.none)
                         ForEach(jours, id: \.self) { j in
-                            Text(j.formatted(.dateTime.weekday(.wide).day().month())).tag(j)
+                            Text(j.formatted(.dateTime.weekday(.wide).day().month())).tag(Date?.some(j))
                         }
                     }
-                    Toggle("Horaire", isOn: horaireActive)
-                    if horaireActive.wrappedValue {
+                    if etape.jour != nil { Toggle("Horaire", isOn: horaireActive) }
+                    if etape.jour != nil, horaireActive.wrappedValue {
                         HStack {
                             Spacer()
                             bulleHeure($etape.heure, depart: 9)

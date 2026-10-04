@@ -18,7 +18,10 @@ struct ItineraireView: View {
     private let cal = Calendar.current
 
     private var horsDates: [Etape] {
-        voyage.etapes.filter { e in !voyage.jours.contains { cal.isDate($0, inSameDayAs: e.jour) } }
+        voyage.etapes.filter { e in
+            guard let jour = e.jour else { return false }
+            return !voyage.jours.contains { cal.isDate($0, inSameDayAs: jour) }
+        }
     }
 
     var body: some View {
@@ -28,18 +31,30 @@ struct ItineraireView: View {
                 // iPad, Mac : la carte en fond, les jours empilés dans un panneau à gauche.
                 ZStack(alignment: .leading) {
                     fondDeCarte(margeGauche: Self.largeurPanneau)
-                    ScrollView { listeDesJours.padding(12) }
+                    ScrollView { listeDesJours(avecEtapesAPlacer: false).padding(12) }
                         .frame(width: Self.largeurPanneau)
                         .scrollIndicators(.hidden)
+                    if !voyage.etapesSansJour.isEmpty {
+                        ScrollView { etapesAPlacer.padding(12) }
+                            .frame(width: 300)
+                            .scrollIndicators(.hidden)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
                 }
             } else {
                 // iPhone : la carte en haut, les jours dessous.
                 VStack(spacing: 0) {
                     fondDeCarte(margeGauche: 0).frame(height: max(220, geo.size.height * 0.36))
-                    ScrollView { listeDesJours.padding(12) }
+                    ScrollView { listeDesJours(avecEtapesAPlacer: true).padding(12) }
                         .background(FondDePage.couleur)
                 }
             }
+        }
+        // Déposer une étape en dehors d'une carte de jour : elle n'a plus de jour.
+        .dropDestination(for: String.self) { elements, _ in
+            guard let uid = elements.first(where: { $0.hasPrefix(Self.prefixe) })?.dropFirst(Self.prefixe.count),
+                  let etape = voyage.etapes.first(where: { $0.uid == String(uid) }) else { return false }
+            return withAnimation { voyage.retirerDuJour(etape) }
         }
         .sheet(item: $etapeEnEdition, onDismiss: nettoyer) { etape in
             EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
@@ -58,11 +73,12 @@ struct ItineraireView: View {
     }
 
     /// Les jours, les uns au-dessus des autres.
-    private var listeDesJours: some View {
+    private func listeDesJours(avecEtapesAPlacer: Bool) -> some View {
         LazyVStack(spacing: 12) {
             ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
                 carte(numero: index + 1, jour: jour)
             }
+            if avecEtapesAPlacer && !voyage.etapesSansJour.isEmpty { etapesAPlacer }
             if !horsDates.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Hors des dates du voyage").font(.headline)
@@ -73,6 +89,35 @@ struct ItineraireView: View {
                 .modifier(FondDeCarte())
             }
         }
+    }
+
+    /// Étapes préparées sans jour : on les glisse sur la carte d'un jour pour les placer.
+    private var etapesAPlacer: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Label("Étapes à placer", systemImage: "tray.full").font(.headline)
+            Text("Glisse une étape sur un jour.").font(.footnote).foregroundStyle(.secondary)
+            Divider()
+            ForEach(voyage.etapesSansJour) { etape in
+                ligne(etape)
+                    .draggable(Self.prefixe + etape.uid) {
+                        Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
+                            .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                    }
+            }
+            Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouterSansJour() }
+                .buttonStyle(.borderless)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(FondDeCarte())
+    }
+
+    private func ajouterSansJour() {
+        let etape = Etape(titre: "", jour: nil)
+        etape.ordre = (voyage.etapesSansJour.map(\.ordre).max() ?? -1) + 1
+        etape.voyage = voyage
+        contexte.insert(etape)
+        etapeEnEdition = etape
     }
 
     private func estSelectionne(_ jour: Date) -> Bool {
