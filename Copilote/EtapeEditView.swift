@@ -32,24 +32,8 @@ struct EtapeEditView: View {
                 })
     }
 
-    /// Bulle d'heure : vide tant qu'on n'a rien choisi ; un toucher la remplit et permet de la régler.
-    private func bulleHeure(_ valeur: Binding<Date?>, parDefaut: Int) -> some View {
-        Group {
-            if let date = valeur.wrappedValue {
-                DatePicker("", selection: Binding(get: { date }, set: { valeur.wrappedValue = $0 }), displayedComponents: .hourAndMinute)
-                    .labelsHidden()
-            } else {
-                Button {
-                    valeur.wrappedValue = Calendar.current.date(bySettingHour: parDefaut, minute: 0, second: 0, of: etape.jour)
-                } label: {
-                    Text("--:--")
-                        .monospacedDigit().foregroundStyle(.secondary)
-                        .padding(.horizontal, 12).padding(.vertical, 6)
-                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
-                }
-                .buttonStyle(.plain)
-            }
-        }
+    private func bulleHeure(_ valeur: Binding<Date?>, depart: Int) -> some View {
+        BulleHeure(valeur: valeur, jour: etape.jour, heureDeDepart: depart)
     }
 
     var body: some View {
@@ -124,9 +108,9 @@ struct EtapeEditView: View {
                     if horaireActive.wrappedValue {
                         HStack {
                             Spacer()
-                            bulleHeure($etape.heure, parDefaut: 9)
+                            bulleHeure($etape.heure, depart: 9)
                             Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                            bulleHeure($etape.heureFin, parDefaut: (etape.heure.map { Calendar.current.component(.hour, from: $0) + 1 } ?? 10) % 24)
+                            bulleHeure($etape.heureFin, depart: (etape.heure.map { Calendar.current.component(.hour, from: $0) + 1 } ?? 10) % 24)
                         }
                     }
                 }
@@ -222,6 +206,49 @@ private struct TailleDePage: ViewModifier {
             content.presentationSizing(.page)
         } else {
             content
+        }
+    }
+}
+
+
+/// Bulle d'heure : vide tant qu'on n'a rien choisi. Un toucher ouvre le choix de l'heure ; rien n'est enregistré avant « OK ».
+private struct BulleHeure: View {
+    @Binding var valeur: Date?
+    let jour: Date
+    let heureDeDepart: Int
+    @State private var ouvert = false
+    @State private var brouillon = Date()
+
+    var body: some View {
+        if let date = valeur {
+            DatePicker("", selection: Binding(get: { date }, set: { valeur = $0 }), displayedComponents: .hourAndMinute)
+                .labelsHidden()
+        } else {
+            Button {
+                brouillon = Calendar.current.date(bySettingHour: heureDeDepart, minute: 0, second: 0, of: jour) ?? jour
+                ouvert = true
+            } label: {
+                Text("--:--")
+                    .monospacedDigit().foregroundStyle(.secondary)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $ouvert) {
+                VStack(spacing: 8) {
+                    DatePicker("", selection: $brouillon, displayedComponents: .hourAndMinute)
+                        .labelsHidden()
+                        #if os(iOS)
+                        .datePickerStyle(.wheel)
+                        #else
+                        .datePickerStyle(.graphical)
+                        #endif
+                    Button("OK") { valeur = brouillon; ouvert = false }
+                        .buttonStyle(.borderedProminent)
+                }
+                .padding()
+                .presentationCompactAdaptation(.popover)
+            }
         }
     }
 }
