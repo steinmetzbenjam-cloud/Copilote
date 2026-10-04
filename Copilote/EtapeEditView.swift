@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import MapKit
 
 struct EtapeEditView: View {
     @Bindable var etape: Etape
@@ -7,6 +8,7 @@ struct EtapeEditView: View {
     var onSupprimer: () -> Void
     @Environment(\.dismiss) private var dismiss
     @FocusState private var titreActif: Bool
+    @State private var rechercheOuverte = false
 
     private var heureActivee: Binding<Bool> {
         Binding(get: { etape.heure != nil },
@@ -24,6 +26,21 @@ struct EtapeEditView: View {
                     TextField("Titre", text: $etape.titre)
                         .focused($titreActif)
                     TextField("Lieu ou adresse", text: $etape.lieu)
+                    Button(etape.coordonnee == nil ? "Placer sur la carte" : "Changer de lieu",
+                           systemImage: "magnifyingglass") { rechercheOuverte = true }
+                    if let coord = etape.coordonnee {
+                        Map(initialPosition: .region(MKCoordinateRegion(center: coord, latitudinalMeters: 800, longitudinalMeters: 800)),
+                            interactionModes: []) {
+                            Marker(etape.titre, systemImage: etape.categorie.symbole, coordinate: coord)
+                        }
+                        .id("\(coord.latitude),\(coord.longitude)")
+                        .frame(height: 160)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        Button("Retirer de la carte", systemImage: "mappin.slash", role: .destructive) {
+                            etape.latitude = nil
+                            etape.longitude = nil
+                        }
+                    }
                     Picker("Catégorie", selection: $etape.categorie) {
                         ForEach(CategorieEtape.allCases) { c in
                             Label(c.libelle, systemImage: c.symbole).tag(c)
@@ -60,6 +77,14 @@ struct EtapeEditView: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("OK") { dismiss() }
                 }
+            }
+        }
+        .sheet(isPresented: $rechercheOuverte) {
+            RechercheLieuView(requeteInitiale: etape.lieu.isEmpty ? etape.titre : etape.lieu) { lieu in
+                if etape.titre.trimmingCharacters(in: .whitespaces).isEmpty { etape.titre = lieu.nom }
+                etape.lieu = lieu.adresse.isEmpty ? lieu.nom : "\(lieu.nom), \(lieu.adresse)"
+                etape.latitude = lieu.coordonnee.latitude
+                etape.longitude = lieu.coordonnee.longitude
             }
         }
         .onAppear { if etape.titre.isEmpty { titreActif = true } }

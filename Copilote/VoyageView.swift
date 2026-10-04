@@ -6,6 +6,7 @@ struct VoyageView: View {
 
     enum Onglet: String, CaseIterable, Identifiable {
         case itineraire = "Itinéraire"
+        case carte = "Carte"
         case infos = "Infos"
         var id: String { rawValue }
     }
@@ -14,6 +15,7 @@ struct VoyageView: View {
         Group {
             switch onglet {
             case .itineraire: ItineraireView(voyage: voyage)
+            case .carte: CarteView(voyage: voyage)
             case .infos: VoyageDetailView(voyage: voyage)
             }
         }
@@ -24,7 +26,7 @@ struct VoyageView: View {
                     ForEach(Onglet.allCases) { Text($0.rawValue).tag($0) }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: 260)
+                .frame(maxWidth: 320)
             }
         }
     }

@@ -8,12 +8,6 @@ struct ItineraireView: View {
 
     private let cal = Calendar.current
 
-    private func etapes(du jour: Date) -> [Etape] {
-        voyage.etapes
-            .filter { cal.isDate($0.jour, inSameDayAs: jour) }
-            .sorted { ($0.heure ?? .distantFuture, $0.creeLe) < ($1.heure ?? .distantFuture, $1.creeLe) }
-    }
-
     private var horsDates: [Etape] {
         voyage.etapes.filter { e in !voyage.jours.contains { cal.isDate($0, inSameDayAs: e.jour) } }
     }
@@ -22,7 +16,7 @@ struct ItineraireView: View {
         List {
             ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
                 Section {
-                    ForEach(etapes(du: jour)) { ligne($0) }
+                    ForEach(voyage.etapes(du: jour)) { ligne($0) }
                     Button("Ajouter une étape", systemImage: "plus.circle") { ajouter(le: jour) }
                         .buttonStyle(.borderless)
                 } header: {
@@ -49,7 +43,7 @@ struct ItineraireView: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(etape.titre.isEmpty ? "Sans titre" : etape.titre).font(.headline)
                     if !etape.lieu.isEmpty {
-                        Text(etape.lieu).font(.subheadline).foregroundStyle(.secondary)
+                        Text(etape.lieu).lineLimit(1).font(.subheadline).foregroundStyle(.secondary)
                     }
                 }
                 Spacer()

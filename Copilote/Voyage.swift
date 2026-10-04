@@ -35,3 +35,12 @@ final class Voyage {
         return max(jours + 1, 1)
     }
 }
+
+extension Voyage {
+    /// Étapes d'un jour, triées par heure puis par ordre de création.
+    func etapes(du jour: Date) -> [Etape] {
+        etapes
+            .filter { Calendar.current.isDate($0.jour, inSameDayAs: jour) }
+            .sorted { ($0.heure ?? .distantFuture, $0.creeLe) < ($1.heure ?? .distantFuture, $1.creeLe) }
+    }
+}

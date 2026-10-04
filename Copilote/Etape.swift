@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import CoreLocation
 
 enum CategorieEtape: String, Codable, CaseIterable, Identifiable {
     case visite, repas, transport, hebergement, activite, autre
@@ -37,6 +38,8 @@ final class Etape {
     var heure: Date?
     var categorie: CategorieEtape
     var notes: String
+    var latitude: Double?
+    var longitude: Double?
     var creeLe: Date
     var voyage: Voyage?
 
@@ -48,5 +51,12 @@ final class Etape {
         self.categorie = categorie
         self.notes = ""
         self.creeLe = .now
+    }
+}
+
+extension Etape {
+    var coordonnee: CLLocationCoordinate2D? {
+        guard let latitude, let longitude else { return nil }
+        return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
     }
 }
