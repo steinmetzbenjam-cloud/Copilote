@@ -76,9 +76,9 @@ extension Etape {
         resume != nil || horaires != nil || photoURL != nil || !photos.isEmpty || noteGoogle != nil || noteTripadvisor != nil || siteWeb != nil
     }
 
-    /// Reprend dans l'étape ce que l'on sait d'un lieu proposé : titre, lieu, position, catégorie, et tout le reste dans les notes.
+    /// Reprend dans l'étape ce que l'on sait d'un lieu proposé : nom du lieu proposé (qui remplace le titre saisi), adresse, position, catégorie, et tout le reste dans les notes.
     func appliquer(_ lieu: LieuPropose) {
-        if titre.trimmingCharacters(in: .whitespaces).isEmpty { titre = lieu.nom }
+        titre = lieu.nom
         self.lieu = lieu.adresse.isEmpty ? lieu.nom : "\(lieu.nom), \(lieu.adresse)"
         latitude = lieu.coordonnee.latitude
         longitude = lieu.coordonnee.longitude
