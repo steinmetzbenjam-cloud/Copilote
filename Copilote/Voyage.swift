@@ -81,6 +81,25 @@ extension Voyage {
         return true
     }
 
+    /// Étapes d'un jour dont l'heure précède celle d'une étape placée avant elle (ordre et horaires en contradiction).
+    /// Associe l'identifiant de l'étape à l'heure de l'étape précédente qui la contredit.
+    /// Les étapes sans heure ne comptent pas.
+    func etapesAuxHorairesIncoherents(du jour: Date) -> [String: Date] {
+        let cal = Calendar.current
+        func minutes(_ d: Date) -> Int { cal.component(.hour, from: d) * 60 + cal.component(.minute, from: d) }
+        var resultat: [String: Date] = [:]
+        var plusTardive: Date?
+        for etape in etapes(du: jour) {
+            guard let heure = etape.heure else { continue }
+            if let reference = plusTardive, minutes(heure) < minutes(reference) {
+                resultat[etape.uid] = reference
+            } else {
+                plusTardive = heure
+            }
+        }
+        return resultat
+    }
+
     /// Remet les étapes d'un jour dans l'ordre des heures (celles sans heure à la fin).
     func trierParHeure(_ jour: Date) {
         let triees = etapes(du: jour).sorted { ($0.heure ?? .distantFuture, $0.creeLe) < ($1.heure ?? .distantFuture, $1.creeLe) }

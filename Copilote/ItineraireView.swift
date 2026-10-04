@@ -12,6 +12,8 @@ struct ItineraireView: View {
     @State private var jourVise: Date?
     /// Jour sur lequel la carte est cadrée ; nil = tout le voyage.
     @State private var jourSelectionne: Date?
+    /// Étape dont on affiche l'explication de l'avertissement d'horaire.
+    @State private var avertissementOuvert: String?
 
     private let cal = Calendar.current
 
@@ -85,6 +87,7 @@ struct ItineraireView: View {
         // Même couleur et mêmes numéros que le tracé et les repères sur la carte.
         let couleur = CarteDuVoyage.couleur(du: numero - 1)
         let placees = etapes.filter { $0.coordonnee != nil }
+        let incoherences = voyage.etapesAuxHorairesIncoherents(du: jour)
         return VStack(alignment: .leading, spacing: 10) {
             Button {
                 withAnimation(.easeInOut(duration: 0.25)) { jourSelectionne = estSelectionne(jour) ? nil : jour }
@@ -131,7 +134,7 @@ struct ItineraireView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(etapes) { etape in
                         ligneGlissable(etape, jour: jour, couleur: couleur,
-                                       rang: placees.firstIndex { $0 === etape })
+                                       rang: placees.firstIndex { $0 === etape }, incoherence: incoherences[etape.uid])
                     }
                 }
             }
@@ -169,8 +172,8 @@ struct ItineraireView: View {
 
     private static let prefixe = "copilote-etape:"
 
-    private func ligneGlissable(_ etape: Etape, jour: Date, couleur: Color, rang: Int?) -> some View {
-        ligne(etape, couleur: couleur, rang: rang)
+    private func ligneGlissable(_ etape: Etape, jour: Date, couleur: Color, rang: Int?, incoherence: Date?) -> some View {
+        ligne(etape, couleur: couleur, rang: rang, incoherence: incoherence)
             .draggable(Self.prefixe + etape.uid) {
                 Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
                     .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -216,7 +219,8 @@ struct ItineraireView: View {
     }
 
     /// `rang` : numéro du repère sur la carte (étapes placées seulement) ; sinon l'icône de la catégorie.
-    private func ligne(_ etape: Etape, couleur: Color = .accentColor, rang: Int? = nil) -> some View {
+    /// `incoherence` : heure de l'étape précédente qui contredit celle-ci (l'étape est placée après une étape plus tardive).
+    private func ligne(_ etape: Etape, couleur: Color = .accentColor, rang: Int? = nil, incoherence: Date? = nil) -> some View {
         Button { etapeEnEdition = etape } label: {
             HStack(spacing: 12) {
                 Group {
@@ -244,8 +248,30 @@ struct ItineraireView: View {
                 }
                 Spacer()
                 if let heure = etape.heure {
+                    if let incoherence {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(.orange)
+                            .accessibilityLabel("Horaire incohérent avec l'ordre des étapes")
+                            .help("Cette étape est prévue avant l'étape précédente")
+                            .onTapGesture { avertissementOuvert = etape.uid }
+                            .popover(isPresented: Binding(get: { avertissementOuvert == etape.uid },
+                                                          set: { if !$0 { avertissementOuvert = nil } })) {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Label("Horaire incohérent", systemImage: "exclamationmark.triangle.fill")
+                                        .font(.headline).foregroundStyle(.orange)
+                                    Text("Cette étape est prévue à \(heure.formatted(date: .omitted, time: .shortened)), mais elle est placée après une étape prévue à \(incoherence.formatted(date: .omitted, time: .shortened)). Change l'heure, ou son rang dans la journée.")
+                                        .font(.subheadline)
+                                    Text("Le menu « ··· » du jour propose « Trier par heure ».")
+                                        .font(.footnote).foregroundStyle(.secondary)
+                                }
+                                .padding()
+                                .frame(width: 320)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .presentationCompactAdaptation(.popover)
+                            }
+                    }
                     Text(heure.formatted(date: .omitted, time: .shortened))
-                        .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                        .font(.subheadline.monospacedDigit()).foregroundStyle(incoherence == nil ? Color.secondary : Color.orange)
                 }
             }
             .contentShape(Rectangle())
