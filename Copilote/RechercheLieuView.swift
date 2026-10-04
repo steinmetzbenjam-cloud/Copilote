@@ -1,72 +1,28 @@
 import SwiftUI
 import MapKit
 
-struct LieuTrouve {
-    var nom: String
-    var adresse: String
-    var coordonnee: CLLocationCoordinate2D
-}
-
-/// Suggestions de Plans au fil de la frappe.
-@Observable
-final class RechercheLieux: NSObject, MKLocalSearchCompleterDelegate {
-    var suggestions: [MKLocalSearchCompletion] = []
-    var erreur: String?
-    private let completer = MKLocalSearchCompleter()
-
-    override init() {
-        super.init()
-        completer.delegate = self
-        completer.resultTypes = [.address, .pointOfInterest]
-    }
-
-    func orienter(vers region: MKCoordinateRegion) {
-        completer.region = region
-    }
-
-    func chercher(_ texte: String) {
-        erreur = nil
-        if texte.trimmingCharacters(in: .whitespaces).isEmpty {
-            suggestions = []
-        } else {
-            completer.queryFragment = texte
-        }
-    }
-
-    func completerDidUpdateResults(_ completer: MKLocalSearchCompleter) {
-        suggestions = completer.results
-    }
-
-    func completer(_ completer: MKLocalSearchCompleter, didFailWithError error: Error) {
-        erreur = error.localizedDescription
-    }
-
-    func resoudre(_ suggestion: MKLocalSearchCompletion) async -> LieuTrouve? {
-        let requete = MKLocalSearch.Request(completion: suggestion)
-        guard let item = try? await MKLocalSearch(request: requete).start().mapItems.first else { return nil }
-        return LieuTrouve(nom: suggestion.title,
-                          adresse: suggestion.subtitle,
-                          coordonnee: item.placemark.coordinate)
-    }
-}
-
 struct RechercheLieuView: View {
     var requeteInitiale: String
     var pays: [String] = []
     var onChoix: (LieuTrouve) -> Void
 
     @Environment(\.dismiss) private var dismiss
-    @State private var recherche = RechercheLieux()
     @State private var texte = ""
+    @State private var resultats: [LieuTrouve] = []
     @State private var enCours = false
+    @State private var aCherche = false
     @FocusState private var champActif: Bool
+
+    private var nomsDesPays: String {
+        pays.compactMap { Pays.avec(code: $0) }.map { "\($0.drapeau) \($0.nom)" }.joined(separator: ", ")
+    }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
                     HStack {
-                        TextField("Musée, restaurant, adresse…", text: $texte)
+                        TextField("Aéroport, hôtel, musée, adresse…", text: $texte)
                             .focused($champActif)
                             .autocorrectionDisabled()
                         if !texte.isEmpty {
@@ -79,18 +35,24 @@ struct RechercheLieuView: View {
                             .buttonStyle(.plain)
                         }
                     }
+                } footer: {
+                    if !pays.isEmpty { Text("Recherche limitée à : \(nomsDesPays)") }
                 }
-                if let erreur = recherche.erreur, !texte.isEmpty {
-                    Text(erreur).foregroundStyle(.secondary)
-                }
+
                 Section {
-                    ForEach(recherche.suggestions, id: \.self) { s in
-                        Button { choisir(s) } label: {
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(s.title).foregroundStyle(.primary)
-                                if !s.subtitle.isEmpty {
-                                    Text(s.subtitle).font(.caption).foregroundStyle(.secondary)
+                    ForEach(resultats) { lieu in
+                        Button { choisir(lieu) } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: lieu.symbole)
+                                    .frame(width: 24)
+                                    .foregroundStyle(.tint)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(lieu.nom).foregroundStyle(.primary)
+                                    if !lieu.adresse.isEmpty {
+                                        Text(lieu.adresse).font(.caption).foregroundStyle(.secondary)
+                                    }
                                 }
+                                Spacer(minLength: 0)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
@@ -99,7 +61,13 @@ struct RechercheLieuView: View {
                     }
                 }
             }
-            .overlay { if enCours { ProgressView() } }
+            .overlay {
+                if enCours && resultats.isEmpty {
+                    ProgressView()
+                } else if aCherche && resultats.isEmpty && !enCours {
+                    ContentUnavailableView.search(text: texte)
+                }
+            }
             .navigationTitle("Chercher un lieu")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -109,13 +77,7 @@ struct RechercheLieuView: View {
                     Button("Annuler") { dismiss() }
                 }
             }
-            .onChange(of: texte) { _, nouveau in recherche.chercher(nouveau) }
-            .task {
-                if let region = await Pays.regionCarte(pour: pays) {
-                    recherche.orienter(vers: region)
-                    recherche.chercher(texte)
-                }
-            }
+            .task(id: texte) { await lancerRecherche() }
             .onAppear {
                 texte = requeteInitiale
                 champActif = true
@@ -126,14 +88,25 @@ struct RechercheLieuView: View {
         #endif
     }
 
-    private func choisir(_ suggestion: MKLocalSearchCompletion) {
-        enCours = true
-        Task {
-            if let lieu = await recherche.resoudre(suggestion) {
-                onChoix(lieu)
-                dismiss()
-            }
-            enCours = false
+    private func lancerRecherche() async {
+        guard texte.trimmingCharacters(in: .whitespaces).count >= 2 else {
+            resultats = []
+            aCherche = false
+            return
         }
+        // Petite pause pour ne pas interroger Plans à chaque lettre tapée.
+        try? await Task.sleep(for: .milliseconds(350))
+        guard !Task.isCancelled else { return }
+        enCours = true
+        let trouves = await RechercheLieux.chercher(texte, pays: pays)
+        guard !Task.isCancelled else { return }
+        resultats = trouves
+        aCherche = true
+        enCours = false
+    }
+
+    private func choisir(_ lieu: LieuTrouve) {
+        onChoix(lieu)
+        dismiss()
     }
 }
