@@ -5,6 +5,19 @@ struct ReglagesView: View {
     @State private var google = Cles.lire(.google) ?? ""
     @State private var tripadvisor = Cles.lire(.tripadvisor) ?? ""
     private var cloud = PartageCloud.shared
+    @State private var avertissement: String?
+
+    private func etat(_ service: Cles.Service, saisie: String) -> Cles.Etat {
+        saisie.isEmpty ? .absente : Cles.etat(service)
+    }
+
+    private func texteEtat(_ etat: Cles.Etat) -> String {
+        switch etat {
+        case .absente: ""
+        case .synchronisee: "Synchronisée avec tes autres appareils (trousseau iCloud)."
+        case .locale: "Gardée sur cet appareil seulement : active le trousseau iCloud pour la retrouver ailleurs."
+        }
+    }
 
     var body: some View {
         NavigationStack {
@@ -16,7 +29,7 @@ struct ReglagesView: View {
                 } header: {
                     Text("Google Places")
                 } footer: {
-                    Text("Active « Places API (New) » dans ton projet Google Cloud, puis crée une clé. Notes, avis, photos, horaires et descriptions.")
+                    Text("Active « Places API (New) » dans ton projet Google Cloud, puis crée une clé. Notes, avis, photos, horaires et descriptions.\n\(texteEtat(etat(.google, saisie: google)))")
                 }
 
                 Section {
@@ -26,7 +39,14 @@ struct ReglagesView: View {
                 } header: {
                     Text("Tripadvisor")
                 } footer: {
-                    Text("Clé « Content API » du portail développeurs Tripadvisor. Notes, avis, classement, descriptions.")
+                    Text("Clé « Content API » du portail développeurs Tripadvisor. Notes, avis, classement, descriptions.\n\(texteEtat(etat(.tripadvisor, saisie: tripadvisor)))")
+                }
+
+                if let avertissement {
+                    Section {
+                        Label(avertissement, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(.orange)
+                        Button("Fermer quand même") { dismiss() }
+                    }
                 }
 
                 Section {
@@ -46,7 +66,7 @@ struct ReglagesView: View {
 
                 Section {
                 } footer: {
-                    Text("Les clés restent dans le trousseau de cet appareil, et ne sont jamais envoyées ailleurs que chez Google et Tripadvisor. Sans clé, les suggestions viennent de Plans, sans notes.")
+                    Text("Les clés sont gardées dans ton trousseau iCloud : saisies une fois, elles apparaissent sur tous tes appareils. Elles ne sont jamais envoyées ailleurs que chez Google et Tripadvisor, ni aux autres voyageurs. Sans clé, les suggestions viennent de Plans, sans notes.")
                 }
             }
             .formStyle(.grouped)
@@ -57,9 +77,11 @@ struct ReglagesView: View {
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("OK") {
-                        Cles.enregistrer(google, pour: .google)
-                        Cles.enregistrer(tripadvisor, pour: .tripadvisor)
-                        dismiss()
+                        let g = Cles.enregistrer(google, pour: .google)
+                        let t = Cles.enregistrer(tripadvisor, pour: .tripadvisor)
+                        if g && t { dismiss() } else {
+                            avertissement = "Clés gardées sur cet appareil seulement : le trousseau iCloud n'est pas disponible. Active-le dans Réglages → ton nom → iCloud → Mots de passe et trousseau."
+                        }
                     }
                 }
                 ToolbarItem(placement: .cancellationAction) {
