@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import SwiftData
 
 /// Onglet Carte : la carte du voyage, avec un choix du jour affiché.
 struct CarteView: View {
