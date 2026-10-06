@@ -8,6 +8,7 @@ struct EtapesView: View {
     @Environment(\.modelContext) private var contexte
     @State private var etapeEnEdition: Etape?
     @State private var transportEnEdition: PaireEtapes?
+    @State private var avisOuvert: Etape?
 
     struct PaireEtapes: Identifiable {
         let depart: Etape, arrivee: Etape
@@ -61,6 +62,7 @@ struct EtapesView: View {
             }
         }
         .sheet(item: $transportEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
+        .sheet(item: $avisOuvert) { AvisEtapeView(voyage: voyage, etape: $0) }
         .sheet(item: $etapeEnEdition, onDismiss: nettoyer) { etape in
             EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
         }
@@ -106,24 +108,28 @@ struct EtapesView: View {
     }
 
     private func ligne(_ etape: Etape) -> some View {
-        Button { etapeEnEdition = etape } label: {
-            HStack(spacing: 12) {
-                Image(systemName: etape.categorie.symbole).frame(width: 24).foregroundStyle(Color.accentColor)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(etape.titre.isEmpty ? "Sans titre" : etape.titre).foregroundStyle(.primary)
-                    if !etape.lieu.isEmpty {
-                        Text(etape.lieu).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                    }
-                }
-                Spacer()
-                if let heure = etape.heure {
-                    Text(heure.formatted(date: .omitted, time: .shortened))
-                        .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+        HStack(spacing: 12) {
+            Image(systemName: etape.categorie.symbole).frame(width: 24).foregroundStyle(Color.accentColor)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(etape.titre.isEmpty ? "Sans titre" : etape.titre).foregroundStyle(.primary)
+                if !etape.lieu.isEmpty {
+                    Text(etape.lieu).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
-            .contentShape(Rectangle())
+            Spacer()
+            if let heure = etape.heure {
+                Text(heure.formatted(date: .omitted, time: .shortened))
+                    .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            // Préparation seulement : le groupe donne son avis sur l'étape.
+            if voyage.mode == .preparation, !etape.titre.isEmpty {
+                PastilleAvis(voyage: voyage, etape: etape) { avisOuvert = etape }
+            }
         }
-        .buttonStyle(.plain)
+        .contentShape(Rectangle())
+        // Pas de Button autour de la ligne : il avalerait le bouton d'avis.
+        .onTapGesture { etapeEnEdition = etape }
+        .accessibilityAddTraits(.isButton)
     }
 
     private static let couleurNuit = Color.mint

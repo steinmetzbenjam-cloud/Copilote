@@ -61,7 +61,11 @@ struct VoyageView: View {
                         }
                     }
                 } label: {
-                    Label(voyage.mode.nom, systemImage: voyage.mode.symbole)
+                    if iconesSeules {
+                        Image(systemName: voyage.mode.symbole).accessibilityLabel(voyage.mode.nom)
+                    } else {
+                        Label(voyage.mode.nom, systemImage: voyage.mode.symbole)
+                    }
                 }
             }
             ToolbarItem(placement: .principal) {

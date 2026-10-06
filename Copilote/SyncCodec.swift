@@ -4,6 +4,7 @@ import CloudKit
 
 enum TypeCloud: String, CaseIterable {
     case voyage = "Voyage", jour = "Jour", membre = "Membre", depense = "Depense", reservation = "Reservation", etape = "Etape", document = "Document"
+    case commentaire = "Commentaire", avisEtape = "AvisEtape"
 }
 
 /// Donne un identifiant stable aux objets créés avant l'arrivée de la synchronisation.
@@ -21,6 +22,8 @@ enum Identifiants {
         remplir(Document.self, \.uid)
         remplir(JourVoyage.self, \.uid)
         remplir(Depense.self, \.uid)
+        remplir(Commentaire.self, \.uid)
+        remplir(AvisEtape.self, \.uid)
         try? contexte.save()
     }
 }
@@ -71,6 +74,8 @@ enum Codec {
         case .document: return try? contexte.fetch(FetchDescriptor<Document>(predicate: #Predicate { $0.uid == uid })).first
         case .jour: return try? contexte.fetch(FetchDescriptor<JourVoyage>(predicate: #Predicate { $0.uid == uid })).first
         case .depense: return try? contexte.fetch(FetchDescriptor<Depense>(predicate: #Predicate { $0.uid == uid })).first
+        case .commentaire: return try? contexte.fetch(FetchDescriptor<Commentaire>(predicate: #Predicate { $0.uid == uid })).first
+        case .avisEtape: return try? contexte.fetch(FetchDescriptor<AvisEtape>(predicate: #Predicate { $0.uid == uid })).first
         }
     }
 
@@ -97,6 +102,8 @@ enum Codec {
             for r in v.reservations { ajouter(r, .reservation, r.uid, zone) }
             for e in v.etapes { ajouter(e, .etape, e.uid, zone) }
             for d in v.documents { ajouter(d, .document, d.uid, zone) }
+            for c in v.commentaires { ajouter(c, .commentaire, c.uid, zone) }
+            for a in v.avisEtapes { ajouter(a, .avisEtape, a.uid, zone) }
         }
         return entrees
     }
@@ -188,6 +195,16 @@ enum Codec {
                 let fichier = FileManager.default.temporaryDirectory.appending(path: "\(d.uid).\(d.extensionFichier)")
                 if (try? d.donnees.write(to: fichier)) != nil { r["donnees"] = CKAsset(fileURL: fichier) }
             }
+            return r
+        case let c as Commentaire:
+            let r = base(.commentaire, c.uid, zone, systeme)
+            r["texte"] = c.texte; r["auteurUID"] = c.auteurUID; r["date"] = c.date; r["voyageUID"] = c.voyage?.uid
+            return r
+        case let a as AvisEtape:
+            let r = base(.avisEtape, a.uid, zone, systeme)
+            r["etapeUID"] = a.etapeUID; r["auteurUID"] = a.auteurUID; r["etoiles"] = a.etoiles
+            r["envie"] = a.envie.rawValue; r["commentaire"] = a.commentaire; r["modifieLe"] = a.modifieLe
+            r["voyageUID"] = a.voyage?.uid
             return r
         default:
             fatalError("Type d'objet inconnu")
@@ -312,6 +329,24 @@ enum Codec {
             if let fichier = (r["donnees"] as? CKAsset)?.fileURL, let donnees = try? Data(contentsOf: fichier) { d.donnees = donnees }
             d.voyage = parent; d.reservation = reservation; d.etape = etape
             return d
+
+        case .commentaire:
+            guard let parent else { return nil }
+            let c = (objet(recordName: r.recordID.recordName, contexte) as? Commentaire) ?? {
+                let nouveau = Commentaire(texte: "", auteurUID: ""); nouveau.uid = uid; contexte.insert(nouveau); return nouveau
+            }()
+            c.texte = texte("texte"); c.auteurUID = texte("auteurUID"); c.date = date("date") ?? c.date; c.voyage = parent
+            return c
+
+        case .avisEtape:
+            guard let parent else { return nil }
+            let a = (objet(recordName: r.recordID.recordName, contexte) as? AvisEtape) ?? {
+                let nouveau = AvisEtape(etapeUID: "", auteurUID: ""); nouveau.uid = uid; contexte.insert(nouveau); return nouveau
+            }()
+            a.etapeUID = texte("etapeUID"); a.auteurUID = texte("auteurUID"); a.etoiles = entier("etoiles") ?? 0
+            a.envie = EnvieEtape(rawValue: texte("envie")) ?? .neutre; a.commentaire = texte("commentaire")
+            a.modifieLe = date("modifieLe") ?? a.modifieLe; a.voyage = parent
+            return a
         }
     }
 }

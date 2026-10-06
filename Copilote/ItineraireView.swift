@@ -15,6 +15,7 @@ struct ItineraireView: View {
     @State private var jourSelectionne: Date?
     /// Étape dont on affiche l'explication de l'avertissement d'horaire.
     @State private var avertissementOuvert: String?
+    @State private var discussionOuverte = false
     /// Hauteur du contenu de « Étapes à placer » (iPad), pour que son défilement ne couvre pas la carte.
     @State private var hauteurEtapesAPlacer: CGFloat = .infinity
     /// Déplacement qui effacerait des transports : en attente de confirmation.
@@ -81,6 +82,18 @@ struct ItineraireView: View {
         } message: { d in
             Text(d.perdus.count == 1 ? "Ce déplacement efface le transport prévu après « \(d.perdus[0].titre) »." : "Ce déplacement efface \(d.perdus.count) transports prévus entre des étapes.")
         }
+        .toolbar {
+            // Préparation seulement : on échange sur le déroulé avec les autres voyageurs.
+            if voyage.mode == .preparation {
+                ToolbarItem(placement: .primaryAction) {
+                    Button { discussionOuverte = true } label: {
+                        Label(voyage.commentaires.isEmpty ? "Discussion" : "Discussion (\(voyage.commentaires.count))",
+                              systemImage: "bubble.left.and.bubble.right")
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $discussionOuverte) { CommentairesView(voyage: voyage) }
         .sheet(item: $etapeEnEdition, onDismiss: nettoyer) { etape in
             EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
         }

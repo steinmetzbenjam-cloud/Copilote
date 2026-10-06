@@ -33,7 +33,7 @@ extension PartageCloud {
     /// Un exemplaire de chaque type, avec tous les champs optionnels renseignés (construit par le même code que la synchronisation).
     @MainActor private static func enregistrementsComplets(zone: CKRecordZone.ID) throws -> [CKRecord] {
         let conteneur = try ModelContainer(
-            for: Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self,
+            for: Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self, Commentaire.self, AvisEtape.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         let contexte = conteneur.mainContext
 
@@ -67,7 +67,14 @@ extension PartageCloud {
         depense.parts = [PartDepense(membreUID: membre.uid, montant: 1)]
         depense.voyage = voyage; contexte.insert(depense)
 
-        let objets: [any PersistentModel] = [voyage, membre, jour, etape, reservation, document, depense]
+        let commentaire = Commentaire(texte: "x", auteurUID: membre.uid)
+        commentaire.voyage = voyage; contexte.insert(commentaire)
+
+        let avis = AvisEtape(etapeUID: etape.uid, auteurUID: membre.uid)
+        avis.etoiles = 1; avis.envie = .incontournable; avis.commentaire = "x"
+        avis.voyage = voyage; contexte.insert(avis)
+
+        let objets: [any PersistentModel] = [voyage, membre, jour, etape, reservation, document, depense, commentaire, avis]
         return objets.map { Codec.enregistrement(pour: $0, zone: zone, systeme: nil, avecAsset: true) }
     }
 }
