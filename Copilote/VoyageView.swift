@@ -53,6 +53,17 @@ struct VoyageView: View {
         }
         .navigationTitle(voyage.titre)
         .toolbar {
+            ToolbarItem(placement: .primaryAction) {
+                Menu {
+                    Picker("Mode", selection: $voyage.mode) {
+                        ForEach(ModeVoyage.allCases) { mode in
+                            Label(mode.nom, systemImage: mode.symbole).tag(mode)
+                        }
+                    }
+                } label: {
+                    Label(voyage.mode.nom, systemImage: voyage.mode.symbole)
+                }
+            }
             ToolbarItem(placement: .principal) {
                 Picker("Section", selection: $onglet) {
                     ForEach(Onglet.allCases) { onglet in

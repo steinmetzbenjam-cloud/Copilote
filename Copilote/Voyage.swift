@@ -16,6 +16,8 @@ final class Voyage {
     /// Vide si le voyage est le mien ; sinon, propriétaire iCloud du voyage reçu.
     var zoneProprietaire: String = ""
     var partage: Bool = false
+    /// Mode d'utilisation (`ModeVoyage`) : propre à cet appareil, non synchronisé.
+    var modeBrut: String = ModeVoyage.preparation.rawValue
     var participantsCloud: [String] = []
     @Relationship(deleteRule: .cascade, inverse: \Membre.voyage)
     var membres: [Membre] = []
@@ -38,6 +40,11 @@ final class Voyage {
         self.notes = ""
         self.creeLe = .now
         self.uid = UUID().uuidString
+    }
+
+    var mode: ModeVoyage {
+        get { ModeVoyage(rawValue: modeBrut) ?? .preparation }
+        set { modeBrut = newValue.rawValue }
     }
 
     var estRecu: Bool { !zoneProprietaire.isEmpty }
