@@ -12,9 +12,6 @@ struct SectionPartage: View {
     var voyage: Voyage
     private var cloud = PartageCloud.shared
 
-    #if ICLOUD && os(iOS)
-    @State private var feuilleOuverte = false
-    #endif
     @State private var erreur: String?
 
     init(voyage: Voyage) { self.voyage = voyage }
@@ -57,16 +54,13 @@ struct SectionPartage: View {
                 Text("Les personnes invitées voient ce voyage dans leur app et peuvent le modifier. Supprimer ce voyage le supprime pour tout le monde.")
             }
         }
-        #if ICLOUD && os(iOS)
-        .sheet(isPresented: $feuilleOuverte) { ControleurPartage(voyage: voyage).ignoresSafeArea() }
-        #endif
     }
 
     private func ouvrirPartage() {
         erreur = nil
         #if ICLOUD
         #if os(iOS)
-        feuilleOuverte = true
+        PresentateurPartage.presenter(voyage)
         #else
         partagerSurMac(voyage)
         #endif
@@ -76,12 +70,18 @@ struct SectionPartage: View {
 
 #if ICLOUD && os(iOS)
 /// Fenêtre d'invitation d'iCloud (choix des personnes, droits, lien).
-struct ControleurPartage: UIViewControllerRepresentable {
-    var voyage: Voyage
+/// Présentée directement par UIKit : dans une feuille SwiftUI, elle s'affiche en cadre blanc.
+@MainActor
+enum PresentateurPartage {
+    /// Le contrôleur ne retient pas son délégué : on le garde ici le temps de la présentation.
+    private static var coordinateur: Coordinateur?
 
-    func makeCoordinator() -> Coordinateur { Coordinateur(titre: voyage.titre) }
+    static func presenter(_ voyage: Voyage) {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene })
+            .first(where: { $0.activationState == .foregroundActive }) ?? UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              var haut = (scene.keyWindow ?? scene.windows.first)?.rootViewController else { return }
+        while let suivant = haut.presentedViewController { haut = suivant }
 
-    func makeUIViewController(context: Context) -> UICloudSharingController {
         let controleur: UICloudSharingController
         let zone = Codec.zone(de: voyage)
         if let partage = PartageCloud.shared.partages[zone.zoneName], let conteneur = PartageCloud.shared.conteneur {
@@ -93,17 +93,24 @@ struct ControleurPartage: UIViewControllerRepresentable {
                         let (partage, conteneur) = try await PartageCloud.shared.preparerPartage(voyage)
                         terminer(partage, conteneur, nil)
                     } catch {
+                        PartageCloud.shared.statut = "Partage impossible : \(error.localizedDescription)"
                         terminer(nil, nil, error)
                     }
                 }
             }
         }
-        controleur.delegate = context.coordinator
+        let coordinateur = Coordinateur(titre: voyage.titre)
+        self.coordinateur = coordinateur
+        controleur.delegate = coordinateur
         controleur.availablePermissions = [.allowReadWrite, .allowPrivate]
-        return controleur
+        // Sur iPad, la fenêtre s'ouvre en bulle : il lui faut une ancre.
+        if let bulle = controleur.popoverPresentationController {
+            bulle.sourceView = haut.view
+            bulle.sourceRect = CGRect(x: haut.view.bounds.midX, y: haut.view.bounds.midY, width: 1, height: 1)
+            bulle.permittedArrowDirections = []
+        }
+        haut.present(controleur, animated: true)
     }
-
-    func updateUIViewController(_ controleur: UICloudSharingController, context: Context) {}
 
     final class Coordinateur: NSObject, UICloudSharingControllerDelegate {
         let titre: String
