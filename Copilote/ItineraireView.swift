@@ -15,6 +15,8 @@ struct ItineraireView: View {
     @State private var jourSelectionne: Date?
     /// Étape dont on affiche l'explication de l'avertissement d'horaire.
     @State private var avertissementOuvert: String?
+    /// Hauteur du contenu de « Étapes à placer » (iPad), pour que son défilement ne couvre pas la carte.
+    @State private var hauteurEtapesAPlacer: CGFloat = .infinity
     /// Déplacement qui effacerait des transports : en attente de confirmation.
     @State private var deplacementEnAttente: DeplacementEnAttente?
 
@@ -47,10 +49,15 @@ struct ItineraireView: View {
                         .frame(width: Self.largeurPanneau)
                         .scrollIndicators(.hidden)
                     if !voyage.etapesSansJour.isEmpty {
-                        ScrollView { etapesAPlacer.padding(12) }
-                            .frame(width: 300)
-                            .scrollIndicators(.hidden)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
+                        // Le défilement se limite à la hauteur du contenu : en dessous, le doigt agit sur la carte.
+                        ScrollView {
+                            etapesAPlacer.padding(12)
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { hauteurEtapesAPlacer = $0 }
+                        }
+                        .frame(width: 300)
+                        .frame(maxHeight: hauteurEtapesAPlacer)
+                        .scrollIndicators(.hidden)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                     }
                 }
             } else {
