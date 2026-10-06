@@ -93,11 +93,12 @@ struct ItineraireView: View {
     /// Les jours, les uns au-dessus des autres.
     private func listeDesJours(avecEtapesAPlacer: Bool) -> some View {
         LazyVStack(spacing: 12) {
+            // iPhone : les étapes sans jour passent au-dessus du jour 1.
+            if avecEtapesAPlacer && !voyage.etapesSansJour.isEmpty { etapesAPlacer }
             ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
                 carte(numero: index + 1, jour: jour)
                 nuit(apres: jour)
             }
-            if avecEtapesAPlacer && !voyage.etapesSansJour.isEmpty { etapesAPlacer }
             if !horsDates.isEmpty {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Hors des dates du voyage").font(.headline)
