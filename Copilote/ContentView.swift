@@ -47,14 +47,41 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Voyages")
-            .toolbar {
-                Menu("Sauvegarde", systemImage: "externaldrive") {
-                    Button("Choisir les voyages à sauvegarder…", systemImage: "square.and.arrow.up") { choixSauvegardeOuvert = true }
-                        .disabled(voyages.isEmpty)
-                    Button("Importer une sauvegarde…", systemImage: "square.and.arrow.down") { importOuvert = true }
+            // En haut, au-dessus des voyages : nouveau voyage.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Button { nouveauVoyageOuvert = true } label: {
+                    Label("Nouveau", systemImage: "plus.circle.fill")
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                 }
-                Button("Réglages", systemImage: "key") { reglagesOuverts = true }
-                Button("Nouveau voyage", systemImage: "plus") { nouveauVoyageOuvert = true }
+                .buttonStyle(.borderedProminent)
+                .padding(.horizontal, 12).padding(.vertical, 10)
+            }
+            // En bas du panneau : les réglages, puis la sauvegarde en dessous.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                VStack(spacing: 6) {
+                    Divider()
+                    Button { reglagesOuverts = true } label: {
+                        Label("Réglages", systemImage: "gearshape")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    Menu {
+                        Button("Choisir les voyages à sauvegarder…", systemImage: "square.and.arrow.up") { choixSauvegardeOuvert = true }
+                            .disabled(voyages.isEmpty)
+                        Button("Importer une sauvegarde…", systemImage: "square.and.arrow.down") { importOuvert = true }
+                    } label: {
+                        Label("Sauvegarde", systemImage: "externaldrive")
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                    }
+                    .menuStyle(.borderlessButton)
+                    .menuIndicator(.hidden)
+                }
+                .padding(.horizontal, 16).padding(.bottom, 10)
+                .background(.bar)
             }
         } detail: {
             if let voyage = voyageOuvert {
@@ -121,6 +148,7 @@ struct ContentView: View {
         .frame(minWidth: 700, minHeight: 450)
         #endif
     }
+
 
     /// Une seule fois par lancement, et seulement s'il y a des voyages et qu'aucun n'est ouvert.
     private func proposerLesVoyages() {

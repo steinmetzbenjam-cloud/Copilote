@@ -71,15 +71,22 @@ struct Transport: Codable, Equatable {
     var depart: Date?
     var arrivee: Date?
     var notes = ""
-    /// Transport d'aller ou de retour : lieu de départ (aller) ou d'arrivée (retour), avec ses coordonnées.
+    /// Transport d'aller ou de retour : le lieu de départ et le lieu d'arrivée, avec leurs coordonnées (le trait de la carte les relie).
     /// Optionnels : les transports déjà enregistrés n'ont pas ces clés.
-    var lieu: String?
-    var lieuLatitude: Double?
-    var lieuLongitude: Double?
+    var departLieu: String?
+    var departLatitude: Double?
+    var departLongitude: Double?
+    var arriveeLieu: String?
+    var arriveeLatitude: Double?
+    var arriveeLongitude: Double?
 
-    var lieuCoordonnee: CLLocationCoordinate2D? {
-        guard let lieuLatitude, let lieuLongitude else { return nil }
-        return CLLocationCoordinate2D(latitude: lieuLatitude, longitude: lieuLongitude)
+    var departCoordonnee: CLLocationCoordinate2D? {
+        guard let departLatitude, let departLongitude else { return nil }
+        return CLLocationCoordinate2D(latitude: departLatitude, longitude: departLongitude)
+    }
+    var arriveeCoordonnee: CLLocationCoordinate2D? {
+        guard let arriveeLatitude, let arriveeLongitude else { return nil }
+        return CLLocationCoordinate2D(latitude: arriveeLatitude, longitude: arriveeLongitude)
     }
 }
 

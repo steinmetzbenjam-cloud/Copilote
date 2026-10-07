@@ -56,6 +56,13 @@ final class Etape {
     var avisTripadvisor: Int?
     var lienTripadvisor: String?
     var siteWeb: String?
+    /// Budget par personne : adulte, enfant, étudiant. Chaque prix est saisi en euros, ou en monnaie locale (drapeaux `…Local`).
+    var prixAdulte: Double?
+    var prixEnfant: Double?
+    var prixEtudiant: Double?
+    var prixAdulteLocal: Bool = false
+    var prixEnfantLocal: Bool = false
+    var prixEtudiantLocal: Bool = false
     var creeLe: Date
     var uid: String = ""
     /// Transport vers l'étape suivante, en JSON (voir Transport).

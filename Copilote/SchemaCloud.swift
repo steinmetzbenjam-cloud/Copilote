@@ -39,9 +39,12 @@ extension PartageCloud {
 
         let voyage = Voyage(titre: "Exemple", destination: "Exemple")
         voyage.pays = ["FR"]; voyage.notes = "x"
+        voyage.transportAllerJSON = "x"; voyage.transportRetourJSON = "x"; voyage.deviseLocale = "x"; voyage.tauxChange = 1
         contexte.insert(voyage)
 
-        let membre = Membre(nom: "Exemple"); membre.voyage = voyage; contexte.insert(membre)
+        let membre = Membre(nom: "Exemple"); membre.voyage = voyage
+        membre.nomFamille = "x"; membre.email = "x"; membre.avatar = Data("x".utf8)
+        contexte.insert(membre)
 
         let jour = JourVoyage(date: .now); jour.titre = "x"; jour.notes = "x"; jour.voyage = voyage
         jour.lieux = [LieuReference(nom: "x", detail: "x", latitude: 1, longitude: 1, codePays: "FR", estPays: true)]
@@ -52,6 +55,8 @@ extension PartageCloud {
         etape.resume = "x"; etape.horaires = "x"; etape.photoURL = "x"
         etape.noteGoogle = 1; etape.avisGoogle = 1; etape.lienGoogle = "x"
         etape.noteTripadvisor = 1; etape.avisTripadvisor = 1; etape.lienTripadvisor = "x"; etape.siteWeb = "x"
+        etape.prixAdulte = 1; etape.prixEnfant = 1; etape.prixEtudiant = 1
+        etape.prixAdulteLocal = true; etape.prixEnfantLocal = true; etape.prixEtudiantLocal = true
         etape.voyage = voyage; contexte.insert(etape)
 
         let reservation = Reservation(type: .vol, debut: .now)

@@ -128,13 +128,16 @@ struct EtapesView: View {
         let etapes = voyage.etapes(du: jour)
         let couleur = CarteDuVoyage.couleur(du: numero - 1)
         return VStack(alignment: .leading, spacing: 8) {
+            // Bandeau du jour : numéro et date en blanc sur la couleur du jour.
             VStack(alignment: .leading, spacing: 2) {
-                Text("JOUR \(numero)").font(.caption.bold()).foregroundStyle(couleur)
+                Text("JOUR \(numero)").font(.caption.bold()).foregroundStyle(.white.opacity(0.85))
                 Text(jour.formatted(.dateTime.weekday(.wide).day().month(.wide)).prefix(1).uppercased()
                      + jour.formatted(.dateTime.weekday(.wide).day().month(.wide)).dropFirst())
-                    .font(.title3.bold())
+                    .font(.title3.bold()).foregroundStyle(.white)
             }
-            Divider()
+            .padding(.horizontal, 14).padding(.vertical, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(couleur, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
             if etapes.isEmpty {
                 Text("Aucune étape ce jour-là.").font(.footnote).foregroundStyle(.secondary)
             }
@@ -316,7 +319,7 @@ struct EtapesView: View {
             jour: (extremite == .aller ? jours.first : jours.last) ?? .now,
             coordonnees: nil,
             existant: extremite == .aller ? voyage.transportAller : voyage.transportRetour,
-            libelleLieu: extremite == .aller ? "Lieu de départ" : "Lieu d'arrivée",
+            lieuxExtremites: true,
             enregistrer: { nouveau in
                 if extremite == .aller { voyage.transportAller = nouveau } else { voyage.transportRetour = nouveau }
             })
@@ -333,13 +336,68 @@ struct EtapesView: View {
         return morceaux.joined(separator: " · ")
     }
 
+    /// La photo déjà enregistrée dans l'étape, sinon l'icône de sa catégorie. Rien n'est téléchargé ici (pas d'appel à Google ni Tripadvisor).
+    @ViewBuilder private func vignette(_ etape: Etape) -> some View {
+        let formats: Set<String> = ["jpg", "jpeg", "png", "webp", "heic", "heif", "gif"]
+        let photo = etape.photos.sorted { $0.nom < $1.nom }.first { formats.contains($0.extensionFichier.lowercased()) }
+        if let photo {
+            ImageDonnees(donnees: photo.donnees)
+                .frame(width: 52, height: 52)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        } else {
+            Image(systemName: etape.categorie.symbole).frame(width: 24).foregroundStyle(Color.accentColor)
+        }
+    }
+
+    /// À droite de l'étape : le jugement de chacun, « Prénom · étoiles · intérêt · remarque ».
+    /// Toucher ce bloc ouvre la fenêtre pour donner (ou modifier) son propre avis.
+    @ViewBuilder private func avisDuGroupe(_ etape: Etape) -> some View {
+        let avis = voyage.avis(de: etape).sorted { voyage.nomMembre($0.auteurUID) < voyage.nomMembre($1.auteurUID) }
+        Button { avisOuvert = etape } label: {
+            if avis.isEmpty {
+                Label("Donner un avis", systemImage: "star")
+                    .font(.caption.weight(.medium)).foregroundStyle(.secondary)
+                    .padding(.horizontal, 8).padding(.vertical, 5)
+                    .background(.quaternary.opacity(0.6), in: Capsule())
+            } else {
+                VStack(alignment: .trailing, spacing: 3) {
+                    ForEach(avis) { a in
+                        HStack(spacing: 5) {
+                            Text(voyage.membre(uid: a.auteurUID)?.nom ?? "Quelqu'un").fontWeight(.semibold)
+                            if a.etoiles > 0 {
+                                HStack(spacing: 1) {
+                                    Text("\(a.etoiles)")
+                                    Image(systemName: "star.fill")
+                                }
+                                .foregroundStyle(.orange)
+                            }
+                            Label(a.envie.libelle, systemImage: a.envie.symbole)
+                                .labelStyle(.titleAndIcon).foregroundStyle(a.envie.couleur)
+                            if !a.commentaire.isEmpty {
+                                Text(a.commentaire).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                        }
+                        .font(.caption2)
+                        .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: 300, alignment: .trailing)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Avis du groupe sur \(etape.titre)")
+    }
+
     private func ligne(_ etape: Etape) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: etape.categorie.symbole).frame(width: 24).foregroundStyle(Color.accentColor)
+            vignette(etape)
             VStack(alignment: .leading, spacing: 2) {
                 Text(etape.titre.isEmpty ? "Sans titre" : etape.titre).foregroundStyle(.primary)
                 if !etape.lieu.isEmpty {
                     Text(etape.lieu).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+                if let budget = etape.resumeBudget {
+                    Label(budget, systemImage: "eurosign.circle").font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 }
             }
             Spacer()
@@ -349,7 +407,7 @@ struct EtapesView: View {
             }
             // Préparation seulement : le groupe donne son avis sur l'étape.
             if voyage.mode == .preparation, !etape.titre.isEmpty {
-                PastilleAvis(voyage: voyage, etape: etape) { avisOuvert = etape }
+                avisDuGroupe(etape)
             }
         }
         .contentShape(Rectangle())

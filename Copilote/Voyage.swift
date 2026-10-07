@@ -20,6 +20,9 @@ final class Voyage {
     var modeBrut: String = ModeVoyage.preparation.rawValue
     var participantsCloud: [String] = []
     /// Transport du lieu de départ à la première étape, et de la dernière étape au retour (JSON de `Transport`).
+    /// Monnaie locale (code ISO, ex. CRC) et ce que vaut 1 € dans cette monnaie.
+    var deviseLocale: String?
+    var tauxChange: Double?
     var transportAllerJSON: String?
     var transportRetourJSON: String?
     @Relationship(deleteRule: .cascade, inverse: \Membre.voyage)

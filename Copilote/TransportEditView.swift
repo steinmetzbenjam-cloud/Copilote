@@ -9,18 +9,22 @@ struct TransportEditView: View {
     /// Les deux extrémités, quand elles sont localisées (pour l'itinéraire le plus court).
     let coordonnees: (CLLocationCoordinate2D, CLLocationCoordinate2D)?
     let existant: Transport?
-    /// Pour l'aller et le retour : intitulé du lieu à choisir (« Lieu de départ »…), sinon nil.
-    var libelleLieu: String?
+    /// Pour l'aller et le retour : on choisit un lieu de départ et un lieu d'arrivée.
+    var lieuxExtremites = false
     /// Reçoit le transport enregistré, ou nil quand on le supprime.
     let enregistrer: (Transport?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var transport: Transport
 
-    @State private var rechercheLieuOuverte = false
+    private enum ChoixLieu: String, Identifiable {
+        case depart, arrivee
+        var id: String { rawValue }
+    }
+    @State private var rechercheLieu: ChoixLieu?
 
     init(trajet: String, jour: Date, coordonnees: (CLLocationCoordinate2D, CLLocationCoordinate2D)?,
-         existant: Transport?, libelleLieu: String? = nil, enregistrer: @escaping (Transport?) -> Void) {
-        self.libelleLieu = libelleLieu
+         existant: Transport?, lieuxExtremites: Bool = false, enregistrer: @escaping (Transport?) -> Void) {
+        self.lieuxExtremites = lieuxExtremites
         self.trajet = trajet
         self.jour = jour
         self.coordonnees = coordonnees
@@ -53,22 +57,12 @@ struct TransportEditView: View {
                 }
                 .onChange(of: transport.mode) { _, _ in transport.sousType = "" }
 
-                if let libelleLieu {
+                if lieuxExtremites {
                     Section {
-                        Button { rechercheLieuOuverte = true } label: {
-                            LabeledContent(libelleLieu) {
-                                Text(transport.lieu ?? "Choisir un lieu").foregroundStyle(transport.lieu == nil ? .secondary : .primary)
-                                    .multilineTextAlignment(.trailing)
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        if transport.lieu != nil {
-                            Button("Retirer le lieu", role: .destructive) {
-                                transport.lieu = nil; transport.lieuLatitude = nil; transport.lieuLongitude = nil
-                            }
-                        }
+                        ligneLieu("Lieu de départ", transport.departLieu, .depart)
+                        ligneLieu("Lieu d'arrivée", transport.arriveeLieu, .arrivee)
                     } footer: {
-                        Text("Le trait part de ce lieu et rejoint tes étapes sur la carte ; seule la partie proche du voyage est visible, la carte ne s'élargit pas.")
+                        Text("Le trait de la carte relie ces deux lieux ; elle ne s'élargit pas pour les montrer en entier.")
                     }
                 }
 
@@ -97,11 +91,19 @@ struct TransportEditView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
-            .sheet(isPresented: $rechercheLieuOuverte) {
-                RechercheLieuView(requeteInitiale: transport.lieu ?? "", invite: "Ville, aéroport, gare, adresse…") { trouve in
-                    transport.lieu = trouve.adresse.isEmpty ? trouve.nom : "\(trouve.nom), \(trouve.adresse)"
-                    transport.lieuLatitude = trouve.coordonnee.latitude
-                    transport.lieuLongitude = trouve.coordonnee.longitude
+            .sheet(item: $rechercheLieu) { choix in
+                RechercheLieuView(requeteInitiale: (choix == .depart ? transport.departLieu : transport.arriveeLieu) ?? "",
+                                  invite: "Ville, aéroport, gare, adresse…") { trouve in
+                    let nom = trouve.adresse.isEmpty ? trouve.nom : "\(trouve.nom), \(trouve.adresse)"
+                    if choix == .depart {
+                        transport.departLieu = nom
+                        transport.departLatitude = trouve.coordonnee.latitude
+                        transport.departLongitude = trouve.coordonnee.longitude
+                    } else {
+                        transport.arriveeLieu = nom
+                        transport.arriveeLatitude = trouve.coordonnee.latitude
+                        transport.arriveeLongitude = trouve.coordonnee.longitude
+                    }
                 }
             }
             .toolbar {
@@ -114,6 +116,27 @@ struct TransportEditView: View {
         #if os(macOS)
         .frame(minWidth: 460, minHeight: 520)
         #endif
+    }
+
+    /// Une ligne « Lieu de départ / d'arrivée » : toucher ouvre la recherche ; un bouton permet de retirer le lieu.
+    private func ligneLieu(_ titre: String, _ valeur: String?, _ choix: ChoixLieu) -> some View {
+        HStack {
+            Button { rechercheLieu = choix } label: {
+                LabeledContent(titre) {
+                    Text(valeur ?? "Choisir un lieu").foregroundStyle(valeur == nil ? .secondary : .primary)
+                        .multilineTextAlignment(.trailing)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if valeur != nil {
+                Button("Retirer", systemImage: "xmark.circle.fill") {
+                    if choix == .depart { transport.departLieu = nil; transport.departLatitude = nil; transport.departLongitude = nil }
+                    else { transport.arriveeLieu = nil; transport.arriveeLatitude = nil; transport.arriveeLongitude = nil }
+                }
+                .labelStyle(.iconOnly).foregroundStyle(.secondary).buttonStyle(.plain)
+            }
+        }
     }
 
     private func choix(_ m: ModeTransport) -> some View {

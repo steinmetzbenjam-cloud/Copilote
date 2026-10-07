@@ -16,7 +16,13 @@ struct CarteDuVoyage: View {
     @State private var position: MapCameraPosition = .automatic
     @State private var regionPays: MKCoordinateRegion?
 
-    static let couleurs: [Color] = [.blue, .orange, .green, .purple, .red, .teal, .pink, .brown]
+    /// Une couleur par jour, modernes et bien distinctes : indigo, corail, émeraude, ambre, violet, cyan, rose, ardoise.
+    static let couleurs: [Color] = [
+        Color(rouge: 0x5B, vert: 0x6C, bleu: 0xFF), Color(rouge: 0xFF, vert: 0x7A, bleu: 0x59),
+        Color(rouge: 0x10, vert: 0xB9, bleu: 0x81), Color(rouge: 0xF5, vert: 0x9E, bleu: 0x0B),
+        Color(rouge: 0x8B, vert: 0x5C, bleu: 0xF6), Color(rouge: 0x06, vert: 0xB6, bleu: 0xD4),
+        Color(rouge: 0xEC, vert: 0x48, bleu: 0x99), Color(rouge: 0x64, vert: 0x74, bleu: 0x8B),
+    ]
     static func couleur(du index: Int) -> Color { couleurs[index % couleurs.count] }
 
     private func estJourFocus(_ jour: Date) -> Bool {
@@ -64,6 +70,8 @@ struct CarteDuVoyage: View {
         let points: [CLLocationCoordinate2D]
         let tirets: [CGFloat]
         var avion = false
+        /// Aller et retour : l'avion est plus grand.
+        var grandAvion = false
 
         /// Milieu du trait et direction du vol (angle SwiftUI, en radians, pour un symbole tourné vers la droite).
         var milieuAvion: (coordonnee: CLLocationCoordinate2D, angle: Double)? {
@@ -94,16 +102,17 @@ struct CarteDuVoyage: View {
         return r
     }
 
-    /// Transport d'aller (du lieu de départ à la première étape) et de retour (de la dernière étape au lieu d'arrivée).
-    /// Le lieu lointain n'entre pas dans le cadrage : la carte ne montre que le début du trait.
+    /// Transport d'aller et de retour : un trait entre leur lieu de départ et leur lieu d'arrivée.
+    /// Ces lieux n'entrent pas dans le cadrage : la carte ne s'élargit pas, on n'en voit que la partie proche du voyage.
     private var extremites: [(id: String, a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] {
-        let elements = voyage.elementsDuVoyage
         var liste: [(id: String, a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] = []
-        if let t = voyage.transportAller, let lieu = t.lieuCoordonnee, let premiere = elements.first(where: { $0.coordonnee != nil })?.coordonnee {
-            liste.append(("aller", lieu, premiere, t.mode))
+        if let t = voyage.transportAller, let depart = t.departCoordonnee, let arrivee = t.arriveeCoordonnee {
+            liste.append(("aller", depart, arrivee, t.mode))
         }
-        if let t = voyage.transportRetour, let lieu = t.lieuCoordonnee, let derniere = elements.last(where: { $0.coordonnee != nil })?.coordonnee {
-            liste.append(("retour", derniere, lieu, t.mode))
+        // Le retour n'est tracé que si le dernier jour a au moins une étape.
+        if let t = voyage.transportRetour, let depart = t.departCoordonnee, let arrivee = t.arriveeCoordonnee,
+           let dernierJour = voyage.jours.last, !voyage.etapes(du: dernierJour).isEmpty {
+            liste.append(("retour", depart, arrivee, t.mode))
         }
         return liste
     }
@@ -133,7 +142,11 @@ struct CarteDuVoyage: View {
         // L'aller se rattache au premier jour du voyage, le retour au dernier.
         for e in extremites {
             let jourCible = e.id == "aller" ? voyage.jours.first : voyage.jours.last
-            if let jourCible, Calendar.current.isDate(jourCible, inSameDayAs: jour) { resultat.append(segment(e.id, e.a, e.b, e.mode)) }
+            if let jourCible, Calendar.current.isDate(jourCible, inSameDayAs: jour) {
+                var trait = segment(e.id, e.a, e.b, e.mode)
+                trait.grandAvion = true
+                resultat.append(trait)
+            }
         }
         return resultat
     }
@@ -205,7 +218,7 @@ struct CarteDuVoyage: View {
                         if let milieu = s.milieuAvion {
                             Annotation("", coordinate: milieu.coordonnee, anchor: .center) {
                                 Image(systemName: "airplane")
-                                    .font(.system(size: 17, weight: .semibold))
+                                    .font(.system(size: s.grandAvion ? 32 : 17, weight: .semibold))
                                     .foregroundStyle(Self.couleur(du: index))
                                     .rotationEffect(.radians(milieu.angle))
                                     .shadow(color: .white, radius: 2)
@@ -293,5 +306,12 @@ struct CarteDuVoyage: View {
         let b = MKMapPoint(CLLocationCoordinate2D(latitude: region.center.latitude - region.span.latitudeDelta / 2,
                                                   longitude: region.center.longitude + region.span.longitudeDelta / 2))
         return MKMapRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+    }
+}
+
+extension Color {
+    /// Couleur sRGB à partir de valeurs de 0 à 255.
+    init(rouge: Int, vert: Int, bleu: Int) {
+        self.init(.sRGB, red: Double(rouge) / 255, green: Double(vert) / 255, blue: Double(bleu) / 255, opacity: 1)
     }
 }

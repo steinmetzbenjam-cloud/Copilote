@@ -3,6 +3,7 @@ import SwiftUI
 struct VoyageView: View {
     @Bindable var voyage: Voyage
     @State private var onglet: Onglet
+    @State private var modesOuverts = false
     @Environment(\.horizontalSizeClass) private var tailleHorizontale
     @Environment(\.modelContext) private var contexte
 
@@ -65,25 +66,43 @@ struct VoyageView: View {
             // De gauche à droite : le mode, puis le nom du voyage.
             ToolbarItem(placement: .navigation) {
                 HStack(spacing: 10) {
-                    Menu {
-                        // Les trois modes tout de suite, sans sous-menu « Mode ».
-                        ForEach(ModeVoyage.allCases) { mode in
-                            Button { voyage.mode = mode } label: {
-                                if voyage.mode == mode {
-                                    Label(mode.nom, systemImage: "checkmark")
-                                } else {
-                                    Text(mode.nom)
+                    // Un simple bouton : il ouvre ensuite la liste des trois modes.
+                    // Un rond coloré (une couleur par mode) pour qu'il se voie bien.
+                    Button { modesOuverts.toggle() } label: {
+                        Image(systemName: voyage.mode.symbole)
+                            .font(.system(size: 15, weight: .semibold))
+                            .foregroundStyle(.white)
+                            .frame(width: 32, height: 32)
+                            .background(Circle().fill(voyage.mode.couleur))
+                            .shadow(color: voyage.mode.couleur.opacity(0.45), radius: 3, y: 1)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Mode : \(voyage.mode.nom)")
+                    .help("Mode : \(voyage.mode.nom)")
+                    .popover(isPresented: $modesOuverts) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(ModeVoyage.allCases) { mode in
+                                Button {
+                                    voyage.mode = mode
+                                    modesOuverts = false
+                                } label: {
+                                    HStack(spacing: 10) {
+                                        Image(systemName: mode.symbole).frame(width: 22)
+                                        Text(mode.nom)
+                                        Spacer(minLength: 16)
+                                        if voyage.mode == mode { Image(systemName: "checkmark").foregroundStyle(.tint) }
+                                    }
+                                    .padding(.horizontal, 12).padding(.vertical, 8)
+                                    .contentShape(Rectangle())
                                 }
+                                .buttonStyle(.plain)
                             }
                         }
-                    } label: {
-                        if iconesSeules {
-                            Image(systemName: voyage.mode.symbole).accessibilityLabel(voyage.mode.nom)
-                        } else {
-                            Label(voyage.mode.nom, systemImage: voyage.mode.symbole)
-                        }
+                        .padding(.vertical, 6)
+                        .frame(minWidth: 200)
+                        .presentationCompactAdaptation(.popover)
                     }
-                    Text(voyage.titre).font(.headline).lineLimit(1)
+                    Text(voyage.titre).font(PoliceVoyage.police(pour: voyage.pays, taille: 21)).lineLimit(1)
                 }
             }
             ToolbarItem(placement: .principal) {

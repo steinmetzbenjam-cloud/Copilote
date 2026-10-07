@@ -81,8 +81,22 @@ struct EtapeEditView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Titre", text: $etape.titre)
-                        .focused($titreActif)
+                    HStack(spacing: 12) {
+                        TextField("Titre", text: $etape.titre)
+                            .focused($titreActif)
+                        // Idées de lieux à visiter : une ampoule allumée, au niveau du titre.
+                        Button { suggestionsOuvertes = true } label: {
+                            Image(systemName: "lightbulb.max.fill")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: 36, height: 36)
+                                .background(Circle().fill(LinearGradient(colors: [.yellow, .orange], startPoint: .top, endPoint: .bottom)))
+                                .shadow(color: .yellow.opacity(0.7), radius: 6)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Idées de lieux à visiter")
+                        .help("Idées de lieux à visiter")
+                    }
                     TextField("Lieu ou adresse", text: $etape.lieu)
                     Button(etape.coordonnee == nil ? "Placer sur la carte" : "Changer de lieu",
                            systemImage: "magnifyingglass") { rechercheOuverte = true }
@@ -99,13 +113,13 @@ struct EtapeEditView: View {
                             etape.longitude = nil
                         }
                     }
-                    Button("Idées de lieux à visiter", systemImage: "sparkles") { suggestionsOuvertes = true }
                     Picker("Catégorie", selection: $etape.categorie) {
                         ForEach(CategorieEtape.allCases) { c in
                             Label(c.libelle, systemImage: c.symbole).tag(c)
                         }
                     }
                 }
+                SectionBudgetEtape(etape: etape)
                 if etape.aDesInfosDeLieu { infosDuLieu }
                 Section {
                     Picker("Jour", selection: jourChoisi) {

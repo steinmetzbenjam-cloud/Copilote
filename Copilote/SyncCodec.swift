@@ -153,6 +153,7 @@ enum Codec {
             r["debut"] = v.debut; r["fin"] = v.fin; r["notes"] = v.notes
             r["pays"] = v.pays; r["creeLe"] = v.creeLe
             r["transportAller"] = v.transportAllerJSON; r["transportRetour"] = v.transportRetourJSON
+            r["deviseLocale"] = v.deviseLocale; r["tauxChange"] = v.tauxChange
             return r
         case let j as JourVoyage:
             let r = base(.jour, j.uid, zone, systeme)
@@ -191,6 +192,9 @@ enum Codec {
             r["noteGoogle"] = e.noteGoogle; r["avisGoogle"] = e.avisGoogle; r["lienGoogle"] = e.lienGoogle
             r["noteTripadvisor"] = e.noteTripadvisor; r["avisTripadvisor"] = e.avisTripadvisor; r["lienTripadvisor"] = e.lienTripadvisor
             r["siteWeb"] = e.siteWeb; r["creeLe"] = e.creeLe; r["voyageUID"] = e.voyage?.uid
+            r["prixAdulte"] = e.prixAdulte; r["prixEnfant"] = e.prixEnfant; r["prixEtudiant"] = e.prixEtudiant
+            r["prixAdulteLocal"] = e.prixAdulteLocal ? 1 : 0; r["prixEnfantLocal"] = e.prixEnfantLocal ? 1 : 0
+            r["prixEtudiantLocal"] = e.prixEtudiantLocal ? 1 : 0
             return r
         case let x as Reservation:
             let r = base(.reservation, x.uid, zone, systeme)
@@ -271,6 +275,7 @@ enum Codec {
             v.debut = date("debut") ?? v.debut; v.fin = date("fin") ?? v.fin; v.notes = texte("notes")
             v.pays = r["pays"] as? [String] ?? []; v.creeLe = date("creeLe") ?? v.creeLe
             v.transportAllerJSON = r["transportAller"] as? String; v.transportRetourJSON = r["transportRetour"] as? String
+            v.deviseLocale = r["deviseLocale"] as? String; v.tauxChange = nombre("tauxChange")
             let proprietaire = r.recordID.zoneID.ownerName
             v.zoneProprietaire = proprietaire == CKCurrentUserDefaultName ? "" : proprietaire
             return v
@@ -322,6 +327,9 @@ enum Codec {
             e.noteTripadvisor = nombre("noteTripadvisor"); e.avisTripadvisor = entier("avisTripadvisor")
             e.lienTripadvisor = r["lienTripadvisor"] as? String
             e.siteWeb = r["siteWeb"] as? String; e.creeLe = date("creeLe") ?? e.creeLe; e.voyage = parent
+            e.prixAdulte = nombre("prixAdulte"); e.prixEnfant = nombre("prixEnfant"); e.prixEtudiant = nombre("prixEtudiant")
+            e.prixAdulteLocal = (entier("prixAdulteLocal") ?? 0) == 1; e.prixEnfantLocal = (entier("prixEnfantLocal") ?? 0) == 1
+            e.prixEtudiantLocal = (entier("prixEtudiantLocal") ?? 0) == 1
             return e
 
         case .reservation:

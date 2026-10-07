@@ -17,7 +17,7 @@ struct SectionPartage: View {
     init(voyage: Voyage) { self.voyage = voyage }
 
     var body: some View {
-        Section {
+        VStack(alignment: .leading, spacing: 12) {
             if !PartageCloud.disponible {
                 Label("Le partage iCloud n'est pas activé dans cette version de l'app (compte Apple Developer requis).",
                       systemImage: "icloud.slash")
@@ -47,11 +47,9 @@ struct SectionPartage: View {
                 }
                 if let erreur { Text(erreur).font(.footnote).foregroundStyle(.red) }
             }
-        } header: {
-            Text("Partage avec le groupe")
-        } footer: {
             if PartageCloud.disponible && cloud.actif {
                 Text("Les personnes invitées voient ce voyage dans leur app et peuvent le modifier. Supprimer ce voyage le supprime pour tout le monde.")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
         }
     }
