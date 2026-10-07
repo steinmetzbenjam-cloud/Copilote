@@ -63,6 +63,17 @@ struct CarteDuVoyage: View {
         let id: String
         let points: [CLLocationCoordinate2D]
         let tirets: [CGFloat]
+        var avion = false
+
+        /// Milieu du trait et direction du vol (angle SwiftUI, en radians, pour un symbole tourné vers la droite).
+        var milieuAvion: (coordonnee: CLLocationCoordinate2D, angle: Double)? {
+            guard avion, points.count >= 3 else { return nil }
+            let m = points.count / 2
+            let avant = points[m - 1], apres = points[m + 1 < points.count ? m + 1 : m]
+            let dx = (apres.longitude - avant.longitude) * cos(points[m].latitude * .pi / 180)
+            let dy = apres.latitude - avant.latitude
+            return (points[m], atan2(-dy, dx))
+        }
     }
 
     /// Couples d'éléments consécutifs d'un jour, hébergement compris, avec le transport prévu entre eux.
@@ -110,7 +121,7 @@ struct CarteDuVoyage: View {
     private func segment(_ id: String, _ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, _ mode: ModeTransport?) -> Segment {
         switch mode {
         case .avion:
-            return Segment(id: id, points: Itineraires.arc(a, b), tirets: [7, 6])
+            return Segment(id: id, points: Itineraires.arc(a, b), tirets: [7, 6], avion: true)
         case .voiture, .pied, .velo:
             let trajet = Itineraires.shared.trajet(a, b, mode!)
             return Segment(id: id, points: trajet?.points ?? [a, b], tirets: mode == .voiture ? [] : [1, 6])
@@ -164,10 +175,24 @@ struct CarteDuVoyage: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    ForEach(segments(du: jour)) { s in
+                    let traits = segments(du: jour)
+                    ForEach(traits) { s in
                         MapPolyline(coordinates: s.points)
                             .stroke(Self.couleur(du: index).opacity(attenue ? 0.2 : 0.65),
                                     style: StrokeStyle(lineWidth: focus && jourFocus != nil ? 4 : 3, lineCap: .round, dash: s.tirets))
+                    }
+                    ForEach(traits.filter(\.avion)) { s in
+                        if let milieu = s.milieuAvion {
+                            Annotation("", coordinate: milieu.coordonnee, anchor: .center) {
+                                Image(systemName: "airplane")
+                                    .font(.system(size: 17, weight: .semibold))
+                                    .foregroundStyle(Self.couleur(du: index))
+                                    .rotationEffect(.radians(milieu.angle))
+                                    .shadow(color: .white, radius: 2)
+                                    .opacity(attenue ? 0.35 : 1)
+                                    .allowsHitTesting(false)
+                            }
+                        }
                     }
                     ForEach(Array(etapes.enumerated()), id: \.element.id) { rang, etape in
                         Annotation(etape.titre, coordinate: etape.coordonnee!) {

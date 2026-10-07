@@ -4,14 +4,20 @@ import SwiftData
 /// Fenêtre de discussion : chacun donne son avis sur la préparation du voyage.
 struct CommentairesView: View {
     @Bindable var voyage: Voyage
+    /// Affichée comme un cadre flottant (sans feuille ni barre de navigation), par-dessus la carte.
+    var enCadre = false
+    /// En cadre : l'état d'ouverture à remettre à faux pour fermer.
+    var ouverte: Binding<Bool>?
     @Environment(\.modelContext) private var contexte
     @Environment(\.dismiss) private var fermer
     @State private var moi: String
     @State private var brouillon = ""
     @State private var nouveauVoyageur = ""
 
-    init(voyage: Voyage) {
+    init(voyage: Voyage, enCadre: Bool = false, ouverte: Binding<Bool>? = nil) {
         self.voyage = voyage
+        self.enCadre = enCadre
+        self.ouverte = ouverte
         _moi = State(initialValue: MoiVoyage.lire(voyage))
     }
 
@@ -20,6 +26,26 @@ struct CommentairesView: View {
     private var jeSuisIdentifie: Bool { membres.contains { $0.uid == moi } }
 
     var body: some View {
+        if enCadre { cadre } else { feuille }
+    }
+
+    private var cadre: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Label("Discussion", systemImage: "bubble.left.and.bubble.right").font(.headline)
+                Spacer()
+                Button { ouverte?.wrappedValue = false } label: { Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary) }
+                    .buttonStyle(.borderless)
+            }
+            .padding(.horizontal, 16).padding(.vertical, 12)
+            Divider()
+            if membres.isEmpty { aucunVoyageur } else { discussion }
+        }
+        .modifier(FondDeCarte())
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+    }
+
+    private var feuille: some View {
         NavigationStack {
             Group {
                 if membres.isEmpty { aucunVoyageur } else { discussion }

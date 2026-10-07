@@ -6,7 +6,6 @@ struct NouveauVoyageView: View {
 
     @Environment(\.dismiss) private var dismiss
     @State private var titre = ""
-    @State private var destination = ""
     @State private var pays: [String] = []
     @State private var paysAAjouter = ""
     @State private var debut = Calendar.current.startOfDay(for: .now)
@@ -19,7 +18,6 @@ struct NouveauVoyageView: View {
                 Section("Voyage") {
                     TextField("Nom du voyage", text: $titre)
                         .focused($titreActif)
-                    TextField("Destination (ville, région…)", text: $destination)
                 }
 
                 Section {
@@ -81,7 +79,6 @@ struct NouveauVoyageView: View {
     private func creer() {
         let nom = titre.trimmingCharacters(in: .whitespaces)
         let voyage = Voyage(titre: nom.isEmpty ? "Nouveau voyage" : nom,
-                            destination: destination.trimmingCharacters(in: .whitespaces),
                             debut: debut, fin: fin)
         voyage.pays = pays
         onCreer(voyage)

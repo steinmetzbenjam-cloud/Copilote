@@ -16,6 +16,8 @@ struct ItineraireView: View {
     /// Étape dont on affiche l'explication de l'avertissement d'horaire.
     @State private var avertissementOuvert: String?
     @State private var discussionOuverte = false
+    /// Écran large : la discussion devient un cadre sur la carte au lieu d'une feuille.
+    @State private var ecranLarge = false
     /// Hauteur du contenu de « Étapes à placer » (iPad), pour que son défilement ne couvre pas la carte.
     @State private var hauteurEtapesAPlacer: CGFloat = .infinity
     /// Déplacement qui effacerait des transports : en attente de confirmation.
@@ -49,17 +51,25 @@ struct ItineraireView: View {
                     ScrollView { listeDesJours(avecEtapesAPlacer: false).padding(12) }
                         .frame(width: Self.largeurPanneau)
                         .scrollIndicators(.hidden)
-                    if !voyage.etapesSansJour.isEmpty {
-                        // Le défilement se limite à la hauteur du contenu : en dessous, le doigt agit sur la carte.
-                        ScrollView {
-                            etapesAPlacer.padding(12)
-                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { hauteurEtapesAPlacer = $0 }
+                    // À droite, sous le bouton : la discussion puis les étapes à placer. Seuls les cadres captent le toucher.
+                    VStack(alignment: .trailing, spacing: 0) {
+                        if discussionOuverte {
+                            CommentairesView(voyage: voyage, enCadre: true, ouverte: $discussionOuverte)
+                                .frame(width: 320, height: min(440, max(260, geo.size.height * 0.55)))
+                                .padding(12)
                         }
-                        .frame(width: 300)
-                        .frame(maxHeight: hauteurEtapesAPlacer)
-                        .scrollIndicators(.hidden)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+                        if !voyage.etapesSansJour.isEmpty {
+                            // Le défilement se limite à la hauteur du contenu : en dessous, le doigt agit sur la carte.
+                            ScrollView {
+                                etapesAPlacer.padding(12)
+                                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { hauteurEtapesAPlacer = $0 }
+                            }
+                            .frame(width: 344)
+                            .frame(maxHeight: hauteurEtapesAPlacer)
+                            .scrollIndicators(.hidden)
+                        }
                     }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
             } else {
                 // iPhone : la carte en haut, les jours dessous.
@@ -70,6 +80,7 @@ struct ItineraireView: View {
                 }
             }
         }
+        .onGeometryChange(for: Bool.self) { $0.size.width >= 700 } action: { ecranLarge = $0 }
         // Déposer une étape en dehors d'une carte de jour : elle n'a plus de jour.
         .dropDestination(for: String.self) { elements, _ in
             guard let uid = elements.first(where: { $0.hasPrefix(Self.prefixe) })?.dropFirst(Self.prefixe.count),
@@ -86,14 +97,14 @@ struct ItineraireView: View {
             // Préparation seulement : on échange sur le déroulé avec les autres voyageurs.
             if voyage.mode == .preparation {
                 ToolbarItem(placement: .primaryAction) {
-                    Button { discussionOuverte = true } label: {
+                    Button { discussionOuverte.toggle() } label: {
                         Label(voyage.commentaires.isEmpty ? "Discussion" : "Discussion (\(voyage.commentaires.count))",
                               systemImage: "bubble.left.and.bubble.right")
                     }
                 }
             }
         }
-        .sheet(isPresented: $discussionOuverte) { CommentairesView(voyage: voyage) }
+        .sheet(isPresented: Binding(get: { discussionOuverte && !ecranLarge }, set: { discussionOuverte = $0 })) { CommentairesView(voyage: voyage) }
         .sheet(item: $etapeEnEdition, onDismiss: nettoyer) { etape in
             EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
         }

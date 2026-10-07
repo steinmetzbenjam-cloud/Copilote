@@ -15,7 +15,6 @@ struct VoyageDetailView: View {
         Form {
             Section("Voyage") {
                 TextField("Titre", text: $voyage.titre)
-                TextField("Destination", text: $voyage.destination)
             }
 
             Section {
