@@ -183,8 +183,11 @@ struct ItineraireView: View {
         let hebergements = voyage.hebergements(apres: jour)
         let vise = nuitVisee.map { cal.isDate($0, inSameDayAs: jour) } ?? false
         return VStack(alignment: .leading, spacing: 8) {
-            Label(hebergements.isEmpty ? "Hébergement" : texteNuit(jour), systemImage: "moon.zzz.fill")
-                .font(.caption.bold()).foregroundStyle(Self.couleurNuit)
+            // Sans hébergement : seulement le bouton d'ajout. Avec : le titre de la nuit et les hébergements.
+            if !hebergements.isEmpty {
+                Label(texteNuit(jour), systemImage: "moon.zzz.fill")
+                    .font(.caption.bold()).foregroundStyle(Self.couleurNuit)
+            }
             ForEach(hebergements) { h in
                 VStack(alignment: .leading, spacing: 2) {
                     ligne(h)

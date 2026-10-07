@@ -81,30 +81,37 @@ struct CommentairesView: View {
 
     private var discussion: some View {
         VStack(spacing: 0) {
+            HStack {
+                Text("Qui es-tu ?").foregroundStyle(.secondary)
+                Spacer()
+                Picker("Qui es-tu ?", selection: $moi) {
+                    Text("—").tag("")
+                    ForEach(membres) { Text($0.nom).tag($0.uid) }
+                }
+                .labelsHidden()
+                .onChange(of: moi) { MoiVoyage.ecrire(moi, voyage) }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 8)
+            Divider()
             ScrollViewReader { lecteur in
-                List {
-                    Section {
-                        Picker("Qui es-tu ?", selection: $moi) {
-                            Text("—").tag("")
-                            ForEach(membres) { Text($0.nom).tag($0.uid) }
-                        }
-                        .onChange(of: moi) { MoiVoyage.ecrire(moi, voyage) }
-                    }
-                    Section {
+                ScrollView {
+                    LazyVStack(spacing: 4) {
                         if messages.isEmpty {
                             Text("Aucun message. Donne ton avis sur le déroulé du voyage : les autres le verront.")
                                 .font(.footnote).foregroundStyle(.secondary)
+                                .multilineTextAlignment(.center)
+                                .padding(24)
                         }
-                        ForEach(messages) { message in
-                            bulle(message).id(message.uid)
-                                .swipeActions {
-                                    if message.auteurUID == moi {
-                                        Button("Supprimer", role: .destructive) { contexte.delete(message) }
-                                    }
-                                }
+                        ForEach(Array(messages.enumerated()), id: \.element.uid) { rang, message in
+                            let precedent = rang > 0 ? messages[rang - 1] : nil
+                            bulle(message, premierDuGroupe: precedent?.auteurUID != message.auteurUID)
+                                .id(message.uid)
                         }
                     }
+                    .padding(.horizontal, 10).padding(.vertical, 8)
                 }
+                .background(FondDePage.couleur)
+                .defaultScrollAnchor(.bottom)
                 .onChange(of: messages.count) {
                     if let dernier = messages.last { withAnimation { lecteur.scrollTo(dernier.uid, anchor: .bottom) } }
                 }
@@ -114,27 +121,64 @@ struct CommentairesView: View {
         }
     }
 
-    private func bulle(_ message: Commentaire) -> some View {
+    /// Mes messages à droite (couleur d'accent), ceux des autres à gauche, comme dans une messagerie.
+    private func bulle(_ message: Commentaire, premierDuGroupe: Bool) -> some View {
         let mien = message.auteurUID == moi
-        return VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) {
-                Text(voyage.nomMembre(message.auteurUID)).font(.caption.bold()).foregroundStyle(mien ? Color.accentColor : .secondary)
-                Text(message.date.formatted(.relative(presentation: .named))).font(.caption2).foregroundStyle(.tertiary)
+        return HStack(spacing: 0) {
+            if mien { Spacer(minLength: 48) }
+            VStack(alignment: .leading, spacing: 2) {
+                if !mien && premierDuGroupe {
+                    Text(voyage.nomMembre(message.auteurUID)).font(.caption.bold()).foregroundStyle(Self.couleurAuteur(message.auteurUID))
+                }
+                Text(message.texte).textSelection(.enabled)
+                Text(message.date.formatted(date: .omitted, time: .shortened))
+                    .font(.caption2)
+                    .foregroundStyle(mien ? Color.white.opacity(0.75) : Color.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
-            Text(message.texte)
+            .foregroundStyle(mien ? Color.white : Color.primary)
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(mien ? Color.accentColor : Color(white: 0.5).opacity(0.18),
+                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .contextMenu {
+                if mien { Button("Supprimer", systemImage: "trash", role: .destructive) { contexte.delete(message) } }
+            }
+            if !mien { Spacer(minLength: 48) }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contextMenu {
-            if mien { Button("Supprimer", systemImage: "trash", role: .destructive) { contexte.delete(message) } }
-        }
+        .padding(.top, premierDuGroupe ? 6 : 0)
+    }
+
+    /// Une couleur stable par auteur, pour les distinguer dans la discussion.
+    private static func couleurAuteur(_ uid: String) -> Color {
+        let palette: [Color] = [.orange, .purple, .teal, .pink, .indigo, .brown, .green]
+        let somme = uid.unicodeScalars.reduce(0) { ($0 &+ Int($1.value)) % 997 }
+        return palette[somme % palette.count]
     }
 
     private var saisie: some View {
         HStack(alignment: .bottom, spacing: 8) {
+            #if os(macOS)
+            // Entrée va à la ligne ; l'envoi se fait avec le bouton.
+            TextEditor(text: $brouillon)
+                .font(.body)
+                .scrollContentBackground(.hidden)
+                .padding(.horizontal, 6).padding(.vertical, 4)
+                .frame(minHeight: 30, maxHeight: 100)
+                .background(.background, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(.separator))
+                .overlay(alignment: .topLeading) {
+                    if brouillon.isEmpty {
+                        Text(jeSuisIdentifie ? "Ton avis sur la préparation…" : "Choisis d'abord qui tu es")
+                            .foregroundStyle(.tertiary).padding(.horizontal, 11).padding(.vertical, 5).allowsHitTesting(false)
+                    }
+                }
+                .disabled(!jeSuisIdentifie)
+            #else
             TextField(jeSuisIdentifie ? "Ton avis sur la préparation…" : "Choisis d'abord qui tu es", text: $brouillon, axis: .vertical)
                 .lineLimit(1...5)
                 .textFieldStyle(.roundedBorder)
                 .disabled(!jeSuisIdentifie)
+            #endif
             Button(action: envoyer) {
                 Image(systemName: "arrow.up.circle.fill").font(.title)
             }

@@ -9,6 +9,8 @@ struct ContentView: View {
     /// vide la sélection de la liste, mais le voyage doit rester ouvert.
     @State private var voyageOuvert: Voyage?
     @State private var reglagesOuverts = false
+    /// Première ouverture de l'app : on demande qui est l'utilisateur.
+    @State private var profilPremiereFois = false
     @State private var nouveauVoyageOuvert = false
     @State private var voyageASupprimer: Voyage?
     @State private var sauvegarde: SauvegardeDocument?
@@ -60,6 +62,8 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $reglagesOuverts) { ReglagesView() }
+        .sheet(isPresented: $profilPremiereFois) { ProfilEditView(premiereFois: true) }
+        .onAppear { if !Profil.partage.estRenseigne { profilPremiereFois = true } }
         .sheet(isPresented: $choixSauvegardeOuvert, onDismiss: {
             // L'enregistrement s'ouvre une fois la feuille de choix refermée.
             if let choisis = voyagesChoisis { voyagesChoisis = nil; sauvegarder(choisis) }

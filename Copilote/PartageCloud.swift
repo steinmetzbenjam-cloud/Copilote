@@ -317,7 +317,9 @@ final class PartageCloud {
         share.publicPermission = .none
         let (resultats, _) = try await conteneur.privateCloudDatabase.modifyRecords(saving: [share], deleting: [])
         guard case .success(let enregistre)? = resultats[share.recordID], let sauve = enregistre as? CKShare else {
-            throw ErreurPartage.refuse
+            var detail: String?
+            if case .failure(let erreur)? = resultats[share.recordID] { detail = Self.decrire(erreur) }
+            throw ErreurPartage.refuse(detail)
         }
         partages[zone.zoneName] = sauve
         voyage.partage = true
@@ -337,13 +339,19 @@ final class PartageCloud {
     }
 
     enum ErreurPartage: LocalizedError {
-        case inactif, refuse
+        case inactif, refuse(String?)
         var errorDescription: String? {
             switch self {
             case .inactif: "Active d'abord la synchronisation iCloud dans les Réglages."
-            case .refuse: "iCloud a refusé de créer l'invitation."
+            case .refuse(let detail): "iCloud a refusé de créer l'invitation" + (detail.map { " (\($0))." } ?? ".")
             }
         }
+    }
+
+    /// Code et texte de l'erreur CloudKit, pour comprendre ce qui bloque.
+    static func decrire(_ erreur: Error) -> String {
+        let e = erreur as NSError
+        return "\(e.domain) \(e.code) : \(e.localizedDescription)"
     }
 
     #endif
