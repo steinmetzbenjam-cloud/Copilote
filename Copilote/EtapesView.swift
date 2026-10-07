@@ -16,6 +16,20 @@ struct EtapesView: View {
         var id: String { rawValue }
     }
     @State private var avisOuvert: Etape?
+    /// Glisser-déposer : étape au-dessus de laquelle on s'apprête à lâcher (trait), et zone survolée.
+    @State private var etapeVisee: String?
+    @State private var zoneVisee: String?
+    /// Déplacement qui effacerait des transports : en attente de confirmation.
+    @State private var deplacementEnAttente: DeplacementEnAttente?
+
+    private struct DeplacementEnAttente: Identifiable {
+        let id = UUID()
+        let etape: Etape
+        let jour: Date?
+        let cible: Etape?
+        let perdus: [Etape]
+        var nuit = false
+    }
 
     struct PaireEtapes: Identifiable {
         let depart: Etape, arrivee: Etape
@@ -42,6 +56,12 @@ struct EtapesView: View {
             .frame(maxWidth: .infinity)
         }
         .background(FondDePage.couleur)
+        .confirmationDialog("Effacer le transport ?", isPresented: Binding(get: { deplacementEnAttente != nil }, set: { if !$0 { deplacementEnAttente = nil } }), titleVisibility: .visible, presenting: deplacementEnAttente) { d in
+            Button("Déplacer et effacer le transport", role: .destructive) { appliquer(d) }
+            Button("Annuler", role: .cancel) {}
+        } message: { d in
+            Text(d.perdus.count == 1 ? "Ce déplacement efface le transport prévu après « \(d.perdus[0].titre) »." : "Ce déplacement efface \(d.perdus.count) transports prévus entre des étapes.")
+        }
         .sheet(item: $transportExtremiteEnEdition) { transportExtremite($0) }
         .sheet(item: $transportEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
         .sheet(item: $avisOuvert) { AvisEtapeView(voyage: voyage, etape: $0) }
@@ -88,13 +108,19 @@ struct EtapesView: View {
                 Text("Aucune étape en attente. Prépare ici des idées, tu les glisseras ensuite sur un jour dans l'itinéraire.")
                     .font(.footnote).foregroundStyle(.secondary)
             }
-            ForEach(voyage.etapesSansJour) { ligneDansCadre($0, couleur: .gray) }
+            ForEach(voyage.etapesSansJour) { ligneGlissable($0, jour: nil, couleur: .gray) }
             Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouter() }
                 .buttonStyle(.borderless).font(.footnote)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(FondDeCarte())
+        .overlay { surbrillance("placer", couleur: .accentColor) }
+        .dropDestination(for: String.self) { elements, _ in
+            recevoir(elements, jour: nil, avant: nil)
+        } isTargeted: { visee in
+            zoneVisee = visee ? "placer" : (zoneVisee == "placer" ? nil : zoneVisee)
+        }
     }
 
     /// Un jour, même sans étape : ses étapes, les transports entre elles et un bouton pour en ajouter.
@@ -113,7 +139,7 @@ struct EtapesView: View {
                 Text("Aucune étape ce jour-là.").font(.footnote).foregroundStyle(.secondary)
             }
             ForEach(etapes) { etape in
-                ligneDansCadre(etape, couleur: couleur)
+                ligneGlissable(etape, jour: jour, couleur: couleur)
                 if let suivante = voyage.suivante(de: etape) { ligneTransport(etape, suivante) }
             }
             Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouter(jour: jour) }
@@ -122,6 +148,13 @@ struct EtapesView: View {
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(FondDeCarte())
+        .overlay { surbrillance(idZone("jour", jour), couleur: couleur) }
+        .dropDestination(for: String.self) { elements, _ in
+            recevoir(elements, jour: jour, avant: nil)
+        } isTargeted: { visee in
+            let id = idZone("jour", jour)
+            zoneVisee = visee ? id : (zoneVisee == id ? nil : zoneVisee)
+        }
     }
 
     /// Bande entre deux jours : les hébergements de la nuit, ou un bouton pour en ajouter un.
@@ -132,7 +165,7 @@ struct EtapesView: View {
                 Label(self.nuits(jour), systemImage: "moon.zzz.fill").font(.caption.bold()).foregroundStyle(Self.couleurNuit)
             }
             ForEach(nuits) { h in
-                ligneDansCadre(h, couleur: Self.couleurNuit)
+                ligneGlissable(h, jour: nil, couleur: Self.couleurNuit, deposable: false)
                 if let suivante = voyage.suivante(de: h) { ligneTransport(h, suivante) }
             }
             if nuits.isEmpty {
@@ -148,13 +181,105 @@ struct EtapesView: View {
         }
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
             .strokeBorder(Self.couleurNuit.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: nuits.isEmpty ? [5, 4] : [])))
+        .overlay { surbrillance(idZone("nuit", jour), couleur: Self.couleurNuit) }
+        // Seuls les hébergements se posent dans une nuit.
+        .dropDestination(for: String.self) { elements, _ in
+            recevoir(elements, jour: jour, avant: nil, nuit: true)
+        } isTargeted: { visee in
+            let id = idZone("nuit", jour)
+            zoneVisee = visee ? id : (zoneVisee == id ? nil : zoneVisee)
+        }
     }
 
-    /// Une étape dans un cadre : fond teinté de la couleur du jour.
-    private func ligneDansCadre(_ etape: Etape, couleur: Color) -> some View {
-        ligne(etape)
+    /// Une étape dans un cadre (fond teinté de la couleur du jour) que l'on peut glisser ailleurs.
+    /// `deposable` : on peut aussi lâcher une autre étape juste au-dessus d'elle.
+    private func ligneGlissable(_ etape: Etape, jour: Date?, couleur: Color, deposable: Bool = true) -> some View {
+        let contenu = ligne(etape)
             .padding(.horizontal, 10).padding(.vertical, 8)
             .background(couleur.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .draggable(Self.prefixe + etape.uid) {
+                Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
+                    .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+        return Group {
+            if deposable {
+                contenu
+                    .overlay(alignment: .top) {
+                        if etapeVisee == etape.uid { Capsule().fill(.tint).frame(height: 3).offset(y: -5) }
+                    }
+                    .dropDestination(for: String.self) { elements, _ in
+                        recevoir(elements, jour: jour, avant: etape)
+                    } isTargeted: { visee in
+                        if visee { etapeVisee = etape.uid } else if etapeVisee == etape.uid { etapeVisee = nil }
+                    }
+            } else {
+                contenu
+            }
+        }
+    }
+
+    // MARK: Glisser-déposer
+
+    private static let prefixe = "copilote-etape:"
+
+    private func idZone(_ type: String, _ jour: Date) -> String { "\(type)-\(jour.timeIntervalSince1970)" }
+
+    @ViewBuilder private func surbrillance(_ id: String, couleur: Color) -> some View {
+        if zoneVisee == id {
+            RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(couleur, lineWidth: 2)
+        }
+    }
+
+    /// `jour` nil : la zone « À placer ». `nuit` : on ne reçoit qu'un hébergement, posé entre `jour` et le suivant.
+    private func recevoir(_ elements: [String], jour: Date?, avant cible: Etape?, nuit: Bool = false) -> Bool {
+        defer { etapeVisee = nil; zoneVisee = nil }
+        guard let uid = elements.first(where: { $0.hasPrefix(Self.prefixe) })?.dropFirst(Self.prefixe.count),
+              let etape = voyage.etapes.first(where: { $0.uid == String(uid) }) else { return false }
+        if nuit {
+            guard etape.categorie == .hebergement, let jour else { return false }
+            return demanderNuit(etape, apres: jour)
+        }
+        // Un hébergement lâché sur un jour va à la fin de ce jour, entre lui et le suivant.
+        if let jour, etape.categorie == .hebergement { return demanderNuit(etape, apres: jour) }
+        return demander(etape, vers: jour, avant: cible)
+    }
+
+    /// Déplace tout de suite, ou demande confirmation si des transports entre étapes seraient effacés.
+    private func demander(_ etape: Etape, vers jour: Date?, avant cible: Etape?) -> Bool {
+        if cible === etape { return false }
+        let perdus = voyage.transportsPerdus(deplacant: etape, vers: jour, avant: cible)
+        let d = DeplacementEnAttente(etape: etape, jour: jour, cible: cible, perdus: perdus)
+        if perdus.isEmpty { return appliquer(d) }
+        deplacementEnAttente = d
+        return true
+    }
+
+    private func demanderNuit(_ etape: Etape, apres jour: Date) -> Bool {
+        let perdus = voyage.transportsPerdus(deplacant: etape, vers: jour, avant: nil, nuit: true)
+        let d = DeplacementEnAttente(etape: etape, jour: jour, cible: nil, perdus: perdus, nuit: true)
+        if perdus.isEmpty { return appliquer(d) }
+        deplacementEnAttente = d
+        return true
+    }
+
+    @discardableResult
+    private func appliquer(_ d: DeplacementEnAttente) -> Bool {
+        withAnimation {
+            for e in d.perdus { e.transport = nil }
+            if d.nuit, let jour = d.jour { voyage.placerEntreJours(d.etape, apres: jour); return true }
+            if let jour = d.jour { return voyage.deplacer(d.etape, vers: jour, avant: d.cible) }
+            return placerSansJour(d.etape, avant: d.cible)
+        }
+    }
+
+    /// Range l'étape dans « À placer », juste avant `cible` ou à la fin.
+    private func placerSansJour(_ etape: Etape, avant cible: Etape?) -> Bool {
+        _ = voyage.retirerDuJour(etape)
+        var liste = voyage.etapesSansJour.filter { $0 !== etape }
+        let index = cible.flatMap { c in liste.firstIndex { $0 === c } } ?? liste.count
+        liste.insert(etape, at: index)
+        for (i, e) in liste.enumerated() { e.ordre = Double(i) }
+        return true
     }
 
     /// Ligne de transport avant le premier jour ou après le dernier.
