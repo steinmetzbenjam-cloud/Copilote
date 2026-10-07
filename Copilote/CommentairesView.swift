@@ -13,6 +13,7 @@ struct CommentairesView: View {
     @State private var moi: String
     @State private var brouillon = ""
     @State private var nouveauVoyageur = ""
+    @State private var membreAffiche: Membre?
 
     init(voyage: Voyage, enCadre: Bool = false, ouverte: Binding<Bool>? = nil) {
         self.voyage = voyage
@@ -30,11 +31,13 @@ struct CommentairesView: View {
             if enCadre { cadre } else { feuille }
         }
         .onAppear(perform: identifier)
+        .sheet(item: $membreAffiche) { ProfilMembreView(membre: $0) }
     }
 
     /// Avec un profil renseigné, on sait déjà qui parle : on me retrouve dans les voyageurs, ou on m'y ajoute.
     private func identifier() {
         let profil = Profil.partage
+        defer { profil.publier(dans: contexte) }
         guard profil.estRenseigne, !jeSuisIdentifie else { return }
         profil.reconnaitre(dans: voyage)
         moi = MoiVoyage.lire(voyage)
@@ -147,8 +150,25 @@ struct CommentairesView: View {
     /// Mes messages à droite (couleur d'accent), ceux des autres à gauche, comme dans une messagerie.
     private func bulle(_ message: Commentaire, premierDuGroupe: Bool) -> some View {
         let mien = message.auteurUID == moi
-        return HStack(spacing: 0) {
+        let auteur = voyage.membre(uid: message.auteurUID)
+        return HStack(alignment: .bottom, spacing: 0) {
             if mien { Spacer(minLength: 48) }
+            if !mien {
+                // La photo (ou les initiales) de l'auteur, une fois par série de messages ; toucher ouvre ses informations.
+                Group {
+                    if premierDuGroupe, let auteur {
+                        Button { membreAffiche = auteur } label: {
+                            AvatarView(initiales: Profil.initiales(de: auteur.nomAffiche), donnees: auteur.avatar, taille: 28,
+                                       couleur: AvatarView.couleur(pour: auteur.uid))
+                        }
+                        .buttonStyle(.plain)
+                    } else {
+                        Color.clear
+                    }
+                }
+                .frame(width: 28, height: 28)
+                .padding(.trailing, 6)
+            }
             VStack(alignment: .leading, spacing: 2) {
                 if !mien && premierDuGroupe {
                     Text(voyage.nomMembre(message.auteurUID)).font(.caption.bold()).foregroundStyle(Self.couleurAuteur(message.auteurUID))
@@ -161,9 +181,16 @@ struct CommentairesView: View {
             }
             .foregroundStyle(mien ? Color.white : Color.primary)
             .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(mien ? AnyShapeStyle(Color.accentColor)
-                            : (enCadre ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Color(white: 0.5).opacity(0.18))),
-                        in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .background {
+                let forme = RoundedRectangle(cornerRadius: 14, style: .continuous)
+                if mien {
+                    forme.fill(Color.accentColor)
+                } else {
+                    // Verre dépoli sur la carte, puis une teinte grise plus marquée pour bien distinguer les messages reçus.
+                    forme.fill(enCadre ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(.clear))
+                    forme.fill(Color(white: 0.5).opacity(0.3))
+                }
+            }
             .contextMenu {
                 if mien { Button("Supprimer", systemImage: "trash", role: .destructive) { supprimer(message) } }
             }

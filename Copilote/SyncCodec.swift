@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import CloudKit
+import CryptoKit
 
 enum TypeCloud: String, CaseIterable {
     case voyage = "Voyage", jour = "Jour", membre = "Membre", depense = "Depense", reservation = "Reservation", etape = "Etape", document = "Document"
@@ -168,6 +169,17 @@ enum Codec {
         case let m as Membre:
             let r = base(.membre, m.uid, zone, systeme)
             r["nom"] = m.nom; r["creeLe"] = m.creeLe; r["voyageUID"] = m.voyage?.uid
+            r["nomFamille"] = m.nomFamille; r["email"] = m.email
+            // L'empreinte de la photo (un texte) permet de détecter son changement : les fichiers ne comptent pas dans l'empreinte.
+            r["avatarEmpreinte"] = m.avatar.map(empreinteDonnees)
+            if avecAsset {
+                if let photo = m.avatar {
+                    let fichier = FileManager.default.temporaryDirectory.appending(path: "avatar-\(m.uid).jpg")
+                    if (try? photo.write(to: fichier)) != nil { r["avatar"] = CKAsset(fileURL: fichier) }
+                } else {
+                    r["avatar"] = nil
+                }
+            }
             return r
         case let e as Etape:
             let r = base(.etape, e.uid, zone, systeme)
@@ -210,6 +222,10 @@ enum Codec {
         default:
             fatalError("Type d'objet inconnu")
         }
+    }
+
+    static func empreinteDonnees(_ donnees: Data) -> String {
+        SHA256.hash(data: donnees).prefix(8).map { String(format: "%02x", $0) }.joined()
     }
 
     static func lieuxEnTexte(_ lieux: [LieuReference]) -> String {
@@ -285,6 +301,12 @@ enum Codec {
                 let nouveau = Membre(nom: ""); nouveau.uid = uid; contexte.insert(nouveau); return nouveau
             }()
             m.nom = texte("nom"); m.creeLe = date("creeLe") ?? m.creeLe; m.voyage = parent
+            m.nomFamille = r["nomFamille"] as? String; m.email = r["email"] as? String
+            if let fichier = (r["avatar"] as? CKAsset)?.fileURL, let photo = try? Data(contentsOf: fichier) {
+                m.avatar = photo
+            } else if r["avatarEmpreinte"] as? String == nil {
+                m.avatar = nil
+            }
             return m
 
         case .etape:

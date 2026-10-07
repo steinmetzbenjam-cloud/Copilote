@@ -7,6 +7,7 @@ struct VoyageDetailView: View {
     @State private var nouveauMembre = ""
     @State private var paysAAjouter = ""
     @State private var profilOuvert = false
+    @State private var membreAffiche: Membre?
     private var profil = Profil.partage
 
     init(voyage: Voyage) { self.voyage = voyage }
@@ -17,6 +18,30 @@ struct VoyageDetailView: View {
 
     var body: some View {
         Form {
+            Section("Mon profil") {
+                Button { profilOuvert = true } label: {
+                    HStack(spacing: 12) {
+                        AvatarView(initiales: profil.initiales, donnees: profil.avatar, taille: 44)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(profil.nomComplet.isEmpty ? "Renseigner mon profil" : profil.nomComplet).foregroundStyle(.primary)
+                            if !profil.email.isEmpty { Text(profil.email).font(.footnote).foregroundStyle(.secondary) }
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
+                    }
+                }
+                .buttonStyle(.plain)
+                if profil.estRenseigne && MoiVoyage.lire(voyage).isEmpty {
+                    Button("M'ajouter aux voyageurs : \(profil.prenom)", systemImage: "person.badge.plus") {
+                        let membre = Membre(nom: profil.prenom)
+                        membre.voyage = voyage
+                        contexte.insert(membre)
+                        MoiVoyage.ecrire(membre.uid, voyage)
+                        profil.publier(dans: contexte)
+                    }
+                }
+            }
+
             Section("Voyage") {
                 TextField("Titre", text: $voyage.titre)
             }
@@ -63,38 +88,18 @@ struct VoyageDetailView: View {
                 LabeledContent("Durée", value: "\(voyage.nombreDeJours) jour\(voyage.nombreDeJours > 1 ? "s" : "")")
             }
 
-            Section("Mon profil") {
-                Button { profilOuvert = true } label: {
-                    HStack(spacing: 12) {
-                        AvatarView(initiales: profil.initiales, donnees: profil.avatar, taille: 44)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(profil.nomComplet.isEmpty ? "Renseigner mon profil" : profil.nomComplet).foregroundStyle(.primary)
-                            if !profil.email.isEmpty { Text(profil.email).font(.footnote).foregroundStyle(.secondary) }
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
-                    }
-                }
-                .buttonStyle(.plain)
-                if profil.estRenseigne && MoiVoyage.lire(voyage).isEmpty {
-                    Button("M'ajouter aux voyageurs : \(profil.prenom)", systemImage: "person.badge.plus") {
-                        let membre = Membre(nom: profil.prenom)
-                        membre.voyage = voyage
-                        contexte.insert(membre)
-                        MoiVoyage.ecrire(membre.uid, voyage)
-                    }
-                }
-            }
-
             Section("Voyageurs (\(voyage.membres.count))") {
                 ForEach(membresTries) { membre in
+                    let moi = membre.uid == MoiVoyage.lire(voyage)
                     HStack(spacing: 10) {
-                        let moi = membre.uid == MoiVoyage.lire(voyage)
-                        AvatarView(initiales: Profil.initiales(de: membre.nom), donnees: moi ? profil.avatar : nil, taille: 28,
+                        AvatarView(initiales: Profil.initiales(de: membre.nomAffiche), donnees: moi ? profil.avatar : membre.avatar, taille: 28,
                                    couleur: moi ? .accentColor : AvatarView.couleur(pour: membre.uid))
-                        Text(membre.nom)
+                        Text(membre.nomAffiche)
                         if moi { Text("(moi)").font(.footnote).foregroundStyle(.secondary) }
+                        Spacer()
                     }
+                    .contentShape(Rectangle())
+                    .onTapGesture { if moi { profilOuvert = true } else { membreAffiche = membre } }
                         .contextMenu {
                             Button("Retirer", role: .destructive) { contexte.delete(membre) }
                         }
@@ -117,6 +122,7 @@ struct VoyageDetailView: View {
         }
         .formStyle(.grouped)
         .sheet(isPresented: $profilOuvert) { ProfilEditView() }
+        .sheet(item: $membreAffiche) { ProfilMembreView(membre: $0) }
         .onChange(of: voyage.debut) { _, debut in
             if voyage.fin < debut { voyage.fin = debut }
         }

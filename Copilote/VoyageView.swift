@@ -4,7 +4,7 @@ struct VoyageView: View {
     @Bindable var voyage: Voyage
     @State private var onglet: Onglet
     @Environment(\.horizontalSizeClass) private var tailleHorizontale
-    @State private var profilOuvert = false
+    @Environment(\.modelContext) private var contexte
 
     init(voyage: Voyage) {
         self.voyage = voyage
@@ -57,10 +57,12 @@ struct VoyageView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
-        .sheet(isPresented: $profilOuvert) { ProfilEditView() }
-        .onAppear { Profil.partage.reconnaitre(dans: voyage) }
+        .onAppear {
+            Profil.partage.reconnaitre(dans: voyage)
+            Profil.partage.publier(dans: contexte)
+        }
         .toolbar {
-            // De gauche à droite : le mode, le nom du voyage, puis les voyageurs (toucher les ronds ouvre mon profil).
+            // De gauche à droite : le mode, puis le nom du voyage.
             ToolbarItem(placement: .navigation) {
                 HStack(spacing: 10) {
                     Menu {
@@ -77,7 +79,6 @@ struct VoyageView: View {
                         }
                     }
                     Text(voyage.titre).font(.headline).lineLimit(1)
-                    GroupeAvatars(voyage: voyage) { profilOuvert = true }
                 }
             }
             ToolbarItem(placement: .principal) {

@@ -16,6 +16,10 @@ struct ItineraireView: View {
     /// Étape dont on affiche l'explication de l'avertissement d'horaire.
     @State private var avertissementOuvert: String?
     @State private var discussionOuverte = false
+    @State private var profilOuvert = false
+    /// Dernier moment où la discussion était ouverte : au-delà, les messages des autres sont « nouveaux ».
+    @State private var discussionVueLe = Date.now
+    @State private var membreAffiche: Membre?
     /// Écran large : la discussion devient un cadre sur la carte au lieu d'une feuille.
     @State private var ecranLarge = false
     /// Hauteur du contenu de « Étapes à placer » (iPad), pour que son défilement ne couvre pas la carte.
@@ -94,16 +98,34 @@ struct ItineraireView: View {
             Text(d.perdus.count == 1 ? "Ce déplacement efface le transport prévu après « \(d.perdus[0].titre) »." : "Ce déplacement efface \(d.perdus.count) transports prévus entre des étapes.")
         }
         .toolbar {
-            // Préparation seulement : on échange sur le déroulé avec les autres voyageurs.
-            if voyage.mode == .preparation {
-                ToolbarItem(placement: .primaryAction) {
-                    Button { discussionOuverte.toggle() } label: {
-                        Label(voyage.commentaires.isEmpty ? "Discussion" : "Discussion (\(voyage.commentaires.count))",
-                              systemImage: "bubble.left.and.bubble.right")
+            // Les voyageurs (toucher les ronds ouvre mon profil), puis le bouton de discussion à leur droite.
+            ToolbarItem(placement: .primaryAction) {
+                HStack(spacing: 12) {
+                    GroupeAvatars(voyage: voyage, onMoi: { profilOuvert = true }, onAutre: { membreAffiche = $0 })
+                    // Préparation seulement : on échange sur le déroulé avec les autres voyageurs.
+                    if voyage.mode == .preparation {
+                        Button { discussionOuverte.toggle() } label: {
+                            Label(voyage.commentaires.isEmpty ? "Discussion" : "Discussion (\(voyage.commentaires.count))",
+                                  systemImage: "bubble.left.and.bubble.right")
+                        }
+                        // Point rouge : un message d'un autre est arrivé et la discussion n'est pas ouverte.
+                        .overlay(alignment: .topTrailing) {
+                            if messagesNonLus {
+                                Circle().fill(.red).frame(width: 10, height: 10)
+                                    .overlay(Circle().stroke(.background, lineWidth: 1.5))
+                                    .offset(x: 5, y: -4)
+                                    .accessibilityLabel("Nouveaux messages")
+                            }
+                        }
                     }
                 }
             }
         }
+        .onAppear { chargerDiscussionVue() }
+        .onChange(of: discussionOuverte) { marquerDiscussionVue() }
+        .onChange(of: voyage.commentaires.count) { if discussionOuverte { marquerDiscussionVue() } }
+        .sheet(isPresented: $profilOuvert) { ProfilEditView() }
+        .sheet(item: $membreAffiche) { ProfilMembreView(membre: $0) }
         .sheet(isPresented: Binding(get: { discussionOuverte && !ecranLarge }, set: { discussionOuverte = $0 })) { CommentairesView(voyage: voyage) }
         .sheet(item: $etapeEnEdition, onDismiss: nettoyer) { etape in
             EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
@@ -114,6 +136,30 @@ struct ItineraireView: View {
     }
 
     private static let largeurPanneau: CGFloat = 404
+
+    // MARK: Messages non lus
+
+    private var cleDiscussionVue: String { "discussionVue-\(voyage.uid)" }
+
+    private var messagesNonLus: Bool {
+        guard !discussionOuverte else { return false }
+        let moi = MoiVoyage.lire(voyage)
+        return voyage.commentaires.contains { $0.auteurUID != moi && $0.date > discussionVueLe }
+    }
+
+    /// Première fois sur ce voyage : les messages déjà là sont considérés comme lus.
+    private func chargerDiscussionVue() {
+        if let date = UserDefaults.standard.object(forKey: cleDiscussionVue) as? Date {
+            discussionVueLe = date
+        } else {
+            marquerDiscussionVue()
+        }
+    }
+
+    private func marquerDiscussionVue() {
+        discussionVueLe = .now
+        UserDefaults.standard.set(discussionVueLe, forKey: cleDiscussionVue)
+    }
 
     private func fondDeCarte(margeGauche: CGFloat) -> some View {
         CarteDuVoyage(voyage: voyage, jourFocus: jourSelectionne, masquerAutresJours: false, margeGauche: margeGauche) { etape in

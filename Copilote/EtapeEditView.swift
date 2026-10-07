@@ -140,6 +140,12 @@ struct EtapeEditView: View {
                 Section("Notes") {
                     TextEditor(text: $etape.notes).frame(minHeight: 80)
                 }
+                // Qui a noté et qui a écrit quoi : le groupe donne son avis en préparation.
+                if let voyage = etape.voyage, !voyage.avis(de: etape).isEmpty {
+                    Section("Avis du groupe") {
+                        ListeAvisEtape(voyage: voyage, etape: etape)
+                    }
+                }
                 Section {
                     Button("Supprimer l'étape", role: .destructive) {
                         onSupprimer()

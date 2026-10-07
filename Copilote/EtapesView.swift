@@ -23,57 +23,25 @@ struct EtapesView: View {
     }
 
     var body: some View {
-        List {
-            Section {
-                if voyage.etapesSansJour.isEmpty {
-                    Text("Aucune étape en attente. Prépare ici des idées, tu les glisseras ensuite sur un jour dans l'itinéraire.")
-                        .font(.footnote).foregroundStyle(.secondary)
+        ScrollView {
+            LazyVStack(spacing: 12) {
+                carteAPlacer
+                if let premiere = voyage.elementsDuVoyage.first {
+                    ligneExtremite(.aller, etape: premiere)
                 }
-                ForEach(voyage.etapesSansJour) { ligne($0) }
-                Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouter() }
-            } header: {
-                Label("À placer", systemImage: "tray.full")
-            }
-            if let premiere = voyage.elementsDuVoyage.first {
-                Section { ligneExtremite(.aller, etape: premiere) }
-            }
-            ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
-                let etapes = voyage.etapes(du: jour)
-                let couleur = CarteDuVoyage.couleur(du: index)
-                if !etapes.isEmpty {
-                    Section {
-                        ForEach(Array(etapes.enumerated()), id: \.element.id) { i, etape in
-                            ligne(etape)
-                                .listRowBackground(couleur.opacity(0.14))
-                            if let suivante = voyage.suivante(de: etape) { ligneTransport(etape, suivante) }
-                        }
-                    } header: {
-                        HStack(spacing: 8) {
-                            Circle().fill(couleur).frame(width: 12, height: 12)
-                            Text("Jour \(index + 1) · " + jour.formatted(.dateTime.weekday(.wide).day().month()))
-                                .font(.headline).foregroundStyle(couleur)
-                        }
-                    }
+                ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
+                    carteJour(numero: index + 1, jour: jour)
+                    carteNuit(apres: jour)
                 }
-                Section {
-                    let nuits = voyage.hebergements(apres: jour)
-                    ForEach(nuits) { h in
-                        ligne(h).listRowBackground(Self.couleurNuit.opacity(0.3))
-                        if let suivante = voyage.suivante(de: h) { ligneTransport(h, suivante) }
-                    }
-                    if nuits.isEmpty {
-                        Button("Ajouter un hébergement", systemImage: "moon.zzz.fill") { ajouterHebergement(apres: jour) }
-                            .foregroundStyle(Self.couleurNuit)
-                            .listRowBackground(Self.couleurNuit.opacity(0.25))
-                    }
-                } header: {
-                    Label(nuits(jour), systemImage: "moon.zzz.fill").font(.caption).foregroundStyle(Self.couleurNuit)
+                if let derniere = voyage.elementsDuVoyage.last {
+                    ligneExtremite(.retour, etape: derniere)
                 }
             }
-            if let derniere = voyage.elementsDuVoyage.last {
-                Section { ligneExtremite(.retour, etape: derniere) }
-            }
+            .padding(12)
+            .frame(maxWidth: 760)
+            .frame(maxWidth: .infinity)
         }
+        .background(FondDePage.couleur)
         .sheet(item: $transportExtremiteEnEdition) { transportExtremite($0) }
         .sheet(item: $transportEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
         .sheet(item: $avisOuvert) { AvisEtapeView(voyage: voyage, etape: $0) }
@@ -107,7 +75,86 @@ struct EtapesView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .listRowBackground(Self.couleurTransport.opacity(0.12))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(Self.couleurTransport.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    /// Étapes préparées sans jour.
+    private var carteAPlacer: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Label("À placer", systemImage: "tray.full").font(.headline)
+            if voyage.etapesSansJour.isEmpty {
+                Text("Aucune étape en attente. Prépare ici des idées, tu les glisseras ensuite sur un jour dans l'itinéraire.")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            ForEach(voyage.etapesSansJour) { ligneDansCadre($0, couleur: .gray) }
+            Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouter() }
+                .buttonStyle(.borderless).font(.footnote)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(FondDeCarte())
+    }
+
+    /// Un jour, même sans étape : ses étapes, les transports entre elles et un bouton pour en ajouter.
+    private func carteJour(numero: Int, jour: Date) -> some View {
+        let etapes = voyage.etapes(du: jour)
+        let couleur = CarteDuVoyage.couleur(du: numero - 1)
+        return VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("JOUR \(numero)").font(.caption.bold()).foregroundStyle(couleur)
+                Text(jour.formatted(.dateTime.weekday(.wide).day().month(.wide)).prefix(1).uppercased()
+                     + jour.formatted(.dateTime.weekday(.wide).day().month(.wide)).dropFirst())
+                    .font(.title3.bold())
+            }
+            Divider()
+            if etapes.isEmpty {
+                Text("Aucune étape ce jour-là.").font(.footnote).foregroundStyle(.secondary)
+            }
+            ForEach(etapes) { etape in
+                ligneDansCadre(etape, couleur: couleur)
+                if let suivante = voyage.suivante(de: etape) { ligneTransport(etape, suivante) }
+            }
+            Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouter(jour: jour) }
+                .buttonStyle(.borderless).tint(couleur).font(.footnote)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(FondDeCarte())
+    }
+
+    /// Bande entre deux jours : les hébergements de la nuit, ou un bouton pour en ajouter un.
+    private func carteNuit(apres jour: Date) -> some View {
+        let nuits = voyage.hebergements(apres: jour)
+        return VStack(alignment: .leading, spacing: 8) {
+            if !nuits.isEmpty {
+                Label(self.nuits(jour), systemImage: "moon.zzz.fill").font(.caption.bold()).foregroundStyle(Self.couleurNuit)
+            }
+            ForEach(nuits) { h in
+                ligneDansCadre(h, couleur: Self.couleurNuit)
+                if let suivante = voyage.suivante(de: h) { ligneTransport(h, suivante) }
+            }
+            if nuits.isEmpty {
+                Button("Ajouter un hébergement", systemImage: "plus.circle.fill") { ajouterHebergement(apres: jour) }
+                    .buttonStyle(.borderless).tint(Self.couleurNuit).font(.footnote)
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.background)
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Self.couleurNuit.opacity(0.22))
+        }
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .strokeBorder(Self.couleurNuit.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: nuits.isEmpty ? [5, 4] : [])))
+    }
+
+    /// Une étape dans un cadre : fond teinté de la couleur du jour.
+    private func ligneDansCadre(_ etape: Etape, couleur: Color) -> some View {
+        ligne(etape)
+            .padding(.horizontal, 10).padding(.vertical, 8)
+            .background(couleur.opacity(0.14), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     /// Ligne de transport avant le premier jour ou après le dernier.
@@ -129,7 +176,9 @@ struct EtapesView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .listRowBackground(Self.couleurTransport.opacity(0.12))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(Self.couleurTransport.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
     }
 
     private func transportExtremite(_ extremite: Extremite) -> some View {
@@ -195,6 +244,14 @@ struct EtapesView: View {
         let etape = Etape(titre: "", jour: jour, categorie: .hebergement)
         etape.apresJour = true
         etape.ordre = (voyage.hebergements(apres: jour).map(\.ordre).max() ?? -1) + 1
+        etape.voyage = voyage
+        contexte.insert(etape)
+        etapeEnEdition = etape
+    }
+
+    private func ajouter(jour: Date) {
+        let etape = Etape(titre: "", jour: jour)
+        etape.ordre = (voyage.etapes(du: jour).map(\.ordre).max() ?? -1) + 1
         etape.voyage = voyage
         contexte.insert(etape)
         etapeEnEdition = etape

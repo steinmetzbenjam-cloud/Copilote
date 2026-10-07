@@ -48,6 +48,41 @@ final class Profil {
         }
     }
 
+    /// Mon voyageur dans ce voyage : je le retrouve par mon prénom, ou je m'y ajoute. Renvoie son identifiant.
+    @discardableResult
+    func identifier(dans voyage: Voyage, contexte: ModelContext) -> String {
+        let actuel = MoiVoyage.lire(voyage)
+        if estRenseigne, !voyage.membres.contains(where: { $0.uid == actuel }) {
+            reconnaitre(dans: voyage)
+            if !voyage.membres.contains(where: { $0.uid == MoiVoyage.lire(voyage) }) {
+                let membre = Membre(nom: prenom.trimmingCharacters(in: .whitespaces))
+                membre.voyage = voyage
+                contexte.insert(membre)
+                MoiVoyage.ecrire(membre.uid, voyage)
+            }
+        }
+        publier(dans: contexte)
+        return MoiVoyage.lire(voyage)
+    }
+
+    /// Recopie mon profil sur mon voyageur dans chaque voyage où je suis identifié : les autres le reçoivent par iCloud.
+    func publier(dans contexte: ModelContext) {
+        guard estRenseigne else { return }
+        let prenomNet = prenom.trimmingCharacters(in: .whitespaces)
+        let nomNet = nom.trimmingCharacters(in: .whitespaces)
+        let emailNet = email.trimmingCharacters(in: .whitespaces)
+        for voyage in (try? contexte.fetch(FetchDescriptor<Voyage>())) ?? [] {
+            let uid = MoiVoyage.lire(voyage)
+            guard !uid.isEmpty, let membre = voyage.membres.first(where: { $0.uid == uid }) else { continue }
+            // On n'écrit que ce qui change, pour ne pas envoyer des mises à jour inutiles.
+            if membre.nom != prenomNet { membre.nom = prenomNet }
+            if (membre.nomFamille ?? "") != nomNet { membre.nomFamille = nomNet.isEmpty ? nil : nomNet }
+            if (membre.email ?? "") != emailNet { membre.email = emailNet.isEmpty ? nil : emailNet }
+            if membre.avatar != avatar { membre.avatar = avatar }
+        }
+        try? contexte.save()
+    }
+
     /// Photo carrée de 256 px, en JPEG léger.
     static func reduire(_ donnees: Data, cote: Int = 256) -> Data? {
         guard let source = CGImageSourceCreateWithData(donnees as CFData, nil) else { return nil }
@@ -106,50 +141,93 @@ struct AvatarView: View {
     }
 }
 
-/// Les ronds des voyageurs, à droite du nom du voyage. Mon rond porte ma photo ; toucher le groupe ouvre mon profil.
+/// Les ronds des voyageurs. Mon rond ouvre mon profil ; celui d'un autre ouvre ses informations.
 struct GroupeAvatars: View {
     var voyage: Voyage
-    var action: () -> Void
+    var onMoi: () -> Void
+    var onAutre: (Membre) -> Void
     private var profil = Profil.partage
 
-    init(voyage: Voyage, action: @escaping () -> Void) {
+    init(voyage: Voyage, onMoi: @escaping () -> Void, onAutre: @escaping (Membre) -> Void) {
         self.voyage = voyage
-        self.action = action
+        self.onMoi = onMoi
+        self.onAutre = onAutre
     }
 
-    private struct Rond: Identifiable {
-        let id: String
-        let initiales: String
-        let donnees: Data?
-        let couleur: Color
-    }
-
-    private var ronds: [Rond] {
+    private var autres: [Membre] {
         let moi = MoiVoyage.lire(voyage)
-        let membres = voyage.membres.sorted { $0.creeLe < $1.creeLe }
-        var liste: [Rond] = []
-        // Moi d'abord, même si je ne suis pas encore dans la liste des voyageurs.
-        liste.append(Rond(id: "moi", initiales: profil.initiales, donnees: profil.avatar, couleur: .accentColor))
-        for m in membres where m.uid != moi {
-            liste.append(Rond(id: m.uid, initiales: Profil.initiales(de: m.nom), donnees: nil, couleur: AvatarView.couleur(pour: m.uid)))
-        }
-        return liste
+        return voyage.membres.filter { $0.uid != moi }.sorted { $0.creeLe < $1.creeLe }
     }
 
     var body: some View {
-        Button(action: action) {
-            HStack(spacing: -8) {
-                ForEach(ronds.prefix(4)) { rond in
-                    AvatarView(initiales: rond.initiales, donnees: rond.donnees, taille: 28, couleur: rond.couleur)
+        HStack(spacing: -8) {
+            // Moi d'abord, même si je ne suis pas encore dans la liste des voyageurs.
+            Button(action: onMoi) {
+                AvatarView(initiales: profil.initiales, donnees: profil.avatar, taille: 28)
+                    .overlay(Circle().stroke(.background, lineWidth: 2))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Mon profil")
+            ForEach(autres.prefix(3)) { membre in
+                Button { onAutre(membre) } label: {
+                    AvatarView(initiales: Profil.initiales(de: membre.nomAffiche), donnees: membre.avatar, taille: 28,
+                               couleur: AvatarView.couleur(pour: membre.uid))
                         .overlay(Circle().stroke(.background, lineWidth: 2))
                 }
-                if ronds.count > 4 {
-                    Text("+\(ronds.count - 4)").font(.caption2.bold()).foregroundStyle(.secondary).padding(.leading, 12)
-                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(membre.nomAffiche)
+            }
+            if autres.count > 3 {
+                Text("+\(autres.count - 3)").font(.caption2.bold()).foregroundStyle(.secondary).padding(.leading, 12)
             }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Mon profil")
+    }
+}
+
+extension Membre {
+    /// Prénom et nom de famille, quand le voyageur les a renseignés.
+    var nomAffiche: String {
+        [nom, nomFamille ?? ""].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }.joined(separator: " ")
+    }
+}
+
+extension Voyage {
+    func membre(uid: String) -> Membre? { membres.first { $0.uid == uid } }
+}
+
+/// Les informations d'un autre voyageur.
+struct ProfilMembreView: View {
+    let membre: Membre
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            VStack(spacing: 14) {
+                AvatarView(initiales: Profil.initiales(de: membre.nomAffiche), donnees: membre.avatar, taille: 110,
+                           couleur: AvatarView.couleur(pour: membre.uid))
+                Text(membre.nomAffiche).font(.title2.bold())
+                if let email = membre.email, !email.isEmpty {
+                    if let lien = URL(string: "mailto:\(email)") {
+                        Link(destination: lien) { Label(email, systemImage: "envelope") }
+                    } else {
+                        Label(email, systemImage: "envelope")
+                    }
+                } else {
+                    Text("Cette personne n'a pas renseigné d'e-mail.").font(.footnote).foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+            .padding(.top, 30).padding(.horizontal, 20)
+            .frame(maxWidth: .infinity)
+            .navigationTitle("Voyageur")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } } }
+        }
+        #if os(macOS)
+        .frame(minWidth: 340, minHeight: 360)
+        #endif
     }
 }
 
@@ -157,6 +235,7 @@ struct GroupeAvatars: View {
 struct ProfilEditView: View {
     var premiereFois = false
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var contexte
     @State private var prenom = Profil.partage.prenom
     @State private var nom = Profil.partage.nom
     @State private var email = Profil.partage.email
@@ -197,7 +276,7 @@ struct ProfilEditView: View {
                 } header: {
                     Text(premiereFois ? "Bienvenue ! Qui es-tu ?" : "Mes informations")
                 } footer: {
-                    Text("Ces informations restent sur cet appareil. Ton prénom sert à te reconnaître dans les voyages.")
+                    Text("Ton prénom, ton nom, ton e-mail et ta photo sont visibles des autres voyageurs de tes voyages partagés. Ton prénom sert aussi à te reconnaître dans les voyages.")
                 }
             }
             .formStyle(.grouped)
@@ -234,6 +313,7 @@ struct ProfilEditView: View {
         profil.nom = nom.trimmingCharacters(in: .whitespaces)
         profil.email = email.trimmingCharacters(in: .whitespaces)
         profil.avatar = avatar
+        profil.publier(dans: contexte)
         dismiss()
     }
 }

@@ -53,6 +53,7 @@ enum Sauvegarde {
                 else if let nombre = valeur as? NSNumber { champs[cle] = .nombre(nombre.doubleValue) }
             }
             if let document = modele as? Document { champs["donnees"] = .fichier(document.donnees) }
+            if let membre = modele as? Membre, let photo = membre.avatar { champs["avatar"] = .fichier(photo) }
             return Objet(type: type.rawValue, uid: uid, champs: champs)
         }
 

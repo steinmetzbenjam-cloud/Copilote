@@ -7,6 +7,10 @@ final class Membre {
     var voyage: Voyage?
     var creeLe: Date
     var uid: String = ""
+    /// Informations du profil, partagées avec les autres voyageurs du voyage.
+    var nomFamille: String?
+    var email: String?
+    @Attribute(.externalStorage) var avatar: Data?
 
     init(nom: String) {
         self.nom = nom
