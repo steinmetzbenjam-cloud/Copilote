@@ -66,9 +66,14 @@ struct VoyageView: View {
             ToolbarItem(placement: .navigation) {
                 HStack(spacing: 10) {
                     Menu {
-                        Picker("Mode", selection: $voyage.mode) {
-                            ForEach(ModeVoyage.allCases) { mode in
-                                Label(mode.nom, systemImage: mode.symbole).tag(mode)
+                        // Les trois modes tout de suite, sans sous-menu « Mode ».
+                        ForEach(ModeVoyage.allCases) { mode in
+                            Button { voyage.mode = mode } label: {
+                                if voyage.mode == mode {
+                                    Label(mode.nom, systemImage: "checkmark")
+                                } else {
+                                    Text(mode.nom)
+                                }
                             }
                         }
                     } label: {
