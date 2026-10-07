@@ -52,27 +52,32 @@ struct VoyageView: View {
             case .infos: VoyageDetailView(voyage: voyage)
             }
         }
-        .navigationTitle(voyage.titre)
+        // Le titre est affiché par la barre d'outils, à côté des ronds : on vide celui du système pour ne pas le doubler.
+        .navigationTitle("")
+        #if os(iOS)
+        .navigationBarTitleDisplayMode(.inline)
+        #endif
         .sheet(isPresented: $profilOuvert) { ProfilEditView() }
         .onAppear { Profil.partage.reconnaitre(dans: voyage) }
         .toolbar {
-            // À droite du nom du voyage : les voyageurs ; toucher ouvre mon profil.
+            // De gauche à droite : le mode, le nom du voyage, puis les voyageurs (toucher les ronds ouvre mon profil).
             ToolbarItem(placement: .navigation) {
-                GroupeAvatars(voyage: voyage) { profilOuvert = true }
-            }
-            ToolbarItem(placement: .primaryAction) {
-                Menu {
-                    Picker("Mode", selection: $voyage.mode) {
-                        ForEach(ModeVoyage.allCases) { mode in
-                            Label(mode.nom, systemImage: mode.symbole).tag(mode)
+                HStack(spacing: 10) {
+                    Menu {
+                        Picker("Mode", selection: $voyage.mode) {
+                            ForEach(ModeVoyage.allCases) { mode in
+                                Label(mode.nom, systemImage: mode.symbole).tag(mode)
+                            }
+                        }
+                    } label: {
+                        if iconesSeules {
+                            Image(systemName: voyage.mode.symbole).accessibilityLabel(voyage.mode.nom)
+                        } else {
+                            Label(voyage.mode.nom, systemImage: voyage.mode.symbole)
                         }
                     }
-                } label: {
-                    if iconesSeules {
-                        Image(systemName: voyage.mode.symbole).accessibilityLabel(voyage.mode.nom)
-                    } else {
-                        Label(voyage.mode.nom, systemImage: voyage.mode.symbole)
-                    }
+                    Text(voyage.titre).font(.headline).lineLimit(1)
+                    GroupeAvatars(voyage: voyage) { profilOuvert = true }
                 }
             }
             ToolbarItem(placement: .principal) {

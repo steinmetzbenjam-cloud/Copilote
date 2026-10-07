@@ -94,8 +94,23 @@ struct CarteDuVoyage: View {
         return r
     }
 
+    /// Transport d'aller (du lieu de départ à la première étape) et de retour (de la dernière étape au lieu d'arrivée).
+    /// Le lieu lointain n'entre pas dans le cadrage : la carte ne montre que le début du trait.
+    private var extremites: [(id: String, a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] {
+        let elements = voyage.elementsDuVoyage
+        var liste: [(id: String, a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] = []
+        if let t = voyage.transportAller, let lieu = t.lieuCoordonnee, let premiere = elements.first(where: { $0.coordonnee != nil })?.coordonnee {
+            liste.append(("aller", lieu, premiere, t.mode))
+        }
+        if let t = voyage.transportRetour, let lieu = t.lieuCoordonnee, let derniere = elements.last(where: { $0.coordonnee != nil })?.coordonnee {
+            liste.append(("retour", derniere, lieu, t.mode))
+        }
+        return liste
+    }
+
     private var clesItineraires: String {
-        paires.filter { $0.mode.aUnItineraire }.map { Itineraires.cle($0.a, $0.b, $0.mode) }.joined(separator: ";")
+        (paires.map { ($0.a, $0.b, $0.mode) } + extremites.map { ($0.a, $0.b, $0.mode) })
+            .filter { $0.2.aUnItineraire }.map { Itineraires.cle($0.0, $0.1, $0.2) }.joined(separator: ";")
     }
 
     /// Une ligne entre chaque étape localisée : arc pour l'avion, itinéraire pour la voiture, la marche et le vélo,
@@ -114,6 +129,11 @@ struct CarteDuVoyage: View {
         for (d, s) in liens(du: jour) where d.apresJour || s.apresJour {
             guard let mode = d.transport?.mode, let a = d.coordonnee, let b = s.coordonnee else { continue }
             resultat.append(segment("\(d.uid)-\(s.uid)", a, b, mode))
+        }
+        // L'aller se rattache au premier jour du voyage, le retour au dernier.
+        for e in extremites {
+            let jourCible = e.id == "aller" ? voyage.jours.first : voyage.jours.last
+            if let jourCible, Calendar.current.isDate(jourCible, inSameDayAs: jour) { resultat.append(segment(e.id, e.a, e.b, e.mode)) }
         }
         return resultat
     }
@@ -216,6 +236,9 @@ struct CarteDuVoyage: View {
             }
             .task(id: clesItineraires) {
                 for p in paires where p.mode.aUnItineraire {
+                    await Itineraires.shared.charger(p.a, p.b, p.mode)
+                }
+                for p in extremites where p.mode.aUnItineraire {
                     await Itineraires.shared.charger(p.a, p.b, p.mode)
                 }
             }

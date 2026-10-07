@@ -8,6 +8,13 @@ struct EtapesView: View {
     @Environment(\.modelContext) private var contexte
     @State private var etapeEnEdition: Etape?
     @State private var transportEnEdition: PaireEtapes?
+    @State private var transportExtremiteEnEdition: Extremite?
+
+    /// Transport avant la première étape (aller) ou après la dernière (retour).
+    enum Extremite: String, Identifiable {
+        case aller, retour
+        var id: String { rawValue }
+    }
     @State private var avisOuvert: Etape?
 
     struct PaireEtapes: Identifiable {
@@ -26,6 +33,9 @@ struct EtapesView: View {
                 Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouter() }
             } header: {
                 Label("À placer", systemImage: "tray.full")
+            }
+            if let premiere = voyage.elementsDuVoyage.first {
+                Section { ligneExtremite(.aller, etape: premiere) }
             }
             ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
                 let etapes = voyage.etapes(du: jour)
@@ -48,19 +58,23 @@ struct EtapesView: View {
                 Section {
                     let nuits = voyage.hebergements(apres: jour)
                     ForEach(nuits) { h in
-                        ligne(h).listRowBackground(Self.couleurNuit.opacity(0.18))
+                        ligne(h).listRowBackground(Self.couleurNuit.opacity(0.3))
                         if let suivante = voyage.suivante(de: h) { ligneTransport(h, suivante) }
                     }
                     if nuits.isEmpty {
                         Button("Ajouter un hébergement", systemImage: "moon.zzz.fill") { ajouterHebergement(apres: jour) }
                             .foregroundStyle(Self.couleurNuit)
-                            .listRowBackground(Self.couleurNuit.opacity(0.12))
+                            .listRowBackground(Self.couleurNuit.opacity(0.25))
                     }
                 } header: {
                     Label(nuits(jour), systemImage: "moon.zzz.fill").font(.caption).foregroundStyle(Self.couleurNuit)
                 }
             }
+            if let derniere = voyage.elementsDuVoyage.last {
+                Section { ligneExtremite(.retour, etape: derniere) }
+            }
         }
+        .sheet(item: $transportExtremiteEnEdition) { transportExtremite($0) }
         .sheet(item: $transportEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
         .sheet(item: $avisOuvert) { AvisEtapeView(voyage: voyage, etape: $0) }
         .sheet(item: $etapeEnEdition, onDismiss: nettoyer) { etape in
@@ -94,6 +108,44 @@ struct EtapesView: View {
         }
         .buttonStyle(.plain)
         .listRowBackground(Self.couleurTransport.opacity(0.12))
+    }
+
+    /// Ligne de transport avant le premier jour ou après le dernier.
+    @ViewBuilder private func ligneExtremite(_ extremite: Extremite, etape: Etape) -> some View {
+        let t = extremite == .aller ? voyage.transportAller : voyage.transportRetour
+        Button { transportExtremiteEnEdition = extremite } label: {
+            HStack(spacing: 8) {
+                if let t {
+                    Image(systemName: t.mode.symbole).frame(width: 24)
+                    Text((extremite == .aller ? "Aller · " : "Retour · ") + descriptif(t))
+                } else {
+                    Image(systemName: "plus.circle").frame(width: 24)
+                    Text(extremite == .aller ? "Ajouter un transport avant le premier jour" : "Ajouter un transport après le dernier jour")
+                }
+            }
+            .font(.subheadline)
+            .foregroundStyle(Self.couleurTransport)
+            .padding(.leading, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Self.couleurTransport.opacity(0.12))
+    }
+
+    private func transportExtremite(_ extremite: Extremite) -> some View {
+        let elements = voyage.elementsDuVoyage
+        let etape = extremite == .aller ? elements.first : elements.last
+        let nom = etape.map { $0.titre.isEmpty ? "Étape" : $0.titre } ?? "Étape"
+        let jours = voyage.jours
+        return TransportEditView(
+            trajet: extremite == .aller ? "Départ → \(nom)" : "\(nom) → Retour",
+            jour: (extremite == .aller ? jours.first : jours.last) ?? .now,
+            coordonnees: nil,
+            existant: extremite == .aller ? voyage.transportAller : voyage.transportRetour,
+            libelleLieu: extremite == .aller ? "Lieu de départ" : "Lieu d'arrivée",
+            enregistrer: { nouveau in
+                if extremite == .aller { voyage.transportAller = nouveau } else { voyage.transportRetour = nouveau }
+            })
     }
 
     private func descriptif(_ t: Transport) -> String {

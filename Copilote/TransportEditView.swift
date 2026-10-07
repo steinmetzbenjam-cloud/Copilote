@@ -1,19 +1,41 @@
 import SwiftUI
+import CoreLocation
 
 /// Fenêtre du transport entre une étape et la suivante : un onglet par mode, avec les champs qui conviennent.
 struct TransportEditView: View {
-    let depart: Etape
-    let arrivee: Etape
+    /// « Étape → Étape », « Départ → Étape »…
+    let trajet: String
+    let jour: Date
+    /// Les deux extrémités, quand elles sont localisées (pour l'itinéraire le plus court).
+    let coordonnees: (CLLocationCoordinate2D, CLLocationCoordinate2D)?
+    let existant: Transport?
+    /// Pour l'aller et le retour : intitulé du lieu à choisir (« Lieu de départ »…), sinon nil.
+    var libelleLieu: String?
+    /// Reçoit le transport enregistré, ou nil quand on le supprime.
+    let enregistrer: (Transport?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var transport: Transport
 
-    init(depart: Etape, arrivee: Etape) {
-        self.depart = depart
-        self.arrivee = arrivee
-        _transport = State(initialValue: depart.transport ?? Transport())
+    @State private var rechercheLieuOuverte = false
+
+    init(trajet: String, jour: Date, coordonnees: (CLLocationCoordinate2D, CLLocationCoordinate2D)?,
+         existant: Transport?, libelleLieu: String? = nil, enregistrer: @escaping (Transport?) -> Void) {
+        self.libelleLieu = libelleLieu
+        self.trajet = trajet
+        self.jour = jour
+        self.coordonnees = coordonnees
+        self.existant = existant
+        self.enregistrer = enregistrer
+        _transport = State(initialValue: existant ?? Transport())
     }
 
-    private var jour: Date { depart.jour ?? .now }
+    /// Transport entre deux étapes : il est gardé sur l'étape de départ.
+    init(depart: Etape, arrivee: Etape) {
+        let titre: (Etape) -> String = { $0.titre.isEmpty ? "Étape" : $0.titre }
+        self.init(trajet: "\(titre(depart)) → \(titre(arrivee))", jour: depart.jour ?? .now,
+                  coordonnees: depart.coordonnee.flatMap { a in arrivee.coordonnee.map { (a, $0) } },
+                  existant: depart.transport, enregistrer: { depart.transport = $0 })
+    }
 
     var body: some View {
         NavigationStack {
@@ -27,9 +49,28 @@ struct TransportEditView: View {
                     .pickerStyle(.segmented)
                     .labelsHidden()
                 } footer: {
-                    Text("\(titre(depart)) → \(titre(arrivee))")
+                    Text(trajet)
                 }
                 .onChange(of: transport.mode) { _, _ in transport.sousType = "" }
+
+                if let libelleLieu {
+                    Section {
+                        Button { rechercheLieuOuverte = true } label: {
+                            LabeledContent(libelleLieu) {
+                                Text(transport.lieu ?? "Choisir un lieu").foregroundStyle(transport.lieu == nil ? .secondary : .primary)
+                                    .multilineTextAlignment(.trailing)
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        if transport.lieu != nil {
+                            Button("Retirer le lieu", role: .destructive) {
+                                transport.lieu = nil; transport.lieuLatitude = nil; transport.lieuLongitude = nil
+                            }
+                        }
+                    } footer: {
+                        Text("Le trait part de ce lieu et rejoint tes étapes sur la carte ; seule la partie proche du voyage est visible, la carte ne s'élargit pas.")
+                    }
+                }
 
                 switch transport.mode {
                 case .avion: avion
@@ -42,10 +83,10 @@ struct TransportEditView: View {
                 Section("Notes") {
                     TextEditor(text: $transport.notes).frame(minHeight: 60)
                 }
-                if depart.transport != nil {
+                if existant != nil {
                     Section {
                         Button("Supprimer le transport", role: .destructive) {
-                            depart.transport = nil
+                            enregistrer(nil)
                             dismiss()
                         }
                     }
@@ -56,10 +97,17 @@ struct TransportEditView: View {
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
+            .sheet(isPresented: $rechercheLieuOuverte) {
+                RechercheLieuView(requeteInitiale: transport.lieu ?? "", invite: "Ville, aéroport, gare, adresse…") { trouve in
+                    transport.lieu = trouve.adresse.isEmpty ? trouve.nom : "\(trouve.nom), \(trouve.adresse)"
+                    transport.lieuLatitude = trouve.coordonnee.latitude
+                    transport.lieuLongitude = trouve.coordonnee.longitude
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Annuler") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Enregistrer") { depart.transport = transport; dismiss() }
+                    Button("Enregistrer") { enregistrer(transport); dismiss() }
                 }
             }
         }
@@ -67,8 +115,6 @@ struct TransportEditView: View {
         .frame(minWidth: 460, minHeight: 520)
         #endif
     }
-
-    private func titre(_ e: Etape) -> String { e.titre.isEmpty ? "Étape" : e.titre }
 
     private func choix(_ m: ModeTransport) -> some View {
         Picker(m.titreSousType, selection: $transport.sousType) {
@@ -137,7 +183,7 @@ struct TransportEditView: View {
 
     /// Distance et durée de l'itinéraire le plus court, si les deux étapes sont localisées.
     @ViewBuilder private var infoItineraire: some View {
-        if let a = depart.coordonnee, let b = arrivee.coordonnee {
+        if let (a, b) = coordonnees {
             LigneItineraire(a: a, b: b, mode: transport.mode)
         } else {
             Text("Place les deux étapes sur la carte (lieu) pour voir l'itinéraire.")

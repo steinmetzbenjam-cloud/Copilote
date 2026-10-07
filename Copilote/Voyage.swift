@@ -19,6 +19,9 @@ final class Voyage {
     /// Mode d'utilisation (`ModeVoyage`) : propre à cet appareil, non synchronisé.
     var modeBrut: String = ModeVoyage.preparation.rawValue
     var participantsCloud: [String] = []
+    /// Transport du lieu de départ à la première étape, et de la dernière étape au retour (JSON de `Transport`).
+    var transportAllerJSON: String?
+    var transportRetourJSON: String?
     @Relationship(deleteRule: .cascade, inverse: \Membre.voyage)
     var membres: [Membre] = []
     @Relationship(deleteRule: .cascade, inverse: \Etape.voyage)

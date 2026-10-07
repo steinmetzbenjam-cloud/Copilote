@@ -204,7 +204,11 @@ struct ItineraireView: View {
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Self.couleurNuit.opacity(vise ? 0.28 : 0.12), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        // Un fond plein sous la teinte menthe : la carte ne transparaît pas à travers la bande.
+        .background {
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.background)
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Self.couleurNuit.opacity(vise ? 0.38 : 0.22))
+        }
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
             .strokeBorder(Self.couleurNuit.opacity(0.6), style: StrokeStyle(lineWidth: vise ? 2 : 1, dash: hebergements.isEmpty ? [5, 4] : [])))
         .dropDestination(for: String.self) { elements, _ in

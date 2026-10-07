@@ -151,6 +151,7 @@ enum Codec {
             r["titre"] = v.titre; r["destination"] = v.destination
             r["debut"] = v.debut; r["fin"] = v.fin; r["notes"] = v.notes
             r["pays"] = v.pays; r["creeLe"] = v.creeLe
+            r["transportAller"] = v.transportAllerJSON; r["transportRetour"] = v.transportRetourJSON
             return r
         case let j as JourVoyage:
             let r = base(.jour, j.uid, zone, systeme)
@@ -253,6 +254,7 @@ enum Codec {
             v.titre = texte("titre"); v.destination = texte("destination")
             v.debut = date("debut") ?? v.debut; v.fin = date("fin") ?? v.fin; v.notes = texte("notes")
             v.pays = r["pays"] as? [String] ?? []; v.creeLe = date("creeLe") ?? v.creeLe
+            v.transportAllerJSON = r["transportAller"] as? String; v.transportRetourJSON = r["transportRetour"] as? String
             let proprietaire = r.recordID.zoneID.ownerName
             v.zoneProprietaire = proprietaire == CKCurrentUserDefaultName ? "" : proprietaire
             return v

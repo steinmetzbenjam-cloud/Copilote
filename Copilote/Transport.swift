@@ -71,6 +71,16 @@ struct Transport: Codable, Equatable {
     var depart: Date?
     var arrivee: Date?
     var notes = ""
+    /// Transport d'aller ou de retour : lieu de départ (aller) ou d'arrivée (retour), avec ses coordonnées.
+    /// Optionnels : les transports déjà enregistrés n'ont pas ces clés.
+    var lieu: String?
+    var lieuLatitude: Double?
+    var lieuLongitude: Double?
+
+    var lieuCoordonnee: CLLocationCoordinate2D? {
+        guard let lieuLatitude, let lieuLongitude else { return nil }
+        return CLLocationCoordinate2D(latitude: lieuLatitude, longitude: lieuLongitude)
+    }
 }
 
 extension Etape {
@@ -80,6 +90,30 @@ extension Etape {
         set {
             transportJSON = newValue.flatMap { try? JSONEncoder().encode($0) }.flatMap { String(data: $0, encoding: .utf8) }
         }
+    }
+}
+
+extension Voyage {
+    private static func decoder(_ json: String?) -> Transport? {
+        json.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode(Transport.self, from: $0) }
+    }
+    private static func encoder(_ t: Transport?) -> String? {
+        t.flatMap { try? JSONEncoder().encode($0) }.flatMap { String(data: $0, encoding: .utf8) }
+    }
+    /// Transport pour rejoindre la première étape du voyage.
+    var transportAller: Transport? {
+        get { Self.decoder(transportAllerJSON) }
+        set { transportAllerJSON = Self.encoder(newValue) }
+    }
+    /// Transport pour rentrer après la dernière étape.
+    var transportRetour: Transport? {
+        get { Self.decoder(transportRetourJSON) }
+        set { transportRetourJSON = Self.encoder(newValue) }
+    }
+
+    /// Les étapes et hébergements placés sur un jour, dans l'ordre du voyage.
+    var elementsDuVoyage: [Etape] {
+        jours.flatMap { etapes(du: $0) + hebergements(apres: $0) }
     }
 }
 

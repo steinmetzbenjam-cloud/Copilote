@@ -26,7 +26,25 @@ struct CommentairesView: View {
     private var jeSuisIdentifie: Bool { membres.contains { $0.uid == moi } }
 
     var body: some View {
-        if enCadre { cadre } else { feuille }
+        Group {
+            if enCadre { cadre } else { feuille }
+        }
+        .onAppear(perform: identifier)
+    }
+
+    /// Avec un profil renseigné, on sait déjà qui parle : on me retrouve dans les voyageurs, ou on m'y ajoute.
+    private func identifier() {
+        let profil = Profil.partage
+        guard profil.estRenseigne, !jeSuisIdentifie else { return }
+        profil.reconnaitre(dans: voyage)
+        moi = MoiVoyage.lire(voyage)
+        if !jeSuisIdentifie {
+            let membre = Membre(nom: profil.prenom)
+            membre.voyage = voyage
+            contexte.insert(membre)
+            moi = membre.uid
+            MoiVoyage.ecrire(moi, voyage)
+        }
     }
 
     private var cadre: some View {
@@ -38,11 +56,12 @@ struct CommentairesView: View {
                     .buttonStyle(.borderless)
             }
             .padding(.horizontal, 16).padding(.vertical, 12)
-            Divider()
-            if membres.isEmpty { aucunVoyageur } else { discussion }
+            .background(.ultraThinMaterial)
+            if membres.isEmpty { aucunVoyageur.scrollContentBackground(.hidden) } else { discussion }
         }
-        .modifier(FondDeCarte())
+        // Fond transparent : la carte reste visible derrière les messages.
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(.separator.opacity(0.6), lineWidth: 0.5))
     }
 
     private var feuille: some View {
@@ -81,18 +100,22 @@ struct CommentairesView: View {
 
     private var discussion: some View {
         VStack(spacing: 0) {
-            HStack {
-                Text("Qui es-tu ?").foregroundStyle(.secondary)
-                Spacer()
-                Picker("Qui es-tu ?", selection: $moi) {
-                    Text("—").tag("")
-                    ForEach(membres) { Text($0.nom).tag($0.uid) }
+            // Profil renseigné et reconnu : inutile de demander qui parle.
+            if !(Profil.partage.estRenseigne && jeSuisIdentifie) {
+                HStack {
+                    Text("Qui es-tu ?").foregroundStyle(.secondary)
+                    Spacer()
+                    Picker("Qui es-tu ?", selection: $moi) {
+                        Text("—").tag("")
+                        ForEach(membres) { Text($0.nom).tag($0.uid) }
+                    }
+                    .labelsHidden()
+                    .onChange(of: moi) { MoiVoyage.ecrire(moi, voyage) }
                 }
-                .labelsHidden()
-                .onChange(of: moi) { MoiVoyage.ecrire(moi, voyage) }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(enCadre ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.clear))
+                Divider()
             }
-            .padding(.horizontal, 12).padding(.vertical, 8)
-            Divider()
             ScrollViewReader { lecteur in
                 ScrollView {
                     LazyVStack(spacing: 4) {
@@ -110,7 +133,7 @@ struct CommentairesView: View {
                     }
                     .padding(.horizontal, 10).padding(.vertical, 8)
                 }
-                .background(FondDePage.couleur)
+                .background(enCadre ? AnyShapeStyle(.clear) : AnyShapeStyle(FondDePage.couleur))
                 .defaultScrollAnchor(.bottom)
                 .onChange(of: messages.count) {
                     if let dernier = messages.last { withAnimation { lecteur.scrollTo(dernier.uid, anchor: .bottom) } }
@@ -138,10 +161,11 @@ struct CommentairesView: View {
             }
             .foregroundStyle(mien ? Color.white : Color.primary)
             .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(mien ? Color.accentColor : Color(white: 0.5).opacity(0.18),
+            .background(mien ? AnyShapeStyle(Color.accentColor)
+                            : (enCadre ? AnyShapeStyle(.regularMaterial) : AnyShapeStyle(Color(white: 0.5).opacity(0.18))),
                         in: RoundedRectangle(cornerRadius: 14, style: .continuous))
             .contextMenu {
-                if mien { Button("Supprimer", systemImage: "trash", role: .destructive) { contexte.delete(message) } }
+                if mien { Button("Supprimer", systemImage: "trash", role: .destructive) { supprimer(message) } }
             }
             if !mien { Spacer(minLength: 48) }
         }
@@ -186,7 +210,16 @@ struct CommentairesView: View {
             .disabled(!jeSuisIdentifie || brouillon.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
         .padding(12)
-        .background(.bar)
+        .background(enCadre ? AnyShapeStyle(.ultraThinMaterial) : AnyShapeStyle(.bar))
+    }
+
+    /// Le message disparaît tout de suite de l'écran, puis la suppression est enregistrée (et envoyée par iCloud).
+    private func supprimer(_ message: Commentaire) {
+        withAnimation {
+            voyage.commentaires.removeAll { $0 === message }
+            contexte.delete(message)
+        }
+        try? contexte.save()
     }
 
     private func envoyer() {

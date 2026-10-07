@@ -11,6 +11,9 @@ struct ContentView: View {
     @State private var reglagesOuverts = false
     /// Première ouverture de l'app : on demande qui est l'utilisateur.
     @State private var profilPremiereFois = false
+    /// Au lancement, sans voyage ouvert : liste de tous les voyages à choisir.
+    @State private var selecteurOuvert = false
+    @State private var selecteurDejaPropose = false
     @State private var nouveauVoyageOuvert = false
     @State private var voyageASupprimer: Voyage?
     @State private var sauvegarde: SauvegardeDocument?
@@ -62,8 +65,13 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $reglagesOuverts) { ReglagesView() }
-        .sheet(isPresented: $profilPremiereFois) { ProfilEditView(premiereFois: true) }
-        .onAppear { if !Profil.partage.estRenseigne { profilPremiereFois = true } }
+        .sheet(isPresented: $profilPremiereFois, onDismiss: proposerLesVoyages) { ProfilEditView(premiereFois: true) }
+        .sheet(isPresented: $selecteurOuvert) {
+            SelecteurVoyageView(voyages: voyages, onChoix: { selection = $0 }, onNouveau: { nouveauVoyageOuvert = true })
+        }
+        .onAppear {
+            if !Profil.partage.estRenseigne { profilPremiereFois = true } else { proposerLesVoyages() }
+        }
         .sheet(isPresented: $choixSauvegardeOuvert, onDismiss: {
             // L'enregistrement s'ouvre une fois la feuille de choix refermée.
             if let choisis = voyagesChoisis { voyagesChoisis = nil; sauvegarder(choisis) }
@@ -112,6 +120,13 @@ struct ContentView: View {
         #if os(macOS)
         .frame(minWidth: 700, minHeight: 450)
         #endif
+    }
+
+    /// Une seule fois par lancement, et seulement s'il y a des voyages et qu'aucun n'est ouvert.
+    private func proposerLesVoyages() {
+        guard !selecteurDejaPropose, voyageOuvert == nil, !voyages.isEmpty else { return }
+        selecteurDejaPropose = true
+        selecteurOuvert = true
     }
 
     private func sauvegarder(_ aSauver: [Voyage]) {
