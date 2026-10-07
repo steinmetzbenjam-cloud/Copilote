@@ -124,12 +124,57 @@ enum PresentateurPartage {
 #endif
 
 #if ICLOUD && os(macOS)
-@MainActor func partagerSurMac(_ voyage: Voyage) {
-    guard let conteneur = PartageCloud.shared.conteneur else { return }
-    let fournisseur = NSItemProvider()
-    fournisseur.registerCKShare(container: conteneur, allowedSharingOptions: .standard) {
-        try await PartageCloud.shared.preparerPartage(voyage).0
+/// Fenêtre d'invitation d'iCloud sur Mac. Le service doit rester en vie pendant l'affichage (sinon rien ne s'ouvre),
+/// et les erreurs de préparation du partage, silencieuses côté système, sont reportées dans le statut.
+@MainActor
+final class PresentateurPartageMac: NSObject, NSSharingServiceDelegate {
+    static let partage = PresentateurPartageMac()
+    private var service: NSSharingService?
+    private var menu: NSSharingServicePicker?
+
+    func presenter(_ voyage: Voyage) {
+        let cloud = PartageCloud.shared
+        guard let conteneur = cloud.conteneur else { cloud.statut = "iCloud n'est pas disponible."; return }
+        let fournisseur = NSItemProvider()
+        if let existant = cloud.partages[Codec.zone(de: voyage).zoneName] {
+            fournisseur.registerCKShare(existant, container: conteneur, allowedSharingOptions: .standard)
+        } else {
+            fournisseur.registerCKShare(container: conteneur, allowedSharingOptions: .standard) {
+                do {
+                    return try await PartageCloud.shared.preparerPartage(voyage).0
+                } catch {
+                    await MainActor.run { PartageCloud.shared.statut = "Partage impossible : \(error.localizedDescription)" }
+                    throw error
+                }
+            }
+        }
+        if let service = NSSharingService(named: .cloudSharing), service.canPerform(withItems: [fournisseur]) {
+            service.delegate = self
+            self.service = service
+            service.perform(withItems: [fournisseur])
+            return
+        }
+        // Repli : le menu de partage standard de macOS, qui propose « Ajouter des personnes » pour un partage iCloud.
+        guard let vue = NSApp.keyWindow?.contentView else {
+            cloud.statut = "Impossible d'ouvrir le partage : aucune fenêtre active."
+            return
+        }
+        let menu = NSSharingServicePicker(items: [fournisseur])
+        self.menu = menu
+        menu.show(relativeTo: CGRect(x: vue.bounds.midX, y: vue.bounds.maxY - 60, width: 1, height: 1), of: vue, preferredEdge: .minY)
     }
-    NSSharingService(named: .cloudSharing)?.perform(withItems: [fournisseur])
+
+    func sharingService(_ sharingService: NSSharingService, sourceWindowForShareItems items: [Any], sharingContentScope: UnsafeMutablePointer<NSSharingService.SharingContentScope>) -> NSWindow? {
+        NSApp.keyWindow ?? NSApp.mainWindow
+    }
+
+    func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: Error) {
+        PartageCloud.shared.statut = "Partage impossible : \(error.localizedDescription)"
+        service = nil
+    }
+
+    func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) { service = nil }
 }
+
+@MainActor func partagerSurMac(_ voyage: Voyage) { PresentateurPartageMac.partage.presenter(voyage) }
 #endif
