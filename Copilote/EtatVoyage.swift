@@ -52,16 +52,6 @@ extension Voyage {
     }
 }
 
-extension Etape {
-    /// La date et l'heure réelles de l'étape : son jour et son heure de début.
-    var dateHeure: Date? {
-        guard let jour, let heure else { return nil }
-        let cal = Calendar.current
-        let c = cal.dateComponents([.hour, .minute], from: heure)
-        return cal.date(bySettingHour: c.hour ?? 0, minute: c.minute ?? 0, second: 0, of: cal.startOfDay(for: jour))
-    }
-}
-
 // MARK: - Réseau
 
 /// Surveille la connexion : sert à dire quand l'app travaille hors ligne.

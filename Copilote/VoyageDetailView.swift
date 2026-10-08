@@ -43,6 +43,9 @@ struct VoyageDetailView: View {
         }
         .background(FondDePage.couleur)
         .sheet(isPresented: $profilOuvert) { ProfilEditView() }
+        .onChange(of: voyage.fuseauReferenceId) { _, id in
+            if let id { Horloge.appliquer(id) }
+        }
         .onChange(of: voyage.debut) { _, debut in
             if voyage.fin < debut { voyage.fin = debut }
             voyage.rangerEtapesHorsDates()
@@ -91,6 +94,10 @@ struct VoyageDetailView: View {
             DatePicker("Départ", selection: $voyage.debut, displayedComponents: .date)
             DatePicker("Retour", selection: $voyage.fin, in: voyage.debut..., displayedComponents: .date)
             LabeledContent("Durée", value: "\(voyage.nombreDeJours) jour\(voyage.nombreDeJours > 1 ? "s" : "")")
+            Divider()
+            LigneFuseau(titre: "Fuseau d'enregistrement", choisi: $voyage.fuseauReferenceId, parDefaut: Horloge.zoneAppareil())
+            Text("Réglage technique : les horaires du voyage restent fixes quand ton appareil change de fuseau. Chaque horaire que tu saisis est l'heure locale du lieu de l'étape, du transport ou de l'hôtel ; tu indiques un autre fuseau dans sa fiche si besoin. Ne modifie ce réglage que si tes horaires apparaissent décalés : il décale tous ceux déjà saisis.")
+                .font(.footnote).foregroundStyle(.secondary)
         }
     }
 

@@ -55,6 +55,9 @@ final class Reservation {
     var devise: String
     var notes: String
     var ajouteeAItineraire: Bool
+    /// Fuseaux (identifiants) des heures de début et de fin, s'ils diffèrent de celui du voyage.
+    var fuseauDebutId: String?
+    var fuseauFinId: String?
     var creeLe: Date
     var uid: String = ""
     var voyage: Voyage?

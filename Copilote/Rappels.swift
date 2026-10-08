@@ -64,10 +64,17 @@ enum Rappels {
                                           titre: "Dans 30 minutes", corps: etape.lieu.isEmpty ? titre : "\(titre) · \(etape.lieu)"))
                 }
                 let jourTransport = etape.apresJour ? (cal.date(byAdding: .day, value: 1, to: jour) ?? jour) : jour
-                if let t = etape.transport { ajouter(t, jour: jourTransport, id: "\(voyage.uid)-t-\(etape.uid)", nom: titre, a: &rappels) }
+                if let t = etape.transport {
+                    let zone = voyage.fuseaux(de: t, depuis: etape, vers: voyage.suivante(de: etape)).depart
+                    ajouter(t, jour: jourTransport, zone: zone, id: "\(voyage.uid)-t-\(etape.uid)", nom: titre, a: &rappels)
+                }
             }
-            if let t = voyage.transportAller, let j = voyage.jours.first { ajouter(t, jour: j, id: "\(voyage.uid)-aller", nom: "l'aller", a: &rappels) }
-            if let t = voyage.transportRetour, let j = voyage.jours.last { ajouter(t, jour: j, id: "\(voyage.uid)-retour", nom: "le retour", a: &rappels) }
+            if let t = voyage.transportAller, let j = voyage.jours.first {
+                ajouter(t, jour: j, zone: voyage.fuseaux(de: t, depuis: nil, vers: voyage.elementsDuVoyage.first).depart, id: "\(voyage.uid)-aller", nom: "l'aller", a: &rappels)
+            }
+            if let t = voyage.transportRetour, let j = voyage.jours.last {
+                ajouter(t, jour: j, zone: voyage.fuseaux(de: t, depuis: voyage.elementsDuVoyage.last, vers: nil).depart, id: "\(voyage.uid)-retour", nom: "le retour", a: &rappels)
+            }
         }
 
         for r in rappels.filter({ $0.quand > maintenant.addingTimeInterval(5) }).sorted(by: { $0.quand < $1.quand }).prefix(60) {
@@ -75,18 +82,20 @@ enum Rappels {
             contenu.title = r.titre
             contenu.body = r.corps
             contenu.sound = .default
-            let c = cal.dateComponents([.year, .month, .day, .hour, .minute], from: r.quand)
+            // Écrit en UTC avec son fuseau : le système déclenche au bon instant, quel que soit le fuseau de l'appareil.
+            var utc = Calendar(identifier: .gregorian)
+            utc.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+            var c = utc.dateComponents([.year, .month, .day, .hour, .minute], from: r.quand)
+            c.timeZone = utc.timeZone
             let demande = UNNotificationRequest(identifier: prefixe + r.id, content: contenu,
                                                 trigger: UNCalendarNotificationTrigger(dateMatching: c, repeats: false))
             try? await centre.add(demande)
         }
     }
 
-    private static func ajouter(_ t: Transport, jour: Date, id: String, nom: String, a rappels: inout [Rappel]) {
-        guard let depart = t.depart else { return }
-        let cal = Calendar.current
-        let c = cal.dateComponents([.hour, .minute], from: depart)
-        guard let quand = cal.date(bySettingHour: c.hour ?? 0, minute: c.minute ?? 0, second: 0, of: cal.startOfDay(for: jour)) else { return }
+    /// L'heure de départ est celle du fuseau du lieu de départ (ou celui choisi) : le rappel tombe au bon moment, où que soit l'appareil.
+    private static func ajouter(_ t: Transport, jour: Date, zone: TimeZone, id: String, nom: String, a rappels: inout [Rappel]) {
+        guard let depart = t.depart, let quand = Horaires.instant(jour: jour, heure: depart, zone: zone) else { return }
         let avance: TimeInterval = t.mode == .avion ? 3 * 3600 : 45 * 60
         let numero = [t.compagnie, t.numero].filter { !$0.isEmpty }.joined(separator: " ")
         let detail = numero.isEmpty ? "\(t.mode.libelleCourt) · \(nom)" : "\(t.mode.libelleCourt) \(numero) · \(nom)"

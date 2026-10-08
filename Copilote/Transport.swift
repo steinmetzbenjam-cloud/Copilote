@@ -80,6 +80,9 @@ struct Transport: Codable, Equatable {
     var arriveeLatitude: Double?
     var arriveeLongitude: Double?
     /// Prix par personne en euros (ou en monnaie locale si le drapeau `…Local` est vrai). Optionnels : absents des transports déjà enregistrés.
+    /// Fuseaux (identifiants) des heures de départ et d'arrivée, si différents de ceux des lieux.
+    var fuseauDepart: String?
+    var fuseauArrivee: String?
     var prixAdulte: Double?
     var prixEtudiant: Double?
     var prixEnfant: Double?

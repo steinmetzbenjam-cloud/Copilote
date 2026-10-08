@@ -83,9 +83,10 @@ struct TimingView: View {
         }
     }
 
-    /// Durée d'un transport : horaires saisis, sinon itinéraire enregistré ou calculé, sinon une durée type.
-    private func dureeTransport(_ t: Transport, de depart: Etape?, vers arrivee: Etape?) -> (minutes: Double, estimee: Bool) {
-        if let d = t.depart, let a = t.arrivee, minutes(a) > minutes(d) { return (minutes(a) - minutes(d), false) }
+    /// Durée d'un transport : horaires saisis (chacun dans son fuseau), sinon itinéraire enregistré ou calculé, sinon une durée type.
+    private func dureeTransport(_ t: Transport, de depart: Etape?, vers arrivee: Etape?, jour: Date) -> (minutes: Double, estimee: Bool) {
+        let z = voyage.fuseaux(de: t, depuis: depart, vers: arrivee)
+        if let d = Horaires.duree(t, jour: jour, depart: z.depart, arrivee: z.arrivee) { return (d / 60, false) }
         if let s = t.itineraireCommun?.secondes, s > 0 { return (Double(s) / 60, false) }
         if t.mode.aUnItineraire, let a = depart?.coordonnee, let b = arrivee?.coordonnee,
            let duree = itineraires.trajet(a, b, t.mode)?.duree { return (max(duree / 60, 5), false) }
@@ -95,6 +96,13 @@ struct TimingView: View {
         case .pied, .velo: return (20, true)
         case .commun: return (30, true)
         }
+    }
+
+    /// Le résumé du transport, avec les villes quand les heures sont dans deux fuseaux différents.
+    private func detailTransport(_ t: Transport, de depart: Etape?, vers arrivee: Etape?) -> String {
+        let z = voyage.fuseaux(de: t, depuis: depart, vers: arrivee)
+        guard z.depart.identifier != z.arrivee.identifier else { return t.descriptif }
+        return t.descriptif + " · heure de \(z.depart.ville) → heure de \(z.arrivee.ville)"
     }
 
     /// « Métro », « Train »… pour les transports en commun, sinon le mode.
@@ -114,10 +122,10 @@ struct TimingView: View {
                           detail: h.lieu, symbole: "bed.double.fill", etape: h, estime: h.heureFin == nil))
             if let t = h.transport {
                 let arrivee = voyage.suivante(de: h)
-                let d = dureeTransport(t, de: h, vers: arrivee)
+                let d = dureeTransport(t, de: h, vers: arrivee, jour: jour)
                 let debut = t.depart.map(minutes) ?? depart
                 r.append(Bloc(id: "t-\(h.uid)", genre: .transport, debut: debut, fin: debut + d.minutes, titre: nomTransport(t),
-                              detail: t.descriptif, symbole: t.mode.symbole, etape: h, estime: d.estimee, transport: t, arrivee: arrivee))
+                              detail: detailTransport(t, de: h, vers: arrivee), symbole: t.mode.symbole, etape: h, estime: d.estimee, transport: t, arrivee: arrivee))
                 curseur = max(curseur, debut + d.minutes)
             } else {
                 curseur = max(curseur, depart)
@@ -127,9 +135,11 @@ struct TimingView: View {
         // Aller : seulement s'il a des horaires.
         if let premier = jours.first, cal.isDate(premier, inSameDayAs: jour), let t = voyage.transportAller, let d = t.depart, let a = t.arrivee {
             let debut = minutes(d)
-            r.append(Bloc(id: "aller", genre: .transport, debut: debut, fin: max(minutes(a), debut + 15), titre: "Aller · \(nomTransport(t))",
-                          detail: t.descriptif, symbole: t.mode.symbole, transport: t, extremite: .aller))
-            curseur = max(curseur, minutes(a))
+            let premierElement = voyage.elementsDuVoyage.first
+            let duree = dureeTransport(t, de: nil, vers: premierElement, jour: premier)
+            r.append(Bloc(id: "aller", genre: .transport, debut: debut, fin: debut + max(duree.minutes, 15), titre: "Aller · \(nomTransport(t))",
+                          detail: detailTransport(t, de: nil, vers: premierElement), symbole: t.mode.symbole, estime: duree.estimee, transport: t, extremite: .aller))
+            curseur = max(curseur, debut + duree.minutes)
         }
 
         // Les étapes : à leur heure, sinon à la suite de la précédente (estimé).
@@ -143,10 +153,10 @@ struct TimingView: View {
             curseur = fin
             if let t = e.transport {
                 let arrivee = voyage.suivante(de: e)
-                let d = dureeTransport(t, de: e, vers: arrivee)
+                let d = dureeTransport(t, de: e, vers: arrivee, jour: jour)
                 let td = t.depart.map(minutes) ?? fin
                 r.append(Bloc(id: "t-\(e.uid)", genre: .transport, debut: td, fin: td + d.minutes, titre: nomTransport(t),
-                              detail: t.descriptif, symbole: t.mode.symbole, etape: e, estime: d.estimee, transport: t, arrivee: arrivee))
+                              detail: detailTransport(t, de: e, vers: arrivee), symbole: t.mode.symbole, etape: e, estime: d.estimee, transport: t, arrivee: arrivee))
                 curseur = max(curseur, td + d.minutes)
             }
         }
@@ -154,8 +164,10 @@ struct TimingView: View {
         // Retour : seulement s'il a des horaires.
         if let dernier = jours.last, cal.isDate(dernier, inSameDayAs: jour), let t = voyage.transportRetour, let d = t.depart, let a = t.arrivee {
             let debut = minutes(d)
-            r.append(Bloc(id: "retour", genre: .transport, debut: debut, fin: max(minutes(a), debut + 15), titre: "Retour · \(nomTransport(t))",
-                          detail: t.descriptif, symbole: t.mode.symbole, transport: t, extremite: .retour))
+            let dernierElement = voyage.elementsDuVoyage.last
+            let duree = dureeTransport(t, de: dernierElement, vers: nil, jour: dernier)
+            r.append(Bloc(id: "retour", genre: .transport, debut: debut, fin: debut + max(duree.minutes, 15), titre: "Retour · \(nomTransport(t))",
+                          detail: detailTransport(t, de: dernierElement, vers: nil), symbole: t.mode.symbole, estime: duree.estimee, transport: t, extremite: .retour))
         }
 
         // Soir : la nuit d'hôtel commence (20 h par défaut) et se prolonge le lendemain matin.
@@ -272,7 +284,7 @@ struct TimingView: View {
     private func ligneExtremite(_ ex: ExtremiteTransport) -> some View {
         let t = ex == .aller ? voyage.transportAller : voyage.transportRetour
         let teinte = Color.indigo
-        let duree = t.map { dureeTransport($0, de: nil, vers: nil) }
+        let duree = t.map { dureeTransport($0, de: ex == .retour ? voyage.elementsDuVoyage.last : nil, vers: ex == .aller ? voyage.elementsDuVoyage.first : nil, jour: (ex == .aller ? voyage.jours.first : voyage.jours.last) ?? .now) }
         return Button { extremiteEnEdition = ex } label: {
             HStack(spacing: 10) {
                 Image(systemName: t?.mode.symbole ?? "plus").font(.subheadline.weight(.bold)).foregroundStyle(.white)
@@ -432,7 +444,7 @@ struct TimingView: View {
                     Rectangle().fill(c.opacity(0.22)).frame(height: 1).offset(y: CGFloat(h) * hauteurHeure + hauteurHeure / 2)
                 }
             }
-            if Calendar.current.isDateInToday(jour) { maintenant(hauteur) }
+            if let m = Horaires.minutesMaintenant(le: jour, zone: voyage.fuseau(du: jour)) { maintenant(m) }
             ForEach(liste.filter { $0.genre != .transport }) { b in
                 let p = placement[b.id] ?? (0, 1)
                 bloc(b, jourIndex: i, jour: jour, voie: p.voie, total: p.total, largeur: contenu)
@@ -455,9 +467,9 @@ struct TimingView: View {
 
     private static let prefixe = "copilote-etape:"
 
-    private func maintenant(_ hauteur: CGFloat) -> some View {
-        let m = minutes(.now)
-        return HStack(spacing: 0) {
+    /// La ligne rouge de l'heure actuelle, dans le fuseau du jour.
+    private func maintenant(_ m: Double) -> some View {
+        HStack(spacing: 0) {
             Circle().fill(.red).frame(width: 8, height: 8)
             Rectangle().fill(.red).frame(height: 1.5)
         }
@@ -511,7 +523,8 @@ struct TimingView: View {
                         if b.estime { Image(systemName: "clock.badge.questionmark").font(.caption2).foregroundStyle(.orange) }
                     }
                     if hauteur >= 44 {
-                        Text("\(heureTexte(debut)) → \(heureTexte(fin))").font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(.primary.opacity(0.8))
+                        Text("\(heureTexte(debut)) → \(heureTexte(fin))" + (b.etape?.fuseauChoisi.flatMap(TimeZone.init(identifier:)).map { " · heure de \($0.ville)" } ?? ""))
+                            .font(.caption.weight(.semibold).monospacedDigit()).foregroundStyle(.primary.opacity(0.8))
                     }
                     if haut, !b.detail.isEmpty { Text(b.detail).font(.caption2).foregroundStyle(.primary.opacity(0.65)).lineLimit(hauteur > 90 ? 2 : 1) }
                     if hauteur >= 96, let budget = b.etape?.resumeBudget { Label(budget, systemImage: "eurosign.circle").font(.caption2).foregroundStyle(.secondary).lineLimit(1) }

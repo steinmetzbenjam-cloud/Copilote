@@ -41,6 +41,8 @@ final class Etape {
     var heure: Date?
     /// Heure de fin (facultative).
     var heureFin: Date?
+    /// Fuseau horaire des heures de l'étape (identifiant, ex. « America/Costa_Rica »), si différent de celui de son lieu.
+    var fuseauChoisi: String?
     var categorie: CategorieEtape
     var notes: String
     var latitude: Double?

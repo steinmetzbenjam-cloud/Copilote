@@ -13,6 +13,9 @@ struct TransportEditView: View {
     var lieuxExtremites = false
     /// Le voyage, pour convertir les prix saisis en monnaie locale.
     var voyageDuTransport: Voyage?
+    /// Les étapes de départ et d'arrivée (pour connaître les fuseaux horaires de leurs lieux).
+    var etapeDepart: Etape?
+    var etapeArrivee: Etape?
     /// Reçoit le transport enregistré, ou nil quand on le supprime.
     let enregistrer: (Transport?) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -45,6 +48,8 @@ struct TransportEditView: View {
         self.init(trajet: "\(titre(depart)) → \(titre(arrivee))", jour: depart.jour ?? .now,
                   coordonnees: depart.coordonnee.flatMap { a in arrivee.coordonnee.map { (a, $0) } },
                   existant: depart.transport, voyage: depart.voyage, enregistrer: { depart.transport = $0 })
+        self.etapeDepart = depart
+        self.etapeArrivee = arrivee
     }
 
     var body: some View {
@@ -161,12 +166,42 @@ struct TransportEditView: View {
         }
     }
 
-    private func horaires() -> some View {
+    /// Les fuseaux par défaut (ceux des deux lieux) et les fuseaux en vigueur (avec les choix faits à la main).
+    private var fuseauxParDefaut: (depart: TimeZone, arrivee: TimeZone) {
+        let base = voyageDuTransport?.fuseauxParDefaut(de: transport, depuis: etapeDepart, vers: etapeArrivee)
+        let a = coordonnees?.0, b = coordonnees?.1
+        let cache = FuseauxHoraires.shared
+        let d = transport.departCoordonnee.flatMap(cache.fuseau) ?? a.flatMap(cache.fuseau) ?? base?.depart ?? .current
+        return (d, transport.arriveeCoordonnee.flatMap(cache.fuseau) ?? b.flatMap(cache.fuseau) ?? base?.arrivee ?? d)
+    }
+
+    private var fuseauxEffectifs: (depart: TimeZone, arrivee: TimeZone) {
+        let ref = fuseauxParDefaut
+        return (transport.fuseauDepart.flatMap(TimeZone.init(identifier:)) ?? ref.depart,
+                transport.fuseauArrivee.flatMap(TimeZone.init(identifier:)) ?? ref.arrivee)
+    }
+
+    @ViewBuilder private func horaires() -> some View {
         LabeledContent("Horaires") {
             HStack {
                 BulleHeure(valeur: $transport.depart, jour: jour, heureDeDepart: 9)
                 Image(systemName: "arrow.right").foregroundStyle(.secondary)
                 BulleHeure(valeur: $transport.arrivee, jour: jour, heureDeDepart: 10)
+            }
+        }
+        // Chaque heure est lue dans son fuseau : l'heure locale du départ, et celle de l'arrivée.
+        let lieux = [transport.departCoordonnee, transport.arriveeCoordonnee, coordonnees?.0, coordonnees?.1].compactMap { $0 }
+        LigneFuseau(titre: "Fuseau du départ", choisi: $transport.fuseauDepart, parDefaut: fuseauxParDefaut.depart, coordonnees: lieux)
+        LigneFuseau(titre: "Fuseau de l'arrivée", choisi: $transport.fuseauArrivee, parDefaut: fuseauxParDefaut.arrivee, coordonnees: lieux)
+        if transport.depart != nil, transport.arrivee != nil {
+            let z = fuseauxEffectifs
+            if let duree = Horaires.duree(transport, jour: jour, depart: z.depart, arrivee: z.arrivee) {
+                let minutes = Int((duree / 60).rounded())
+                LabeledContent("Durée réelle", value: minutes >= 60 ? "\(minutes / 60) h \(String(format: "%02d", minutes % 60))" : "\(minutes) min")
+                if z.depart.identifier != z.arrivee.identifier {
+                    Text("Départ à l'heure de \(z.depart.ville), arrivée à l'heure de \(z.arrivee.ville) : \(z.depart.decalage()) → \(z.arrivee.decalage()).")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
             }
         }
     }

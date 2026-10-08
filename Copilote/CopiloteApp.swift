@@ -22,6 +22,7 @@ struct CopiloteApp: App {
         } catch {
             fatalError("Impossible d'ouvrir la base de données : \(error)")
         }
+        Horloge.demarrer()
         PartageCloud.shared.configurer(contexte: conteneur.mainContext)
     }
 

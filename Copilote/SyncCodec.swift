@@ -162,7 +162,7 @@ enum Codec {
             r["debut"] = v.debut; r["fin"] = v.fin; r["notes"] = v.notes
             r["pays"] = v.pays; r["creeLe"] = v.creeLe
             r["transportAller"] = v.transportAllerJSON; r["transportRetour"] = v.transportRetourJSON
-            r["deviseLocale"] = v.deviseLocale; r["tauxChange"] = v.tauxChange
+            r["deviseLocale"] = v.deviseLocale; r["tauxChange"] = v.tauxChange; r["fuseauRef"] = v.fuseauReferenceId
             return r
         case let j as JourVoyage:
             let r = base(.jour, j.uid, zone, systeme)
@@ -195,7 +195,7 @@ enum Codec {
             return r
         case let e as Etape:
             let r = base(.etape, e.uid, zone, systeme)
-            r["titre"] = e.titre; r["lieu"] = e.lieu; r["jour"] = e.jour; r["heure"] = e.heure; r["heureFin"] = e.heureFin; r["apresJour"] = e.apresJour ? 1 : 0; r["transportJSON"] = e.transportJSON
+            r["titre"] = e.titre; r["lieu"] = e.lieu; r["jour"] = e.jour; r["heure"] = e.heure; r["heureFin"] = e.heureFin; r["fuseau"] = e.fuseauChoisi; r["apresJour"] = e.apresJour ? 1 : 0; r["transportJSON"] = e.transportJSON
             r["categorie"] = e.categorie.rawValue; r["notes"] = e.notes
             r["latitude"] = e.latitude; r["longitude"] = e.longitude
             r["ordre"] = e.ordre
@@ -212,7 +212,7 @@ enum Codec {
             r["type"] = x.type.rawValue; r["titre"] = x.titre; r["fournisseur"] = x.fournisseur
             r["numeroConfirmation"] = x.numeroConfirmation; r["debut"] = x.debut; r["fin"] = x.fin
             r["lieu"] = x.lieu; r["prix"] = x.prix; r["devise"] = x.devise; r["notes"] = x.notes
-            r["ajouteeAItineraire"] = x.ajouteeAItineraire ? 1 : 0; r["creeLe"] = x.creeLe; r["voyageUID"] = x.voyage?.uid
+            r["ajouteeAItineraire"] = x.ajouteeAItineraire ? 1 : 0; r["fuseauDebut"] = x.fuseauDebutId; r["fuseauFin"] = x.fuseauFinId; r["creeLe"] = x.creeLe; r["voyageUID"] = x.voyage?.uid
             return r
         case let d as Document:
             let r = base(.document, d.uid, zone, systeme)
@@ -310,7 +310,7 @@ enum Codec {
             v.debut = date("debut") ?? v.debut; v.fin = date("fin") ?? v.fin; v.notes = texte("notes")
             v.pays = r["pays"] as? [String] ?? []; v.creeLe = date("creeLe") ?? v.creeLe
             v.transportAllerJSON = r["transportAller"] as? String; v.transportRetourJSON = r["transportRetour"] as? String
-            v.deviseLocale = r["deviseLocale"] as? String; v.tauxChange = nombre("tauxChange")
+            v.deviseLocale = r["deviseLocale"] as? String; v.tauxChange = nombre("tauxChange"); v.fuseauReferenceId = r["fuseauRef"] as? String
             let proprietaire = r.recordID.zoneID.ownerName
             v.zoneProprietaire = proprietaire == CKCurrentUserDefaultName ? "" : proprietaire
             return v
@@ -356,7 +356,7 @@ enum Codec {
             let e = (objet(recordName: r.recordID.recordName, contexte) as? Etape) ?? {
                 let nouveau = Etape(titre: "", jour: .now); nouveau.uid = uid; contexte.insert(nouveau); return nouveau
             }()
-            e.titre = texte("titre"); e.lieu = texte("lieu"); e.jour = date("jour"); e.heure = date("heure"); e.heureFin = date("heureFin"); e.apresJour = nombre("apresJour") == 1; e.transportJSON = r["transportJSON"] as? String
+            e.titre = texte("titre"); e.lieu = texte("lieu"); e.jour = date("jour"); e.heure = date("heure"); e.heureFin = date("heureFin"); e.fuseauChoisi = r["fuseau"] as? String; e.apresJour = nombre("apresJour") == 1; e.transportJSON = r["transportJSON"] as? String
             e.categorie = CategorieEtape(rawValue: texte("categorie")) ?? .autre; e.notes = texte("notes")
             e.latitude = nombre("latitude"); e.longitude = nombre("longitude"); e.ordre = nombre("ordre") ?? 0
             e.resume = r["resume"] as? String; e.horaires = r["horaires"] as? String; e.photoURL = r["photoURL"] as? String
@@ -378,7 +378,7 @@ enum Codec {
             x.fournisseur = texte("fournisseur"); x.numeroConfirmation = texte("numeroConfirmation")
             x.debut = date("debut") ?? x.debut; x.fin = date("fin"); x.lieu = texte("lieu")
             x.prix = nombre("prix"); x.devise = texte("devise"); x.notes = texte("notes")
-            x.ajouteeAItineraire = (entier("ajouteeAItineraire") ?? 0) == 1
+            x.ajouteeAItineraire = (entier("ajouteeAItineraire") ?? 0) == 1; x.fuseauDebutId = r["fuseauDebut"] as? String; x.fuseauFinId = r["fuseauFin"] as? String
             x.creeLe = date("creeLe") ?? x.creeLe; x.voyage = parent
             return x
 

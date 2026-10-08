@@ -48,9 +48,15 @@ struct ReservationEditView: View {
 
                 Section {
                     DatePicker(reservation.type == .hebergement ? "Arrivée" : "Début", selection: $reservation.debut)
+                    // L'heure saisie est l'heure locale du lieu ; on indique un autre fuseau s'il le faut (vol : heure de départ de Paris…).
+                    LigneFuseau(titre: reservation.type == .hebergement ? "Fuseau de l'arrivée" : "Fuseau du début",
+                                choisi: $reservation.fuseauDebutId, parDefaut: reservation.voyage?.fuseauParDefaut ?? .current)
                     Toggle(reservation.type == .hebergement ? "Départ" : "Fin", isOn: finActivee)
                     if reservation.fin != nil {
                         DatePicker("Jusqu'au", selection: finChoisie, in: reservation.debut...)
+                        LigneFuseau(titre: reservation.type == .hebergement ? "Fuseau du départ" : "Fuseau de la fin",
+                                    choisi: $reservation.fuseauFinId,
+                                    parDefaut: reservation.fuseauDebutId.flatMap(TimeZone.init(identifier:)) ?? reservation.voyage?.fuseauParDefaut ?? .current)
                     }
                     TextField("Lieu ou adresse", text: $reservation.lieu)
                 }

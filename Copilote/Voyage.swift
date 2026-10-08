@@ -23,6 +23,8 @@ final class Voyage {
     /// Monnaie locale (code ISO, ex. CRC) et ce que vaut 1 € dans cette monnaie.
     var deviseLocale: String?
     var tauxChange: Double?
+    /// Fuseau dans lequel tous les horaires du voyage sont lus (identifiant, ex. « Europe/Paris »), quel que soit le fuseau de l'appareil.
+    var fuseauReferenceId: String?
     var transportAllerJSON: String?
     var transportRetourJSON: String?
     @Relationship(deleteRule: .cascade, inverse: \Membre.voyage)

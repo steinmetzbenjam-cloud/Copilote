@@ -39,7 +39,7 @@ extension PartageCloud {
 
         let voyage = Voyage(titre: "Exemple", destination: "Exemple")
         voyage.pays = ["FR"]; voyage.notes = "x"
-        voyage.transportAllerJSON = "x"; voyage.transportRetourJSON = "x"; voyage.deviseLocale = "x"; voyage.tauxChange = 1
+        voyage.transportAllerJSON = "x"; voyage.transportRetourJSON = "x"; voyage.deviseLocale = "x"; voyage.tauxChange = 1; voyage.fuseauReferenceId = "x"
         contexte.insert(voyage)
 
         let membre = Membre(nom: "Exemple"); membre.voyage = voyage
@@ -51,7 +51,7 @@ extension PartageCloud {
         contexte.insert(jour)
 
         let etape = Etape(titre: "x", jour: .now)
-        etape.lieu = "x"; etape.heure = .now; etape.heureFin = .now; etape.apresJour = true; etape.transportJSON = "x"; etape.notes = "x"; etape.latitude = 1; etape.longitude = 1; etape.ordre = 1
+        etape.lieu = "x"; etape.heure = .now; etape.heureFin = .now; etape.fuseauChoisi = "x"; etape.apresJour = true; etape.transportJSON = "x"; etape.notes = "x"; etape.latitude = 1; etape.longitude = 1; etape.ordre = 1
         etape.resume = "x"; etape.horaires = "x"; etape.photoURL = "x"
         etape.noteGoogle = 1; etape.avisGoogle = 1; etape.lienGoogle = "x"
         etape.noteTripadvisor = 1; etape.avisTripadvisor = 1; etape.lienTripadvisor = "x"; etape.siteWeb = "x"
@@ -61,7 +61,7 @@ extension PartageCloud {
 
         let reservation = Reservation(type: .vol, debut: .now)
         reservation.titre = "x"; reservation.fournisseur = "x"; reservation.numeroConfirmation = "x"
-        reservation.fin = .now; reservation.lieu = "x"; reservation.prix = 1; reservation.devise = "EUR"; reservation.notes = "x"
+        reservation.fin = .now; reservation.lieu = "x"; reservation.prix = 1; reservation.devise = "EUR"; reservation.fuseauDebutId = "x"; reservation.fuseauFinId = "x"; reservation.notes = "x"
         reservation.voyage = voyage; contexte.insert(reservation)
 
         let document = Document(nom: "x", extensionFichier: "txt", donnees: Data("x".utf8))

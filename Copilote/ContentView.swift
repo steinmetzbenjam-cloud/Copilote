@@ -135,11 +135,14 @@ struct ContentView: View {
         .onChange(of: selection) { _, voyage in
             guard let voyage else { return }
             UserDefaults.standard.set(voyage.uid, forKey: Self.cleDernierVoyage)
+            // Les horaires du voyage sont lus dans son fuseau de référence, avant d'afficher quoi que ce soit.
+            Horloge.ouvrir(voyage)
             voyageOuvert = voyage
             withAnimation { colonnes = .detailOnly }
         }
         .sheet(isPresented: $nouveauVoyageOuvert) {
             NouveauVoyageView { voyage in
+                voyage.fuseauReferenceId = Horloge.zoneAppareil().identifier
                 contexte.insert(voyage)
                 selection = voyage
             }

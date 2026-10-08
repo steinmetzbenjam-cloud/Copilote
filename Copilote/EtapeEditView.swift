@@ -173,6 +173,9 @@ struct EtapeEditView: View {
                             Image(systemName: "arrow.right").foregroundStyle(.secondary)
                             bulleHeure($etape.heureFin, depart: (etape.heure.map { Calendar.current.component(.hour, from: $0) + 1 } ?? 10) % 24)
                         }
+                        // L'heure saisie est celle du lieu de l'étape ; on peut la noter dans un autre fuseau.
+                        LigneFuseau(choisi: $etape.fuseauChoisi, parDefaut: etape.fuseauParDefaut,
+                                    coordonnees: etape.coordonnee.map { [$0] } ?? [])
                     }
                 }
                 Section("Notes") {
