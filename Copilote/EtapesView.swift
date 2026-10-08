@@ -253,7 +253,7 @@ struct EtapesView: View {
             return demanderNuit(etape, apres: jour)
         }
         // Un hébergement lâché sur un jour va à la fin de ce jour, entre lui et le suivant.
-        if let jour, etape.categorie == .hebergement { return demanderNuit(etape, apres: jour) }
+        if let jour, etape.categorie == .hebergement { return demanderNuit(etape, apres: voyage.jourDeNuit(pourDepotSur: jour)) }
         return demander(etape, vers: jour, avant: cible)
     }
 

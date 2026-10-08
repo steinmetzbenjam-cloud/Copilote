@@ -463,7 +463,7 @@ struct ItineraireView: View {
         guard let uid = elements.first(where: { $0.hasPrefix(Self.prefixe) })?.dropFirst(Self.prefixe.count) else { return false }
         // Un hébergement lâché sur un jour va à la fin de ce jour, entre lui et le suivant.
         if let etape = voyage.etapes.first(where: { $0.uid == String(uid) }), etape.categorie == .hebergement {
-            return demanderNuit(etape, apres: jour)
+            return demanderNuit(etape, apres: voyage.jourDeNuit(pourDepotSur: jour))
         }
         return deplacer(String(uid), vers: jour, avant: cible)
     }

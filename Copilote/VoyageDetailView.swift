@@ -45,7 +45,9 @@ struct VoyageDetailView: View {
         .sheet(item: $membreAffiche) { ProfilMembreView(membre: $0) }
         .onChange(of: voyage.debut) { _, debut in
             if voyage.fin < debut { voyage.fin = debut }
+            voyage.rangerEtapesHorsDates()
         }
+        .onChange(of: voyage.fin) { voyage.rangerEtapesHorsDates() }
     }
 
     // MARK: Cadres

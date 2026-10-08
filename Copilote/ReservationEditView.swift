@@ -34,7 +34,7 @@ struct ReservationEditView: View {
                     TextField(placeholderTitre, text: $reservation.titre).focused($titreActif)
                     TextField("Compagnie, hôtel, loueur…", text: $reservation.fournisseur)
                     HStack {
-                        TextField("N° de confirmation", text: $reservation.numeroConfirmation)
+                        TextField("N° de réservation", text: $reservation.numeroConfirmation)
                             .autocorrectionDisabled()
                             #if os(iOS)
                             .textInputAutocapitalization(.characters)
@@ -125,7 +125,7 @@ struct ReservationEditView: View {
         etape.lieu = reservation.lieu
         etape.heure = reservation.debut
         if !reservation.numeroConfirmation.isEmpty {
-            etape.notes = "Confirmation : \(reservation.numeroConfirmation)"
+            etape.notes = "Réservation : \(reservation.numeroConfirmation)"
         }
         etape.ordre = voyage.prochainOrdre(du: reservation.debut)
         etape.voyage = voyage

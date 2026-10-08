@@ -265,13 +265,8 @@ struct CarteDuVoyage: View {
                                 let taille: CGFloat = focus && jourFocus != nil ? 30 : 26
                                 Group {
                                     if etape.categorie == .repas {
-                                        // Un repas : couverts dans un carré arrondi plutôt qu'un numéro dans un rond.
-                                        Image(systemName: "fork.knife")
-                                            .font(.system(size: taille * 0.5, weight: .bold))
-                                            .foregroundStyle(.white)
-                                            .frame(width: taille, height: taille)
-                                            .background(Self.couleur(du: index), in: RoundedRectangle(cornerRadius: 8))
-                                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white, lineWidth: 2))
+                                        // Un repas : une assiette ronde avec le numéro au milieu, une fourchette et un couteau de chaque côté.
+                                        PionRepas(numero: rang + 1, couleur: Self.couleur(du: index), taille: taille)
                                     } else {
                                         Text("\(rang + 1)")
                                             .font(.caption.bold())
@@ -366,5 +361,72 @@ extension Voyage {
     func couleurNuit(apres jour: Date) -> Color {
         let rang = jours.firstIndex { Calendar.current.isDate($0, inSameDayAs: jour) } ?? 0
         return rang % 2 == 0 ? .mint : .orange
+    }
+}
+
+/// Un rond de la couleur du jour avec le numéro en blanc, entouré d'une fourchette à gauche et d'un couteau à droite.
+private struct PionRepas: View {
+    let numero: Int
+    let couleur: Color
+    let taille: CGFloat
+
+    var body: some View {
+        HStack(spacing: 2) {
+            Fourchette().fill(couleur, outline: .white)
+                .frame(width: taille * 0.4, height: taille * 1.05)
+            Text("\(numero)")
+                .font(.system(size: taille * 0.46, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: taille, height: taille)
+                .background(couleur, in: Circle())
+                .overlay(Circle().stroke(.white, lineWidth: 2))
+            Couteau().fill(couleur, outline: .white)
+                .frame(width: taille * 0.4, height: taille * 1.05)
+        }
+    }
+
+    /// Fourchette : trois dents épaisses, une base arrondie et un manche.
+    private struct Fourchette: Shape {
+        func path(in r: CGRect) -> Path {
+            var p = Path()
+            let dent = r.width * 0.2
+            for i in 0..<3 {
+                let x = r.minX + CGFloat(i) * (r.width - dent) / 2
+                p.addRoundedRect(in: CGRect(x: x, y: r.minY, width: dent, height: r.height * 0.5),
+                                 cornerSize: CGSize(width: dent / 2, height: dent / 2))
+            }
+            p.addRoundedRect(in: CGRect(x: r.minX, y: r.minY + r.height * 0.3, width: r.width, height: r.height * 0.26),
+                             cornerSize: CGSize(width: r.width * 0.3, height: r.width * 0.3))
+            p.addRoundedRect(in: CGRect(x: r.midX - r.width * 0.12, y: r.minY + r.height * 0.45, width: r.width * 0.24, height: r.height * 0.55),
+                             cornerSize: CGSize(width: r.width * 0.12, height: r.width * 0.12))
+            return p
+        }
+    }
+
+    /// Couteau : une lame large au dos droit et au tranchant arrondi, puis un manche.
+    private struct Couteau: Shape {
+        func path(in r: CGRect) -> Path {
+            var p = Path()
+            let dos = r.midX + r.width * 0.05
+            p.move(to: CGPoint(x: dos, y: r.minY))
+            p.addCurve(to: CGPoint(x: dos - r.width * 0.5, y: r.minY + r.height * 0.55),
+                       control1: CGPoint(x: dos - r.width * 0.55, y: r.minY + r.height * 0.02),
+                       control2: CGPoint(x: dos - r.width * 0.6, y: r.minY + r.height * 0.3))
+            p.addLine(to: CGPoint(x: dos, y: r.minY + r.height * 0.55))
+            p.closeSubpath()
+            p.addRoundedRect(in: CGRect(x: dos - r.width * 0.12, y: r.minY + r.height * 0.5, width: r.width * 0.3, height: r.height * 0.5),
+                             cornerSize: CGSize(width: r.width * 0.12, height: r.width * 0.12))
+            return p
+        }
+    }
+}
+
+private extension Shape {
+    /// Rempli d'une couleur et cerné d'un liseré, pour rester lisible sur la carte.
+    func fill(_ couleur: Color, outline: Color) -> some View {
+        ZStack {
+            stroke(outline, style: StrokeStyle(lineWidth: 3, lineJoin: .round))
+            fill(couleur)
+        }
     }
 }

@@ -30,6 +30,8 @@ struct EtapeEditView: View {
         Binding(get: { etape.jour },
                 set: {
                     etape.jour = $0
+                    // Un hébergement est toujours entre ce jour et le suivant.
+                    if let jour = $0, etape.categorie == .hebergement, let voyage = etape.voyage { voyage.placerEntreJours(etape, apres: jour) }
                     if $0 == nil { etape.heure = nil; etape.heureFin = nil; etape.apresJour = false; horaireOuvert = false }
                 })
     }
@@ -138,10 +140,12 @@ struct EtapeEditView: View {
                         }
                         .sheet(isPresented: $transportOuvert) { existant.vue }
                     }
-                    Picker("Catégorie", selection: $etape.categorie) {
-                        // Transport et hébergement ont leur propre fenêtre ; on ne les garde que pour une étape qui l'est déjà.
-                        ForEach(CategorieEtape.allCases.filter { ![.transport, .hebergement].contains($0) || $0 == etape.categorie }) { c in
-                            Label(c.libelle, systemImage: c.symbole).tag(c)
+                    if etape.categorie != .hebergement {
+                        Picker("Catégorie", selection: $etape.categorie) {
+                            // Transport et hébergement ont leur propre fenêtre ; on ne les garde que pour une étape qui l'est déjà.
+                            ForEach(CategorieEtape.allCases.filter { ![.transport, .hebergement].contains($0) || $0 == etape.categorie }) { c in
+                                Label(c.libelle, systemImage: c.symbole).tag(c)
+                            }
                         }
                     }
                 }
@@ -155,12 +159,6 @@ struct EtapeEditView: View {
                         }
                     }
                     if etape.jour != nil, etape.categorie == .hebergement {
-                        Toggle("Entre ce jour et le suivant", isOn: Binding(
-                            get: { etape.apresJour },
-                            set: { nouveau in
-                                if nouveau, let jour = etape.jour, let voyage = etape.voyage { voyage.placerEntreJours(etape, apres: jour) }
-                                else { etape.apresJour = false }
-                            }))
                         if etape.apresJour, let jour = etape.jour {
                             let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
                             Text("Nuit du \(jour.formatted(.dateTime.day().month(.wide))) au \(lendemain.formatted(.dateTime.day().month(.wide)))")
@@ -187,14 +185,14 @@ struct EtapeEditView: View {
                     }
                 }
                 Section {
-                    Button("Supprimer l'étape", role: .destructive) {
+                    Button(etape.categorie == .hebergement ? "Supprimer l'hébergement" : "Supprimer l'étape", role: .destructive) {
                         onSupprimer()
                         dismiss()
                     }
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Étape")
+            .navigationTitle(etape.categorie == .hebergement ? "Hébergement" : "Étape")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif
