@@ -4,17 +4,11 @@ import SwiftData
 struct VoyageDetailView: View {
     @Bindable var voyage: Voyage
     @Environment(\.modelContext) private var contexte
-    @State private var nouveauMembre = ""
     @State private var paysAAjouter = ""
     @State private var profilOuvert = false
-    @State private var membreAffiche: Membre?
     private var profil = Profil.partage
 
     init(voyage: Voyage) { self.voyage = voyage }
-
-    private var membresTries: [Membre] {
-        voyage.membres.sorted { $0.creeLe < $1.creeLe }
-    }
 
     var body: some View {
         ScrollView {
@@ -27,7 +21,7 @@ struct VoyageDetailView: View {
                 CadreInfos(titre: "Partage avec le groupe", symbole: "person.2.fill", couleur: .pink) {
                     SectionPartage(voyage: voyage)
                 }
-                cadreVoyageurs
+                CadreFamilles(voyage: voyage) { profilOuvert = true }
                 CadreInfos(titre: "Notes", symbole: "note.text", couleur: .brown) {
                     TextEditor(text: $voyage.notes)
                         .scrollContentBackground(.hidden)
@@ -42,7 +36,6 @@ struct VoyageDetailView: View {
         }
         .background(FondDePage.couleur)
         .sheet(isPresented: $profilOuvert) { ProfilEditView() }
-        .sheet(item: $membreAffiche) { ProfilMembreView(membre: $0) }
         .onChange(of: voyage.debut) { _, debut in
             if voyage.fin < debut { voyage.fin = debut }
             voyage.rangerEtapesHorsDates()
@@ -127,44 +120,6 @@ struct VoyageDetailView: View {
             }
             Text("La carte et la recherche de lieux se centrent sur ces pays.").font(.footnote).foregroundStyle(.secondary)
         }
-    }
-
-    private var cadreVoyageurs: some View {
-        CadreInfos(titre: "Voyageurs (\(voyage.membres.count))", symbole: "person.3.fill", couleur: Color(rouge: 0x06, vert: 0xB6, bleu: 0xD4)) {
-            ForEach(membresTries) { membre in
-                let moi = membre.uid == MoiVoyage.lire(voyage)
-                HStack(spacing: 10) {
-                    AvatarView(initiales: Profil.initiales(de: membre.nomAffiche), donnees: moi ? profil.avatar : membre.avatar, taille: 28,
-                               couleur: moi ? .accentColor : AvatarView.couleur(pour: membre.uid))
-                    Text(membre.nomAffiche)
-                    if moi { Text("(moi)").font(.footnote).foregroundStyle(.secondary) }
-                    Spacer()
-                    Button("Retirer", systemImage: "xmark.circle.fill") { contexte.delete(membre) }
-                        .labelStyle(.iconOnly).foregroundStyle(.secondary).buttonStyle(.plain)
-                }
-                .contentShape(Rectangle())
-                .onTapGesture { if moi { profilOuvert = true } else { membreAffiche = membre } }
-                .contextMenu {
-                    Button("Retirer", role: .destructive) { contexte.delete(membre) }
-                }
-            }
-            HStack {
-                TextField("Ajouter un voyageur", text: $nouveauMembre)
-                    .textFieldStyle(.roundedBorder)
-                    .onSubmit(ajouterMembre)
-                Button("Ajouter", action: ajouterMembre)
-                    .disabled(nouveauMembre.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        }
-    }
-
-    private func ajouterMembre() {
-        let nom = nouveauMembre.trimmingCharacters(in: .whitespaces)
-        guard !nom.isEmpty else { return }
-        let membre = Membre(nom: nom)
-        membre.voyage = voyage
-        contexte.insert(membre)
-        nouveauMembre = ""
     }
 }
 

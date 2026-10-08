@@ -330,6 +330,7 @@ struct EtapesView: View {
             coordonnees: nil,
             existant: extremite == .aller ? voyage.transportAller : voyage.transportRetour,
             lieuxExtremites: true,
+            voyage: voyage,
             enregistrer: { nouveau in
                 if extremite == .aller { voyage.transportAller = nouveau } else { voyage.transportRetour = nouveau }
             })

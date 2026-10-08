@@ -11,6 +11,13 @@ final class Membre {
     var nomFamille: String?
     var email: String?
     @Attribute(.externalStorage) var avatar: Data?
+    /// Famille à laquelle le voyageur appartient pour le budget (nom libre, commun aux membres d'une même famille).
+    var familleNom: String?
+    var age: Int?
+    /// Tarif choisi à la main (`Tarif`) ; sinon il découle de l'âge.
+    var tarifBrut: String?
+    /// E-mail utilisé pour inviter cette personne dans l'app : sert à la reconnaître quand elle ouvre le voyage.
+    var emailInvitation: String?
 
     init(nom: String) {
         self.nom = nom

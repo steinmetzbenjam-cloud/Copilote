@@ -21,6 +21,7 @@ struct VoyageView: View {
         case carte = "Carte"
         case reservations = "Réserv."
         case depenses = "Dépenses"
+        case budget = "Budget"
         case infos = "Infos"
         var id: String { rawValue }
 
@@ -31,6 +32,7 @@ struct VoyageView: View {
             case .carte: "map"
             case .reservations: "ticket"
             case .depenses: "eurosign.circle"
+            case .budget: "chart.pie"
             case .infos: "info.circle"
             }
         }
@@ -147,6 +149,7 @@ struct VoyageView: View {
             case .carte: CarteView(voyage: voyage)
             case .reservations: ReservationsView(voyage: voyage)
             case .depenses: DepensesView(voyage: voyage)
+            case .budget: BudgetView(voyage: voyage)
             case .infos: VoyageDetailView(voyage: voyage)
             }
         }

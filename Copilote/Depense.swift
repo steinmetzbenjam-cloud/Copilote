@@ -50,6 +50,8 @@ final class Depense {
     var repartitionPrecise: Bool
     var estRemboursement: Bool
     var notes: String
+    /// Étape à laquelle la dépense se rapporte (facultatif).
+    var etapeUID: String?
     var uid: String = ""
     var creeLe: Date
     var voyage: Voyage?
@@ -69,6 +71,32 @@ final class Depense {
     }
 
     var estVide: Bool { titre.trimmingCharacters(in: .whitespaces).isEmpty && montant == 0 }
+}
+
+extension Voyage {
+    /// Les membres d'une même famille sont solidaires : pour les comptes, ils ne font qu'un.
+    /// Chaque voyageur est représenté par le membre de sa famille qui porte les comptes : moi si je suis de la famille, sinon le premier ajouté.
+    func representant(de uid: String, moi: String) -> String {
+        guard let membre = membre(uid: uid), !membre.famille.isEmpty else { return uid }
+        let famille = membresTries.filter { $0.famille.caseInsensitiveCompare(membre.famille) == .orderedSame }
+        if famille.contains(where: { $0.uid == moi }) { return moi }
+        return famille.first?.uid ?? uid
+    }
+
+    /// Nom affiché pour un compte : la famille s'il y en a une, sinon le prénom.
+    func nomDuCompte(_ representant: String) -> String {
+        guard let membre = membre(uid: representant) else { return "Ancien voyageur" }
+        return membre.famille.isEmpty ? membre.nom : membre.famille
+    }
+
+    /// Soldes par monnaie, famille par famille (et voyageur seul par voyageur seul), clés = représentant.
+    func soldesParCompte(moi: String) -> [String: [String: Double]] {
+        Comptes.soldes(depenses).mapValues { soldes in
+            var regroupes: [String: Double] = [:]
+            for (uid, solde) in soldes { regroupes[representant(de: uid, moi: moi), default: 0] += solde }
+            return regroupes.mapValues { ($0 * 100).rounded() / 100 }
+        }
+    }
 }
 
 /// Calcul des soldes et des remboursements qui équilibrent les comptes.

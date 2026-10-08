@@ -79,6 +79,13 @@ struct Transport: Codable, Equatable {
     var arriveeLieu: String?
     var arriveeLatitude: Double?
     var arriveeLongitude: Double?
+    /// Prix par personne en euros (ou en monnaie locale si le drapeau `…Local` est vrai). Optionnels : absents des transports déjà enregistrés.
+    var prixAdulte: Double?
+    var prixEtudiant: Double?
+    var prixEnfant: Double?
+    var prixAdulteLocal: Bool?
+    var prixEtudiantLocal: Bool?
+    var prixEnfantLocal: Bool?
 
     var departCoordonnee: CLLocationCoordinate2D? {
         guard let departLatitude, let departLongitude else { return nil }

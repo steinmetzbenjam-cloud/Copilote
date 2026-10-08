@@ -54,6 +54,7 @@ enum Sauvegarde {
             }
             if let document = modele as? Document { champs["donnees"] = .fichier(document.donnees) }
             if let membre = modele as? Membre, let photo = membre.avatar { champs["avatar"] = .fichier(photo) }
+            if let famille = modele as? Famille, let photo = famille.avatar { champs["avatar"] = .fichier(photo) }
             return Objet(type: type.rawValue, uid: uid, champs: champs)
         }
 
@@ -67,6 +68,7 @@ enum Sauvegarde {
             objets += v.documents.map { objet($0, .document, $0.uid) }
             objets += v.commentaires.map { objet($0, .commentaire, $0.uid) }
             objets += v.avisEtapes.map { objet($0, .avisEtape, $0.uid) }
+            objets += v.fichesFamilles.map { objet($0, .famille, $0.uid) }
             return VoyageSauve(uid: v.uid, titre: v.titre, objets: objets.compactMap { $0 })
         }
         let encodeur = JSONEncoder()

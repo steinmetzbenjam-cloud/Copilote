@@ -21,7 +21,7 @@ struct DepensesView: View {
     }
 
     private var depensesTriees: [Depense] { voyage.depenses.sorted { ($0.date, $0.creeLe) > ($1.date, $1.creeLe) } }
-    private var soldes: [String: [String: Double]] { Comptes.soldes(voyage.depenses) }
+    private var soldes: [String: [String: Double]] { voyage.soldesParCompte(moi: moi) }
 
     private func monnaie(_ montant: Double, _ devise: String) -> String {
         montant.formatted(.currency(code: devise))
@@ -45,6 +45,8 @@ struct DepensesView: View {
                     Text("Écris simplement les prénoms de ceux qui participent aux dépenses, toi compris : il n'est pas nécessaire de les inviter. Il en faut au moins deux pour répartir.")
                 }
             } else {
+                Section { SelecteurMoi(voyage: voyage, moi: $moi) }
+                NouvelleDepenseSections(voyage: voyage, moi: moi)
                 resume
                 ForEach(soldes.keys.sorted(), id: \.self) { devise in
                     soldesEtVirements(devise: devise, soldes: soldes[devise] ?? [:])
@@ -56,9 +58,6 @@ struct DepensesView: View {
                     Button { enEdition = d } label: { ligne(d) }.buttonStyle(.plain)
                         .swipeActions { Button("Supprimer", role: .destructive) { contexte.delete(d) } }
                 }
-                Button("Ajouter une dépense", systemImage: "plus.circle", action: ajouter)
-                    .buttonStyle(.borderless)
-                    .disabled(membres.isEmpty)
             }
         }
         .sheet(item: $enEdition, onDismiss: nettoyer) { d in
@@ -70,18 +69,12 @@ struct DepensesView: View {
 
     private var resume: some View {
         Section {
-            Picker("Qui es-tu ?", selection: $moi) {
-                Text("—").tag("")
-                ForEach(membres) { Text($0.nom).tag($0.uid) }
-            }
-            .onChange(of: moi) { UserDefaults.standard.set(moi, forKey: "moi-\(voyage.uid)") }
-
             ForEach(Comptes.totaux(voyage.depenses), id: \.devise) { total in
                 LabeledContent("Total dépensé", value: monnaie(total.montant, total.devise))
             }
             if !moi.isEmpty {
                 ForEach(soldes.keys.sorted(), id: \.self) { devise in
-                    let solde = soldes[devise]?[moi] ?? 0
+                    let solde = soldes[devise]?[voyage.representant(de: moi, moi: moi)] ?? 0
                     if abs(solde) >= 0.005 {
                         Label(solde > 0 ? "On te doit \(monnaie(solde, devise))" : "Tu dois \(monnaie(-solde, devise))",
                               systemImage: solde > 0 ? "arrow.down.circle.fill" : "arrow.up.circle.fill")
@@ -100,7 +93,8 @@ struct DepensesView: View {
         Section {
             ForEach(soldes.sorted { $0.value > $1.value }, id: \.key) { uid, solde in
                 HStack {
-                    Text(uid == moi ? "\(nom(uid)) (toi)" : nom(uid)).fontWeight(uid == moi ? .semibold : .regular)
+                    let estMoi = uid == voyage.representant(de: moi, moi: moi)
+                    Text(estMoi ? "\(voyage.nomDuCompte(uid)) (toi)" : voyage.nomDuCompte(uid)).fontWeight(estMoi ? .semibold : .regular)
                     Spacer()
                     Text(abs(solde) < 0.005 ? "à l'équilibre" : (solde > 0 ? "doit recevoir " : "doit ") + monnaie(abs(solde), devise))
                         .foregroundStyle(abs(solde) < 0.005 ? Color.secondary : (solde > 0 ? .green : .red))
@@ -116,7 +110,7 @@ struct DepensesView: View {
             Section {
                 ForEach(virements, id: \.self) { v in
                     HStack {
-                        Text("\(nom(v.de)) → \(nom(v.vers))")
+                        Text("\(voyage.nomDuCompte(v.de)) → \(voyage.nomDuCompte(v.vers))")
                         Spacer()
                         Text(monnaie(v.montant, devise)).monospacedDigit()
                         Button("Remboursé") { rembourser(v, devise: devise) }
@@ -126,7 +120,7 @@ struct DepensesView: View {
             } header: {
                 Text("Pour s'équilibrer · \(devise)")
             } footer: {
-                Text("« Remboursé » enregistre le paiement : les soldes sont remis à jour.")
+                Text("Les membres d'une même famille sont solidaires : leurs comptes sont regroupés. « Remboursé » enregistre le paiement : les soldes sont remis à jour.")
             }
         }
     }
@@ -151,19 +145,12 @@ struct DepensesView: View {
             return "\(nom(d.payeurUID)) a remboursé \(nom(part.membreUID)) · \(date)"
         }
         let pour = d.parts.count == membres.count ? "tous" : "\(d.parts.count) pers."
-        return "Payé par \(nom(d.payeurUID)) · pour \(pour) · \(date)"
+        let famille = voyage.famille(de: d.payeurUID).map { " (\($0))" } ?? ""
+        let etape = d.etapeUID.flatMap { uid in voyage.etapes.first { $0.uid == uid } }.map { " · \($0.titre)" } ?? ""
+        return "Payé par \(nom(d.payeurUID))\(famille) · pour \(pour) · \(date)\(etape)"
     }
 
     // MARK: Actions
-
-    private func ajouter() {
-        let devise = UserDefaults.standard.string(forKey: "derniereDevise") ?? Locale.current.currency?.identifier ?? "EUR"
-        let d = Depense(devise: devise, payeurUID: moi.isEmpty ? (membres.first?.uid ?? "") : moi)
-        d.parts = Comptes.repartir(0, entre: membres.map(\.uid))
-        d.voyage = voyage
-        contexte.insert(d)
-        enEdition = d
-    }
 
     private func ajouterVoyageur() {
         let nom = nouveauVoyageur.trimmingCharacters(in: .whitespaces)

@@ -52,6 +52,12 @@ struct DepenseEditView: View {
                         ForEach(CategorieDepense.allCases) { Label($0.libelle, systemImage: $0.symbole).tag($0) }
                     }
                     DatePicker("Date", selection: $depense.date, displayedComponents: .date)
+                    Picker("Étape", selection: Binding(get: { depense.etapeUID ?? "" }, set: { depense.etapeUID = $0.isEmpty ? nil : $0 })) {
+                        Text("Aucune").tag("")
+                        ForEach(voyage.etapes.sorted { ($0.jour ?? .distantFuture, $0.ordre) < ($1.jour ?? .distantFuture, $1.ordre) }) {
+                            Text($0.titre.isEmpty ? $0.categorie.libelle : $0.titre).tag($0.uid)
+                        }
+                    }
                 }
 
                 Section("Payé par") {

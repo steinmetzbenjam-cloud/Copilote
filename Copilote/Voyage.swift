@@ -41,6 +41,8 @@ final class Voyage {
     var commentaires: [Commentaire] = []
     @Relationship(deleteRule: .cascade, inverse: \AvisEtape.voyage)
     var avisEtapes: [AvisEtape] = []
+    @Relationship(deleteRule: .cascade, inverse: \Famille.voyage)
+    var fichesFamilles: [Famille] = []
 
     init(titre: String, destination: String = "", debut: Date = .now, fin: Date = .now.addingTimeInterval(7 * 86_400)) {
         self.titre = titre

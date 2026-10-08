@@ -5,7 +5,7 @@ import CryptoKit
 
 enum TypeCloud: String, CaseIterable {
     case voyage = "Voyage", jour = "Jour", membre = "Membre", depense = "Depense", reservation = "Reservation", etape = "Etape", document = "Document"
-    case commentaire = "Commentaire", avisEtape = "AvisEtape"
+    case commentaire = "Commentaire", avisEtape = "AvisEtape", famille = "Famille"
 }
 
 /// Donne un identifiant stable aux objets créés avant l'arrivée de la synchronisation.
@@ -25,6 +25,7 @@ enum Identifiants {
         remplir(Depense.self, \.uid)
         remplir(Commentaire.self, \.uid)
         remplir(AvisEtape.self, \.uid)
+        remplir(Famille.self, \.uid)
         try? contexte.save()
     }
 }
@@ -77,6 +78,7 @@ enum Codec {
         case .depense: return try? contexte.fetch(FetchDescriptor<Depense>(predicate: #Predicate { $0.uid == uid })).first
         case .commentaire: return try? contexte.fetch(FetchDescriptor<Commentaire>(predicate: #Predicate { $0.uid == uid })).first
         case .avisEtape: return try? contexte.fetch(FetchDescriptor<AvisEtape>(predicate: #Predicate { $0.uid == uid })).first
+        case .famille: return try? contexte.fetch(FetchDescriptor<Famille>(predicate: #Predicate { $0.uid == uid })).first
         }
     }
 
@@ -105,6 +107,7 @@ enum Codec {
             for d in v.documents { ajouter(d, .document, d.uid, zone) }
             for c in v.commentaires { ajouter(c, .commentaire, c.uid, zone) }
             for a in v.avisEtapes { ajouter(a, .avisEtape, a.uid, zone) }
+            for f in v.fichesFamilles { ajouter(f, .famille, f.uid, zone) }
         }
         return entrees
     }
@@ -165,12 +168,13 @@ enum Codec {
             r["titre"] = x.titre; r["montant"] = x.montant; r["devise"] = x.devise; r["date"] = x.date
             r["categorie"] = x.categorie.rawValue; r["payeurUID"] = x.payeurUID; r["notes"] = x.notes
             r["precise"] = x.repartitionPrecise ? 1 : 0; r["remboursement"] = x.estRemboursement ? 1 : 0
-            r["parts"] = partsEnTexte(x.parts); r["creeLe"] = x.creeLe; r["voyageUID"] = x.voyage?.uid
+            r["etapeUID"] = x.etapeUID; r["parts"] = partsEnTexte(x.parts); r["creeLe"] = x.creeLe; r["voyageUID"] = x.voyage?.uid
             return r
         case let m as Membre:
             let r = base(.membre, m.uid, zone, systeme)
             r["nom"] = m.nom; r["creeLe"] = m.creeLe; r["voyageUID"] = m.voyage?.uid
             r["nomFamille"] = m.nomFamille; r["email"] = m.email
+            r["famille"] = m.familleNom; r["age"] = m.age; r["tarif"] = m.tarifBrut; r["emailInvitation"] = m.emailInvitation
             // L'empreinte de la photo (un texte) permet de détecter son changement : les fichiers ne comptent pas dans l'empreinte.
             r["avatarEmpreinte"] = m.avatar.map(empreinteDonnees)
             if avecAsset {
@@ -222,6 +226,19 @@ enum Codec {
             r["etapeUID"] = a.etapeUID; r["auteurUID"] = a.auteurUID; r["etoiles"] = a.etoiles
             r["envie"] = a.envie.rawValue; r["commentaire"] = a.commentaire; r["modifieLe"] = a.modifieLe
             r["voyageUID"] = a.voyage?.uid
+            return r
+        case let f as Famille:
+            let r = base(.famille, f.uid, zone, systeme)
+            r["nom"] = f.nom; r["creeLe"] = f.creeLe; r["voyageUID"] = f.voyage?.uid
+            r["avatarEmpreinte"] = f.avatar.map(empreinteDonnees)
+            if avecAsset {
+                if let photo = f.avatar {
+                    let fichier = FileManager.default.temporaryDirectory.appending(path: "famille-\(f.uid).jpg")
+                    if (try? photo.write(to: fichier)) != nil { r["avatar"] = CKAsset(fileURL: fichier) }
+                } else {
+                    r["avatar"] = nil
+                }
+            }
             return r
         default:
             fatalError("Type d'objet inconnu")
@@ -297,7 +314,7 @@ enum Codec {
             x.titre = texte("titre"); x.montant = nombre("montant") ?? 0; x.devise = texte("devise"); x.date = date("date") ?? x.date
             x.categorie = CategorieDepense(rawValue: texte("categorie")) ?? .autre; x.payeurUID = texte("payeurUID"); x.notes = texte("notes")
             x.repartitionPrecise = (entier("precise") ?? 0) == 1; x.estRemboursement = (entier("remboursement") ?? 0) == 1
-            x.parts = partsDepuisTexte(r["parts"] as? String); x.creeLe = date("creeLe") ?? x.creeLe; x.voyage = parent
+            x.etapeUID = r["etapeUID"] as? String; x.parts = partsDepuisTexte(r["parts"] as? String); x.creeLe = date("creeLe") ?? x.creeLe; x.voyage = parent
             return x
 
         case .membre:
@@ -307,6 +324,8 @@ enum Codec {
             }()
             m.nom = texte("nom"); m.creeLe = date("creeLe") ?? m.creeLe; m.voyage = parent
             m.nomFamille = r["nomFamille"] as? String; m.email = r["email"] as? String
+            m.familleNom = r["famille"] as? String; m.age = entier("age"); m.tarifBrut = r["tarif"] as? String
+            m.emailInvitation = r["emailInvitation"] as? String
             if let fichier = (r["avatar"] as? CKAsset)?.fileURL, let photo = try? Data(contentsOf: fichier) {
                 m.avatar = photo
             } else if r["avatarEmpreinte"] as? String == nil {
@@ -379,6 +398,19 @@ enum Codec {
             a.envie = EnvieEtape(rawValue: texte("envie")) ?? .neutre; a.commentaire = texte("commentaire")
             a.modifieLe = date("modifieLe") ?? a.modifieLe; a.voyage = parent
             return a
+
+        case .famille:
+            guard let parent else { return nil }
+            let f = (objet(recordName: r.recordID.recordName, contexte) as? Famille) ?? {
+                let nouveau = Famille(nom: ""); nouveau.uid = uid; contexte.insert(nouveau); return nouveau
+            }()
+            f.nom = texte("nom"); f.creeLe = date("creeLe") ?? f.creeLe; f.voyage = parent
+            if let fichier = (r["avatar"] as? CKAsset)?.fileURL, let photo = try? Data(contentsOf: fichier) {
+                f.avatar = photo
+            } else if r["avatarEmpreinte"] as? String == nil {
+                f.avatar = nil
+            }
+            return f
         }
     }
 }

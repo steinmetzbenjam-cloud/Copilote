@@ -11,6 +11,8 @@ struct TransportEditView: View {
     let existant: Transport?
     /// Pour l'aller et le retour : on choisit un lieu de départ et un lieu d'arrivée.
     var lieuxExtremites = false
+    /// Le voyage, pour convertir les prix saisis en monnaie locale.
+    var voyageDuTransport: Voyage?
     /// Reçoit le transport enregistré, ou nil quand on le supprime.
     let enregistrer: (Transport?) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -23,8 +25,9 @@ struct TransportEditView: View {
     @State private var rechercheLieu: ChoixLieu?
 
     init(trajet: String, jour: Date, coordonnees: (CLLocationCoordinate2D, CLLocationCoordinate2D)?,
-         existant: Transport?, lieuxExtremites: Bool = false, enregistrer: @escaping (Transport?) -> Void) {
+         existant: Transport?, lieuxExtremites: Bool = false, voyage: Voyage? = nil, enregistrer: @escaping (Transport?) -> Void) {
         self.lieuxExtremites = lieuxExtremites
+        self.voyageDuTransport = voyage
         self.trajet = trajet
         self.jour = jour
         self.coordonnees = coordonnees
@@ -38,7 +41,7 @@ struct TransportEditView: View {
         let titre: (Etape) -> String = { $0.titre.isEmpty ? "Étape" : $0.titre }
         self.init(trajet: "\(titre(depart)) → \(titre(arrivee))", jour: depart.jour ?? .now,
                   coordonnees: depart.coordonnee.flatMap { a in arrivee.coordonnee.map { (a, $0) } },
-                  existant: depart.transport, enregistrer: { depart.transport = $0 })
+                  existant: depart.transport, voyage: depart.voyage, enregistrer: { depart.transport = $0 })
     }
 
     var body: some View {
@@ -73,6 +76,8 @@ struct TransportEditView: View {
                 case .velo: velo
                 case .commun: commun
                 }
+
+                SectionBudgetTransport(voyage: voyageDuTransport, transport: $transport)
 
                 Section("Notes") {
                     TextEditor(text: $transport.notes).frame(minHeight: 60)

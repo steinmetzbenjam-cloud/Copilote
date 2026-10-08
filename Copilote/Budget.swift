@@ -111,29 +111,21 @@ struct SectionMonnaie: View {
     }
 }
 
-/// Fiche d'une étape : le prix pour les adultes, les enfants et les étudiants.
-/// Chaque prix se saisit en euros ou en monnaie locale (au choix, ligne par ligne) ; l'autre monnaie est calculée.
-struct SectionBudgetEtape: View {
-    @Bindable var etape: Etape
-
-    private var voyage: Voyage? { etape.voyage }
+/// Trois lignes de prix par personne (adulte, étudiant, enfant), chacune saisie en euros ou en monnaie locale.
+/// Commun à la fiche d'une étape et à celle d'un transport.
+struct LignesPrix: View {
+    let voyage: Voyage?
+    var adulte: Binding<Double?>
+    var adulteLocal: Binding<Bool>
+    var etudiant: Binding<Double?>
+    var etudiantLocal: Binding<Bool>
+    var enfant: Binding<Double?>
+    var enfantLocal: Binding<Bool>
 
     var body: some View {
-        Section {
-            ligne("Adulte", $etape.prixAdulte, $etape.prixAdulteLocal)
-            ligne("Étudiant", $etape.prixEtudiant, $etape.prixEtudiantLocal)
-            ligne("Enfant", $etape.prixEnfant, $etape.prixEnfantLocal)
-        } header: {
-            Text("Budget")
-        } footer: {
-            if let voyage, !voyage.aUneMonnaieLocale {
-                Text("Choisis la monnaie locale dans l'onglet Infos pour saisir un prix dans la monnaie du pays.")
-            } else if voyage?.tauxChange == nil {
-                Text("Renseigne le taux de change dans l'onglet Infos pour voir la conversion.")
-            } else {
-                Text("Tape le prix dans l'une des deux cases : l'autre se remplit avec le taux du voyage.")
-            }
-        }
+        ligne("Adulte", adulte, adulteLocal)
+        ligne("Étudiant", etudiant, etudiantLocal)
+        ligne("Enfant", enfant, enfantLocal)
     }
 
     /// Deux cases : monnaie locale à gauche, euros à droite. Ce que l'on tape dans l'une remplit l'autre.
@@ -165,6 +157,58 @@ struct SectionBudgetEtape: View {
                 #endif
             Text(suffixe).foregroundStyle(.secondary).font(.callout)
         }
+    }
+}
+
+/// Pied commun aux sections de prix : rappelle où régler la monnaie locale et le taux.
+func piedBudget(_ voyage: Voyage?) -> Text {
+    if let voyage, !voyage.aUneMonnaieLocale {
+        Text("Choisis la monnaie locale dans l'onglet Infos pour saisir un prix dans la monnaie du pays.")
+    } else if voyage?.tauxChange == nil {
+        Text("Renseigne le taux de change dans l'onglet Infos pour voir la conversion.")
+    } else {
+        Text("Tape le prix dans l'une des deux cases : l'autre se remplit avec le taux du voyage.")
+    }
+}
+
+/// Fiche d'une étape : le prix pour les adultes, les enfants et les étudiants.
+struct SectionBudgetEtape: View {
+    @Bindable var etape: Etape
+
+    var body: some View {
+        Section {
+            LignesPrix(voyage: etape.voyage,
+                       adulte: $etape.prixAdulte, adulteLocal: $etape.prixAdulteLocal,
+                       etudiant: $etape.prixEtudiant, etudiantLocal: $etape.prixEtudiantLocal,
+                       enfant: $etape.prixEnfant, enfantLocal: $etape.prixEnfantLocal)
+        } header: {
+            Text("Budget")
+        } footer: {
+            piedBudget(etape.voyage)
+        }
+    }
+}
+
+/// Fiche d'un transport : le prix par personne, comme pour une étape.
+struct SectionBudgetTransport: View {
+    let voyage: Voyage?
+    @Binding var transport: Transport
+
+    var body: some View {
+        Section {
+            LignesPrix(voyage: voyage,
+                       adulte: $transport.prixAdulte, adulteLocal: drapeau(\.prixAdulteLocal),
+                       etudiant: $transport.prixEtudiant, etudiantLocal: drapeau(\.prixEtudiantLocal),
+                       enfant: $transport.prixEnfant, enfantLocal: drapeau(\.prixEnfantLocal))
+        } header: {
+            Text("Budget")
+        } footer: {
+            piedBudget(voyage)
+        }
+    }
+
+    private func drapeau(_ chemin: WritableKeyPath<Transport, Bool?>) -> Binding<Bool> {
+        Binding(get: { transport[keyPath: chemin] ?? false }, set: { transport[keyPath: chemin] = $0 })
     }
 }
 

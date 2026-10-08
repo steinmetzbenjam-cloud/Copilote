@@ -43,7 +43,13 @@ final class Profil {
         guard estRenseigne, MoiVoyage.lire(voyage).isEmpty else { return }
         let cherche = prenom.trimmingCharacters(in: .whitespaces).lowercased()
         let complet = nomComplet.lowercased()
-        if let membre = voyage.membres.first(where: { [cherche, complet].contains($0.nom.trimmingCharacters(in: .whitespaces).lowercased()) }) {
+        let courriel = email.trimmingCharacters(in: .whitespaces).lowercased()
+        // D'abord l'e-mail de l'invitation (le plus sûr), puis le prénom.
+        let parCourriel = courriel.isEmpty ? nil : voyage.membres.first { m in
+            [m.emailInvitation, m.email].contains { ($0 ?? "").trimmingCharacters(in: .whitespaces).lowercased() == courriel }
+        }
+        let parNom = voyage.membres.first { [cherche, complet].contains($0.nom.trimmingCharacters(in: .whitespaces).lowercased()) }
+        if let membre = parCourriel ?? parNom {
             MoiVoyage.ecrire(membre.uid, voyage)
         }
     }

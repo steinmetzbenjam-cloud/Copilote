@@ -88,7 +88,7 @@ struct EtapeEditView: View {
         }
         guard voyage.elementsDuVoyage.first === etape else { return nil }
         let vue = TransportEditView(trajet: "Départ → \(nom)", jour: etape.jour ?? .now, coordonnees: nil,
-                                    existant: voyage.transportAller, lieuxExtremites: true) { voyage.transportAller = $0 }
+                                    existant: voyage.transportAller, lieuxExtremites: true, voyage: voyage) { voyage.transportAller = $0 }
         return (voyage.transportAller, vue)
     }
 
