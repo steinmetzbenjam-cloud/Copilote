@@ -97,6 +97,9 @@ struct TimingView: View {
         }
     }
 
+    /// « Métro », « Train »… pour les transports en commun, sinon le mode.
+    private func nomTransport(_ t: Transport) -> String { t.mode == .commun && !t.sousType.isEmpty ? t.sousType : t.mode.libelleCourt }
+
     private func blocs(du jour: Date) -> [Bloc] {
         var r: [Bloc] = []
         let cal = Calendar.current
@@ -113,7 +116,7 @@ struct TimingView: View {
                 let arrivee = voyage.suivante(de: h)
                 let d = dureeTransport(t, de: h, vers: arrivee)
                 let debut = t.depart.map(minutes) ?? depart
-                r.append(Bloc(id: "t-\(h.uid)", genre: .transport, debut: debut, fin: debut + d.minutes, titre: t.mode.libelleCourt,
+                r.append(Bloc(id: "t-\(h.uid)", genre: .transport, debut: debut, fin: debut + d.minutes, titre: nomTransport(t),
                               detail: t.descriptif, symbole: t.mode.symbole, etape: h, estime: d.estimee, transport: t, arrivee: arrivee))
                 curseur = max(curseur, debut + d.minutes)
             } else {
@@ -124,7 +127,7 @@ struct TimingView: View {
         // Aller : seulement s'il a des horaires.
         if let premier = jours.first, cal.isDate(premier, inSameDayAs: jour), let t = voyage.transportAller, let d = t.depart, let a = t.arrivee {
             let debut = minutes(d)
-            r.append(Bloc(id: "aller", genre: .transport, debut: debut, fin: max(minutes(a), debut + 15), titre: "Aller · \(t.mode.libelleCourt)",
+            r.append(Bloc(id: "aller", genre: .transport, debut: debut, fin: max(minutes(a), debut + 15), titre: "Aller · \(nomTransport(t))",
                           detail: t.descriptif, symbole: t.mode.symbole, transport: t, extremite: .aller))
             curseur = max(curseur, minutes(a))
         }
@@ -142,7 +145,7 @@ struct TimingView: View {
                 let arrivee = voyage.suivante(de: e)
                 let d = dureeTransport(t, de: e, vers: arrivee)
                 let td = t.depart.map(minutes) ?? fin
-                r.append(Bloc(id: "t-\(e.uid)", genre: .transport, debut: td, fin: td + d.minutes, titre: t.mode.libelleCourt,
+                r.append(Bloc(id: "t-\(e.uid)", genre: .transport, debut: td, fin: td + d.minutes, titre: nomTransport(t),
                               detail: t.descriptif, symbole: t.mode.symbole, etape: e, estime: d.estimee, transport: t, arrivee: arrivee))
                 curseur = max(curseur, td + d.minutes)
             }
@@ -151,7 +154,7 @@ struct TimingView: View {
         // Retour : seulement s'il a des horaires.
         if let dernier = jours.last, cal.isDate(dernier, inSameDayAs: jour), let t = voyage.transportRetour, let d = t.depart, let a = t.arrivee {
             let debut = minutes(d)
-            r.append(Bloc(id: "retour", genre: .transport, debut: debut, fin: max(minutes(a), debut + 15), titre: "Retour · \(t.mode.libelleCourt)",
+            r.append(Bloc(id: "retour", genre: .transport, debut: debut, fin: max(minutes(a), debut + 15), titre: "Retour · \(nomTransport(t))",
                           detail: t.descriptif, symbole: t.mode.symbole, transport: t, extremite: .retour))
         }
 
@@ -276,7 +279,7 @@ struct TimingView: View {
                     .frame(width: 30, height: 30).background(Circle().fill(teinte))
                 VStack(alignment: .leading, spacing: 1) {
                     if let t {
-                        Text("\(ex == .aller ? "Aller" : "Retour") · \(t.mode.libelleCourt)").font(.subheadline.weight(.semibold))
+                        Text("\(ex == .aller ? "Aller" : "Retour") · \(nomTransport(t))").font(.subheadline.weight(.semibold))
                         Text([t.descriptif, t.itineraireCommun != nil || (t.depart != nil && t.arrivee != nil) ? duree.map { dureeTexte($0.minutes) } : nil]
                             .compactMap { $0 }.joined(separator: " · "))
                             .font(.caption).foregroundStyle(.secondary).lineLimit(1)
@@ -290,14 +293,21 @@ struct TimingView: View {
                 Image(systemName: "chevron.right").font(.footnote).foregroundStyle(teinte.opacity(0.6))
             }
             .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous).inset(by: -0))
+            .padding(6)
             .frame(width: largeurColonne + gouttiere - 24)
             .background {
-                ZStack {
-                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(teinte.opacity(0.10))
-                    Hachures(couleur: teinte.opacity(0.25), espace: 7).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                if let t {
+                    FondTransport(mode: t.mode, sousType: t.sousType).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                } else {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous).fill(teinte.opacity(0.10))
+                        Hachures(couleur: teinte.opacity(0.25), espace: 7).clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    }
                 }
             }
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(teinte.opacity(0.7), style: StrokeStyle(lineWidth: 1.2, dash: [5, 3])))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(t == nil ? teinte.opacity(0.7) : .white.opacity(0.9),
+                                                                                           style: StrokeStyle(lineWidth: t == nil ? 1.2 : 1.5, dash: t == nil ? [5, 3] : [])))
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -463,7 +473,7 @@ struct TimingView: View {
         let dy = (enDeplacement?.dy ?? 0)
         let debut = b.debut + Double(dy / hauteurHeure) * 60
         let fin = b.fin + Double((enDeplacement?.dy ?? 0) / hauteurHeure) * 60 + Double((enRedim?.dy ?? 0) / hauteurHeure) * 60
-        let hauteur = max(CGFloat(fin - debut) / 60 * hauteurHeure, b.genre == .transport ? 22 : 30)
+        let hauteur = max(CGFloat(fin - debut) / 60 * hauteurHeure, b.genre == .transport ? 30 : 30)
         let inset: CGFloat = b.genre == .transport ? 14 : 3
         let w = (largeur - inset * 2) / CGFloat(total)
         let x = gouttiere + inset + CGFloat(voie) * w
@@ -564,27 +574,20 @@ struct TimingView: View {
         }
     }
 
-    /// Un transport : bande hachurée et pointillée, plus étroite que les cartes, avec son icône et sa durée.
+    /// Un transport : un décor à son image (ciel, route, rails, mer…) avec une étiquette lisible, ses couleurs bien visibles.
     private func carteTransport(_ b: Bloc, hauteur: CGFloat) -> some View {
-        let teinte = Color.indigo
         let duree = Int((b.fin - b.debut).rounded())
-        return ZStack {
-            RoundedRectangle(cornerRadius: 7, style: .continuous).fill(teinte.opacity(0.10))
-            Hachures(couleur: teinte.opacity(0.28), espace: 7).clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-            HStack(spacing: 6) {
-                Image(systemName: b.symbole).font(.caption.weight(.bold)).foregroundStyle(.white)
-                    .frame(width: 22, height: 22).background(Circle().fill(teinte))
-                VStack(alignment: .leading, spacing: 0) {
-                    Text("\(b.titre) · \(duree >= 60 ? "\(duree / 60) h \(String(format: "%02d", duree % 60))" : "\(duree) min")\(b.estime ? " ?" : "")")
-                        .font(.caption2.weight(.semibold)).lineLimit(1)
-                    if hauteur >= 42, !b.detail.isEmpty { Text(b.detail).font(.caption2.weight(.medium)).foregroundStyle(teinte.opacity(0.85)).lineLimit(1) }
-                }
-                .foregroundStyle(teinte)
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 6)
+        let texteDuree = "\(duree >= 60 ? "\(duree / 60) h \(String(format: "%02d", duree % 60))" : "\(duree) min")\(b.estime ? " ?" : "")"
+        let forme = RoundedRectangle(cornerRadius: 8, style: .continuous)
+        return ZStack(alignment: .leading) {
+            FondTransport(mode: b.transport?.mode ?? .voiture, sousType: b.transport?.sousType ?? "")
+                .clipShape(forme)
+            EtiquetteTransport(symbole: b.symbole, titre: "\(b.titre) · \(texteDuree)", detail: hauteur >= 46 ? b.detail : "")
+                .padding(.leading, 6)
         }
-        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(teinte.opacity(0.7), style: StrokeStyle(lineWidth: 1.2, dash: [5, 3])))
+        .overlay(forme.strokeBorder(.white.opacity(0.9), lineWidth: 1.5))
+        .overlay(forme.strokeBorder(.black.opacity(0.25), lineWidth: 0.5))
+        .shadow(color: .black.opacity(0.3), radius: 3, y: 1.5)
         .contentShape(Rectangle())
         .onTapGesture { ouvrirTransport(b) }
     }

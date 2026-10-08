@@ -56,7 +56,9 @@ struct VoyageView: View {
         #if os(iOS)
         tailleHorizontale == .compact || largeur < 1180
         #else
-        false
+        // Huit vues, le titre, le compte à rebours, les voyageurs et la discussion : sous cette largeur, les vues passent en icônes
+        // pour que le bouton des messages, tout à droite, ne soit pas repoussé hors de la barre.
+        largeur < 1500
         #endif
     }
 
@@ -231,7 +233,7 @@ struct VoyageView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: iconesSeules ? 300 : 540)
+                .frame(maxWidth: iconesSeules ? 330 : 600)
             }
             }
         }
