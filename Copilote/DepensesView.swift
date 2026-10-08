@@ -8,6 +8,7 @@ struct DepensesView: View {
     @State private var enEdition: Depense?
     @State private var moi: String
     @State private var nouveauVoyageur = ""
+    @State private var declaration = false
 
     init(voyage: Voyage) {
         self.voyage = voyage
@@ -45,24 +46,83 @@ struct DepensesView: View {
                     Text("Écris simplement les prénoms de ceux qui participent aux dépenses, toi compris : il n'est pas nécessaire de les inviter. Il en faut au moins deux pour répartir.")
                 }
             } else {
-                Section { SelecteurMoi(voyage: voyage, moi: $moi) }
-                NouvelleDepenseSections(voyage: voyage, moi: moi)
+                Section { boutonDeclarer }
+                cartes
                 resume
                 ForEach(soldes.keys.sorted(), id: \.self) { devise in
                     soldesEtVirements(devise: devise, soldes: soldes[devise] ?? [:])
                 }
             }
 
-            Section("Dépenses") {
-                ForEach(depensesTriees) { d in
-                    Button { enEdition = d } label: { ligne(d) }.buttonStyle(.plain)
-                        .swipeActions { Button("Supprimer", role: .destructive) { contexte.delete(d) } }
-                }
-            }
+            if membres.count < 2 { cartes }
         }
+        .sheet(isPresented: $declaration) { DepenseAssistantView(voyage: voyage, moi: moi) }
         .sheet(item: $enEdition, onDismiss: nettoyer) { d in
             DepenseEditView(depense: d, voyage: voyage, moi: moi) { contexte.delete(d) }
         }
+    }
+
+    // MARK: Déclarer et parcourir
+
+    /// Le bouton qui ouvre la déclaration d'une dépense.
+    private var boutonDeclarer: some View {
+        Button { declaration = true } label: {
+            HStack(spacing: 14) {
+                IconeLiasse()
+                    .frame(width: 60, height: 60)
+                    .overlay(alignment: .topTrailing) {
+                        Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundStyle(.white, Color.accentColor).offset(x: 5, y: -5)
+                    }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Déclarer une dépense").font(.headline).foregroundStyle(.primary)
+                    Text("Qui a payé, pour qui, combien").font(.footnote).foregroundStyle(.secondary)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.footnote).foregroundStyle(.tertiary)
+            }
+            .padding(.vertical, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(membres.count < 2)
+    }
+
+    /// Toutes les dépenses, en cadres que l'on fait glisser de gauche à droite.
+    @ViewBuilder private var cartes: some View {
+        Section("Dépenses") {
+            if depensesTriees.isEmpty {
+                Text("Aucune dépense pour l'instant.").foregroundStyle(.secondary)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(depensesTriees) { d in
+                            Button { enEdition = d } label: { carte(d) }
+                                .buttonStyle(.plain)
+                                .contextMenu { Button("Supprimer", role: .destructive) { contexte.delete(d) } }
+                        }
+                    }
+                    .padding(.vertical, 4).padding(.horizontal, 2)
+                }
+                .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+            }
+        }
+    }
+
+    private func carte(_ d: Depense) -> some View {
+        let etape = d.etapeUID.flatMap { uid in voyage.etapes.first { $0.uid == uid } }
+        let enEuros = d.devise != "EUR" ? voyage.eurosDeDepense(d).map { Monnaies.formater($0, "EUR") } : nil
+        return TicketDepense(depense: d, payeur: voyage.membre(uid: d.payeurUID), voyage: voyage,
+                             pour: pour(d, famille: voyage.famille(de: d.payeurUID)),
+                             etape: etape.map { $0.titre.isEmpty ? $0.categorie.libelle : $0.titre },
+                             enEuros: enEuros, total: monnaie(d.montant, d.devise))
+    }
+
+    private func pour(_ d: Depense, famille: String?) -> String {
+        if d.estRemboursement, let part = d.parts.first { return nom(part.membreUID) }
+        let concernes = Set(d.parts.map(\.membreUID))
+        if concernes.count == membres.count { return "tout le monde" }
+        let unites = Set(concernes.map { voyage.representant(de: $0, moi: "") })
+        return unites.count == 1 ? voyage.nomDuCompte(unites.first!) : "\(unites.count) familles"
     }
 
     // MARK: Résumé et soldes

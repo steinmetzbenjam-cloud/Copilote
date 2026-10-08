@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var selecteurDejaPropose = false
     @State private var nouveauVoyageOuvert = false
     @State private var voyageASupprimer: Voyage?
+    @Environment(\.scenePhase) private var phase
     @State private var sauvegarde: SauvegardeDocument?
     @State private var nomSauvegarde = "Copilote"
     @State private var exportOuvert = false
@@ -121,6 +122,16 @@ struct ContentView: View {
         .alert("Sauvegarde", isPresented: Binding(get: { messageSauvegarde != nil }, set: { if !$0 { messageSauvegarde = nil } })) {
             Button("OK") {}
         } message: { Text(messageSauvegarde ?? "") }
+        .task(id: signatureRappels) {
+            try? await Task.sleep(for: .seconds(2))
+            await Rappels.planifier(voyages)
+        }
+        .onChange(of: phase) { _, nouvelle in
+            if nouvelle == .active { Task { await Rappels.planifier(voyages) } }
+        }
+        .task {
+            if Rappels.actifs, !(await Rappels.autorise()) { _ = await Rappels.autoriser() }
+        }
         .onChange(of: selection) { _, voyage in
             guard let voyage else { return }
             voyageOuvert = voyage
@@ -149,6 +160,13 @@ struct ContentView: View {
         #endif
     }
 
+
+    /// Change quand une date, une heure ou un transport change : les rappels sont alors reprogrammés.
+    private var signatureRappels: String {
+        voyages.map { v in
+            "\(v.uid)\(v.debut.timeIntervalSince1970)\(v.etapes.map { "\($0.uid)\($0.jour?.timeIntervalSince1970 ?? 0)\($0.heure?.timeIntervalSince1970 ?? 0)\($0.apresJour)\($0.transportJSON ?? "")" }.joined())\(v.transportAllerJSON ?? "")\(v.transportRetourJSON ?? "")"
+        }.joined(separator: "|")
+    }
 
     /// Une seule fois par lancement, et seulement s'il y a des voyages et qu'aucun n'est ouvert.
     private func proposerLesVoyages() {

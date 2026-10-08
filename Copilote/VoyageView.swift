@@ -12,10 +12,11 @@ struct VoyageView: View {
 
     init(voyage: Voyage) {
         self.voyage = voyage
-        _onglet = State(initialValue: .itineraire)
+        _onglet = State(initialValue: .apercu)
     }
 
     enum Onglet: String, CaseIterable, Identifiable {
+        case apercu = "Aperçu"
         case itineraire = "Itinéraire"
         case etapes = "Étapes"
         case carte = "Carte"
@@ -27,6 +28,7 @@ struct VoyageView: View {
 
         var symbole: String {
             switch self {
+            case .apercu: "gauge.with.dots.needle.67percent"
             case .itineraire: "list.bullet.rectangle"
             case .etapes: "mappin.and.ellipse"
             case .carte: "map"
@@ -144,6 +146,7 @@ struct VoyageView: View {
     var body: some View {
         Group {
             switch onglet {
+            case .apercu: ApercuView(voyage: voyage)
             case .itineraire: ItineraireView(voyage: voyage)
             case .etapes: EtapesView(voyage: voyage)
             case .carte: CarteView(voyage: voyage)
@@ -156,6 +159,18 @@ struct VoyageView: View {
         .overlay(alignment: .topLeading) {
             if iPhone && vuesDepliees { rangeeVues }
         }
+        .overlay(alignment: .bottom) {
+            if !Reseau.shared.enLigne {
+                Label("Hors ligne : tes modifications sont gardées sur l'appareil", systemImage: "wifi.slash")
+                    .font(.footnote.weight(.semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Capsule().fill(Color.orange))
+                    .shadow(radius: 3, y: 1).padding(.bottom, 10)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(.snappy, value: Reseau.shared.enLigne)
         .animation(.snappy, value: vuesDepliees)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { largeur = $0 }
         // Le titre est affiché par la barre d'outils, à côté des ronds : on vide celui du système pour ne pas le doubler.

@@ -26,6 +26,9 @@ final class PartageCloud {
     var actif = UserDefaults.standard.bool(forKey: "iCloudActif")
     var statut = ""
     var synchroEnCours = false
+    /// Dernier échange réussi avec iCloud, et nombre de modifications locales qui attendent d'être envoyées.
+    var derniereSynchro: Date?
+    var enAttente = 0
 
     @ObservationIgnored var contexte: ModelContext?
 
@@ -148,6 +151,10 @@ final class PartageCloud {
 
     func verifierChangementsLocaux() {
         guard actif, let contexte, moteurPrive != nil else { return }
+        defer {
+            let n = (moteurPrive?.state.pendingRecordZoneChanges.count ?? 0) + (moteurPartage?.state.pendingRecordZoneChanges.count ?? 0)
+            if enAttente != n { enAttente = n }
+        }
         let entrees = Codec.instantane(contexte)
         var presents = Set<String>()
         var zonesAjoutees = Set<String>()
@@ -201,7 +208,9 @@ final class PartageCloud {
         aTraiter.sort { Codec.ordre($0.recordType) < Codec.ordre($1.recordType) }
 
         for record in aTraiter {
+            let nouvelle = record.recordType == TypeCloud.depense.rawValue && Codec.objet(recordName: record.recordID.recordName, contexte) == nil
             if let objet = Codec.appliquer(record, contexte) {
+                if nouvelle, let depense = objet as? Depense { Rappels.notifierNouvelleDepense(depense) }
                 let nom = record.recordID.recordName
                 metas[nom] = Meta(empreinte: Codec.empreinte(de: objet), champsSysteme: Codec.champsSysteme(record),
                                   zoneName: record.recordID.zoneID.zoneName, zoneOwner: record.recordID.zoneID.ownerName)
@@ -374,7 +383,9 @@ extension PartageCloud: CKSyncEngineDelegate {
         case .sentRecordZoneChanges(let e):
             apresEnvoi(e, moteur: syncEngine)
         case .willFetchChanges, .willSendChanges: synchroEnCours = true
-        case .didFetchChanges, .didSendChanges: synchroEnCours = false
+        case .didFetchChanges, .didSendChanges:
+            synchroEnCours = false
+            derniereSynchro = .now
         default: break
         }
     }
