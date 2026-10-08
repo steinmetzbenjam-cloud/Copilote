@@ -153,19 +153,32 @@ final class Itineraires {
         guard trajets[cle] == nil, !enCours.contains(cle) else { return }
         enCours.insert(cle)
         defer { enCours.remove(cle) }
+        // Dans une tâche à part : si la vue qui demande disparaît ou se recalcule (ouverture du voyage), le calcul continue.
+        if let trajet = await Task(operation: { await Self.calculer(a, b, mode) }).value {
+            trajets[cle] = trajet
+        }
+    }
+
+    /// Plans refuse parfois les premières demandes (trop de requêtes d'un coup à l'ouverture d'un voyage) : on réessaie.
+    private nonisolated static func calculer(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, _ mode: ModeTransport) async -> Trajet? {
         let requete = MKDirections.Request()
         requete.source = MKMapItem(placemark: MKPlacemark(coordinate: a))
         requete.destination = MKMapItem(placemark: MKPlacemark(coordinate: b))
         // Plans n'a pas de mode vélo : on suit les chemins piétons, avec une durée à 15 km/h.
         requete.transportType = mode == .voiture ? .automobile : .walking
         requete.requestsAlternateRoutes = true
-        guard let reponse = try? await MKDirections(request: requete).calculate(),
-              let route = reponse.routes.min(by: { $0.distance < $1.distance }) else { return }
-        let n = route.polyline.pointCount
-        var points = [CLLocationCoordinate2D](repeating: .init(), count: n)
-        route.polyline.getCoordinates(&points, range: NSRange(location: 0, length: n))
-        let duree = mode == .velo ? route.distance / (15_000.0 / 3600) : route.expectedTravelTime
-        trajets[cle] = Trajet(points: points, distance: route.distance, duree: duree)
+        for tentative in 1...4 {
+            if let reponse = try? await MKDirections(request: requete).calculate(),
+               let route = reponse.routes.min(by: { $0.distance < $1.distance }) {
+                let n = route.polyline.pointCount
+                var points = [CLLocationCoordinate2D](repeating: .init(), count: n)
+                route.polyline.getCoordinates(&points, range: NSRange(location: 0, length: n))
+                let duree = mode == .velo ? route.distance / (15_000.0 / 3600) : route.expectedTravelTime
+                return Trajet(points: points, distance: route.distance, duree: duree)
+            }
+            try? await Task.sleep(for: .seconds(Double(tentative) * 1.5))
+        }
+        return nil
     }
 
     /// Courbe en arc, comme la trajectoire d'un vol.

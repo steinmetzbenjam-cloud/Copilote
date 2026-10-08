@@ -6,6 +6,8 @@ struct ItineraireView: View {
     @Bindable var voyage: Voyage
     @Environment(\.modelContext) private var contexte
     @State private var etapeEnEdition: Etape?
+    @State private var nuitEnAjout: NuitAjout?
+    @State private var transportDeNuitEnEdition: NuitTransport?
     @State private var jourEnEdition: JourVoyage?
     /// Étape au-dessus de laquelle on s'apprête à déposer (trait d'insertion), ou jour survolé.
     @State private var etapeVisee: String?
@@ -104,15 +106,16 @@ struct ItineraireView: View {
                     GroupeAvatars(voyage: voyage, onMoi: { profilOuvert = true }, onAutre: { membreAffiche = $0 })
                     // Préparation seulement : on échange sur le déroulé avec les autres voyageurs.
                     if voyage.mode == .preparation {
+                        // Icône seule : la barre doit tenir sur un petit écran.
                         Button { discussionOuverte.toggle() } label: {
-                            Label(voyage.commentaires.isEmpty ? "Discussion" : "Discussion (\(voyage.commentaires.count))",
-                                  systemImage: "bubble.left.and.bubble.right")
+                            Image(systemName: "bubble.left.and.bubble.right")
+                                .accessibilityLabel("Discussion")
                         }
                         // Point rouge : un message d'un autre est arrivé et la discussion n'est pas ouverte.
                         .overlay(alignment: .topTrailing) {
                             if messagesNonLus {
                                 Circle().fill(.red).frame(width: 10, height: 10)
-                                    .overlay(Circle().stroke(.background, lineWidth: 1.5))
+                                    .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
                                     .offset(x: 5, y: -4)
                                     .accessibilityLabel("Nouveaux messages")
                             }
@@ -127,6 +130,8 @@ struct ItineraireView: View {
         .sheet(isPresented: $profilOuvert) { ProfilEditView() }
         .sheet(item: $membreAffiche) { ProfilMembreView(membre: $0) }
         .sheet(isPresented: Binding(get: { discussionOuverte && !ecranLarge }, set: { discussionOuverte = $0 })) { CommentairesView(voyage: voyage) }
+        .sheet(item: $transportDeNuitEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
+        .sheet(item: $nuitEnAjout, onDismiss: nettoyer) { NuitAjoutView(voyage: voyage, nuit: $0) }
         .sheet(item: $etapeEnEdition, onDismiss: nettoyer) { etape in
             EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
         }
@@ -228,11 +233,12 @@ struct ItineraireView: View {
     private func nuit(apres jour: Date) -> some View {
         let hebergements = voyage.hebergements(apres: jour)
         let vise = nuitVisee.map { cal.isDate($0, inSameDayAs: jour) } ?? false
+        let couleurNuit = voyage.couleurNuit(apres: jour)
         return VStack(alignment: .leading, spacing: 8) {
             // Sans hébergement : seulement le bouton d'ajout. Avec : le titre de la nuit et les hébergements.
             if !hebergements.isEmpty {
                 Label(texteNuit(jour), systemImage: "moon.zzz.fill")
-                    .font(.caption.bold()).foregroundStyle(Self.couleurNuit)
+                    .font(.caption.bold()).foregroundStyle(couleurNuit)
             }
             ForEach(hebergements) { h in
                 VStack(alignment: .leading, spacing: 2) {
@@ -243,9 +249,12 @@ struct ItineraireView: View {
                         .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
             }
+            if hebergements.isEmpty, let t = voyage.transportDeNuit(apres: jour), let transport = t.depart.transport {
+                ligneTransportDeNuit(transport, depart: t.depart, arrivee: t.arrivee)
+            }
             if hebergements.isEmpty {
-                Button("Ajouter un hébergement", systemImage: "plus.circle.fill") { ajouterHebergement(apres: jour) }
-                    .buttonStyle(.borderless).tint(Self.couleurNuit).font(.footnote)
+                Button("Ajouter un hébergement ou un transport", systemImage: "plus.circle.fill") { ajouterHebergement(apres: jour) }
+                    .buttonStyle(.borderless).tint(couleurNuit).font(.footnote)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -253,10 +262,10 @@ struct ItineraireView: View {
         // Un fond plein sous la teinte menthe : la carte ne transparaît pas à travers la bande.
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.background)
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Self.couleurNuit.opacity(vise ? 0.38 : 0.22))
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(couleurNuit.opacity(vise ? 0.38 : 0.22))
         }
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(Self.couleurNuit.opacity(0.6), style: StrokeStyle(lineWidth: vise ? 2 : 1, dash: hebergements.isEmpty ? [5, 4] : [])))
+            .strokeBorder(couleurNuit.opacity(0.6), style: StrokeStyle(lineWidth: vise ? 2 : 1, dash: hebergements.isEmpty ? [5, 4] : [])))
         .dropDestination(for: String.self) { elements, _ in
             defer { nuitVisee = nil }
             guard let etape = etapeGlissee(elements), etape.categorie == .hebergement else { return false }
@@ -266,7 +275,33 @@ struct ItineraireView: View {
         }
     }
 
-    private static let couleurNuit = Color.mint
+
+    private struct NuitTransport: Identifiable {
+        let depart: Etape, arrivee: Etape
+        var id: String { depart.uid }
+    }
+
+    /// Le transport entre deux jours, présenté comme entre deux étapes ; un appui ouvre sa fiche.
+    private func ligneTransportDeNuit(_ t: Transport, depart: Etape, arrivee: Etape) -> some View {
+        Button { transportDeNuitEnEdition = NuitTransport(depart: depart, arrivee: arrivee) } label: {
+            HStack(spacing: 8) {
+                Image(systemName: t.mode.symbole).frame(width: 24)
+                Text(t.descriptif)
+                if t.mode.aUnItineraire, let a = depart.coordonnee, let b = arrivee.coordonnee {
+                    Spacer()
+                    ResumeItineraire(a: a, b: b, mode: t.mode)
+                }
+            }
+            .font(.subheadline)
+            .foregroundStyle(Color.indigo)
+            .padding(.leading, 6)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(Color.indigo.opacity(0.12), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
 
     private func etapeGlissee(_ elements: [String]) -> Etape? {
         guard let uid = elements.first(where: { $0.hasPrefix(Self.prefixe) })?.dropFirst(Self.prefixe.count) else { return nil }
@@ -279,11 +314,18 @@ struct ItineraireView: View {
         etape.ordre = (voyage.hebergements(apres: jour).map(\.ordre).max() ?? -1) + 1
         etape.voyage = voyage
         contexte.insert(etape)
-        etapeEnEdition = etape
+        nuitEnAjout = NuitAjout(etape: etape, jour: jour)
     }
 
     private func estSelectionne(_ jour: Date) -> Bool {
         jourSelectionne.map { cal.isDate($0, inSameDayAs: jour) } ?? false
+    }
+
+    /// Hôtel de la nuit précédente et première étape de ce jour, entre lesquels un transport peut être prévu.
+    private func transportDeLaVeille(avant jour: Date) -> (depart: Etape, arrivee: Etape)? {
+        let veille = cal.date(byAdding: .day, value: -1, to: jour) ?? jour
+        guard let h = voyage.hebergements(apres: veille).first, let premiere = voyage.suivante(de: h) else { return nil }
+        return (h, premiere)
     }
 
     // MARK: Carte d'un jour
@@ -335,6 +377,11 @@ struct ItineraireView: View {
             .buttonStyle(.plain)
 
             Divider()
+
+            // Transport prévu après l'hôtel de la veille : il ouvre la journée.
+            if let t = transportDeLaVeille(avant: jour), let transport = t.depart.transport {
+                ligneTransportDeNuit(transport, depart: t.depart, arrivee: t.arrivee)
+            }
 
             if etapes.isEmpty {
                 Text("Aucune étape").font(.footnote).foregroundStyle(.tertiary)

@@ -9,6 +9,7 @@ struct EtapeEditView: View {
     @Environment(\.dismiss) private var dismiss
     @FocusState private var titreActif: Bool
     @State private var rechercheOuverte = false
+    @State private var transportOuvert = false
     @State private var suggestionsOuvertes = false
     @State private var photosEnCours = false
     @Environment(\.horizontalSizeClass) private var tailleHorizontale
@@ -77,6 +78,18 @@ struct EtapeEditView: View {
         #endif
     }
 
+    /// Le transport pour aller à cette étape : porté par l'élément qui la précède, ou l'aller pour la toute première.
+    private func transportPourArriver(_ voyage: Voyage) -> (transport: Transport?, vue: TransportEditView)? {
+        let nom = etape.titre.isEmpty ? "Étape" : etape.titre
+        if let depart = voyage.precedente(de: etape) {
+            return (depart.transport, TransportEditView(depart: depart, arrivee: etape))
+        }
+        guard voyage.elementsDuVoyage.first === etape else { return nil }
+        let vue = TransportEditView(trajet: "Départ → \(nom)", jour: etape.jour ?? .now, coordonnees: nil,
+                                    existant: voyage.transportAller, lieuxExtremites: true) { voyage.transportAller = $0 }
+        return (voyage.transportAller, vue)
+    }
+
     private var formulaire: some View {
         NavigationStack {
             Form {
@@ -98,8 +111,9 @@ struct EtapeEditView: View {
                         .help("Idées de lieux à visiter")
                     }
                     TextField("Lieu ou adresse", text: $etape.lieu)
-                    Button(etape.coordonnee == nil ? "Placer sur la carte" : "Changer de lieu",
-                           systemImage: "magnifyingglass") { rechercheOuverte = true }
+                    if etape.coordonnee == nil {
+                        Button("Placer sur la carte", systemImage: "magnifyingglass") { rechercheOuverte = true }
+                    }
                     if let coord = etape.coordonnee {
                         Map(initialPosition: .region(MKCoordinateRegion(center: coord, latitudinalMeters: 800, longitudinalMeters: 800)),
                             interactionModes: []) {
@@ -108,13 +122,25 @@ struct EtapeEditView: View {
                         .id("\(coord.latitude),\(coord.longitude)")
                         .frame(height: 160)
                         .clipShape(RoundedRectangle(cornerRadius: 10))
-                        Button("Retirer de la carte", systemImage: "mappin.slash", role: .destructive) {
-                            etape.latitude = nil
-                            etape.longitude = nil
+                        HStack {
+                            Button("Retirer de la carte", systemImage: "mappin.slash", role: .destructive) {
+                                etape.latitude = nil
+                                etape.longitude = nil
+                            }
+                            Spacer()
+                            Button("Changer de lieu", systemImage: "magnifyingglass") { rechercheOuverte = true }
                         }
+                        .buttonStyle(.borderless)
+                    }
+                    if let voyage = etape.voyage, let existant = transportPourArriver(voyage) {
+                        Button(existant.transport == nil ? "Ajouter un transport" : "Modifier le transport", systemImage: "arrow.triangle.swap") {
+                            transportOuvert = true
+                        }
+                        .sheet(isPresented: $transportOuvert) { existant.vue }
                     }
                     Picker("Catégorie", selection: $etape.categorie) {
-                        ForEach(CategorieEtape.allCases) { c in
+                        // Transport et hébergement ont leur propre fenêtre ; on ne les garde que pour une étape qui l'est déjà.
+                        ForEach(CategorieEtape.allCases.filter { ![.transport, .hebergement].contains($0) || $0 == etape.categorie }) { c in
                             Label(c.libelle, systemImage: c.symbole).tag(c)
                         }
                     }

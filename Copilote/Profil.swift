@@ -163,16 +163,16 @@ struct GroupeAvatars: View {
         HStack(spacing: -8) {
             // Moi d'abord, même si je ne suis pas encore dans la liste des voyageurs.
             Button(action: onMoi) {
-                AvatarView(initiales: profil.initiales, donnees: profil.avatar, taille: 28)
-                    .overlay(Circle().stroke(.background, lineWidth: 2))
+                AvatarView(initiales: profil.initiales, donnees: profil.avatar, taille: 26)
+                    .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1.5))
             }
             .buttonStyle(.plain)
             .accessibilityLabel("Mon profil")
             ForEach(autres.prefix(3)) { membre in
                 Button { onAutre(membre) } label: {
-                    AvatarView(initiales: Profil.initiales(de: membre.nomAffiche), donnees: membre.avatar, taille: 28,
+                    AvatarView(initiales: Profil.initiales(de: membre.nomAffiche), donnees: membre.avatar, taille: 26,
                                couleur: AvatarView.couleur(pour: membre.uid))
-                        .overlay(Circle().stroke(.background, lineWidth: 2))
+                        .overlay(Circle().stroke(Color.white.opacity(0.9), lineWidth: 1.5))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(membre.nomAffiche)

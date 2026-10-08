@@ -231,3 +231,74 @@ struct LigneItineraire: View {
         .task(id: Itineraires.cle(a, b, mode)) { await itineraires.charger(a, b, mode) }
     }
 }
+
+/// Une nuit à renseigner : l'hébergement (déjà créé, vide) ou le transport entre le jour et le suivant.
+struct NuitAjout: Identifiable {
+    let etape: Etape
+    let jour: Date
+    var id: String { etape.uid }
+}
+
+/// Fenêtre ouverte depuis la bande entre deux jours : deux onglets, Hébergement et Transport.
+struct NuitAjoutView: View {
+    let voyage: Voyage
+    let nuit: NuitAjout
+    @State private var onglet = Onglet.hebergement
+    @Environment(\.modelContext) private var contexte
+    @Environment(\.dismiss) private var dismiss
+
+    private enum Onglet: String, CaseIterable, Identifiable {
+        case hebergement = "Hébergement", transport = "Transport"
+        var id: String { rawValue }
+    }
+
+    /// Transport entre la dernière étape du jour et la première du lendemain.
+    private var trajet: (Etape, Etape)? {
+        let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: nuit.jour) ?? nuit.jour
+        guard let depart = voyage.etapes(du: nuit.jour).last, let arrivee = voyage.etapes(du: lendemain).first else { return nil }
+        return (depart, arrivee)
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Picker("Type", selection: $onglet) {
+                ForEach(Onglet.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 4)
+            switch onglet {
+            case .hebergement:
+                EtapeEditView(etape: nuit.etape, jours: voyage.jours) { contexte.delete(nuit.etape) }
+            case .transport:
+                if let (depart, arrivee) = trajet {
+                    TransportEditView(depart: depart, arrivee: arrivee)
+                } else {
+                    NavigationStack {
+                        ContentUnavailableView("Pas de transport possible", systemImage: "arrow.triangle.swap",
+                                               description: Text("Il faut une étape ce jour-là et une autre le lendemain."))
+                            .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } } }
+                    }
+                }
+            }
+        }
+        #if os(macOS)
+        .frame(minWidth: 480, minHeight: 560)
+        #endif
+    }
+}
+
+extension Transport {
+    /// « Avion · AF 123 · 10:00 → 12:30 » : le résumé affiché sur les lignes de transport.
+    var descriptif: String {
+        let t = self
+        var morceaux = [t.mode.libelle]
+        if t.mode == .commun, !t.sousType.isEmpty { morceaux = [t.sousType] }
+        let ligne = [t.compagnie, t.numero].filter { !$0.isEmpty }.joined(separator: " ")
+        if !ligne.isEmpty { morceaux.append(ligne) }
+        if let d = t.depart {
+            morceaux.append(d.formatted(date: .omitted, time: .shortened) + (t.arrivee.map { " → " + $0.formatted(date: .omitted, time: .shortened) } ?? ""))
+        }
+        return morceaux.joined(separator: " · ")
+    }
+}

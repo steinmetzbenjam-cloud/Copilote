@@ -40,6 +40,7 @@ struct CarteDuVoyage: View {
         let jours = voyage.jours.filter { jour == nil || Calendar.current.isDate($0, inSameDayAs: jour!) }
         return jours.flatMap { j in
             voyage.etapes(du: j).compactMap(\.coordonnee) + (voyage.infos(du: j)?.lieux ?? []).map(\.coordonnee)
+                + (jour == nil ? [] : hotelsAutour(de: j).compactMap(\.coordonnee))
         }
     }
 
@@ -87,7 +88,7 @@ struct CarteDuVoyage: View {
     /// Couples d'éléments consécutifs d'un jour, hébergement compris, avec le transport prévu entre eux.
     private var paires: [(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] {
         voyage.jours.flatMap { jour -> [(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] in
-            liens(du: jour).compactMap { d, a in
+            (liens(du: jour) + departDeLaVeille(pour: jour)).compactMap { d, a in
                 guard let mode = d.transport?.mode, let ca = d.coordonnee, let cb = a.coordonnee else { return nil }
                 return (ca, cb, mode)
             }
@@ -98,8 +99,37 @@ struct CarteDuVoyage: View {
     private func liens(du jour: Date) -> [(Etape, Etape)] {
         let liste = voyage.etapes(du: jour) + (voyage.hebergements(apres: jour).first.map { [$0] } ?? [])
         var r = Array(zip(liste, liste.dropFirst()))
-        if let h = voyage.hebergements(apres: jour).first, let suivante = voyage.suivante(de: h) { r.append((h, suivante)) }
+        // Le transport après l'hôtel appartient au jour suivant (voir `departDeLaVeille`).
+        if voyage.hebergements(apres: jour).isEmpty, let (depart, arrivee) = voyage.transportDeNuit(apres: jour) { r.append((depart, arrivee)) }
         return r
+    }
+
+    /// L'hôtel de la nuit juste avant le jour sélectionné : toujours bien visible, même dessiné avec la veille.
+    private func precedeLeFocus(_ h: Etape) -> Bool {
+        guard let focus = jourFocus, let j = h.jour, h.apresJour else { return false }
+        return Calendar.current.date(byAdding: .day, value: 1, to: j).map { Calendar.current.isDate($0, inSameDayAs: focus) } ?? false
+    }
+
+    /// Les hôtels de la nuit d'avant et de la nuit d'après un jour : le cadrage les inclut toujours.
+    private func hotelsAutour(de jour: Date) -> [Etape] {
+        let veille = Calendar.current.date(byAdding: .day, value: -1, to: jour) ?? jour
+        return voyage.hebergements(apres: veille) + voyage.hebergements(apres: jour)
+    }
+
+    /// Hôtels visibles pour un jour : celui de la nuit qui suit, et celui de la veille quand le jour d'avant n'est pas dessiné.
+    private func hebergementsAffiches(pour jour: Date) -> [Etape] {
+        let cal = Calendar.current
+        let veille = cal.date(byAdding: .day, value: -1, to: jour) ?? jour
+        let veilleDessinee = joursDessines.contains { cal.isDate($0.jour, inSameDayAs: veille) }
+        let avant = veilleDessinee ? [] : voyage.hebergements(apres: veille)
+        return (avant + voyage.hebergements(apres: jour)).filter { $0.coordonnee != nil }
+    }
+
+    /// Hôtel de la veille vers la première étape de ce jour : ce trajet ouvre la journée.
+    private func departDeLaVeille(pour jour: Date) -> [(Etape, Etape)] {
+        let veille = Calendar.current.date(byAdding: .day, value: -1, to: jour) ?? jour
+        guard let h = voyage.hebergements(apres: veille).first, let premiere = voyage.suivante(de: h) else { return [] }
+        return [(h, premiere)]
     }
 
     /// Transport d'aller et de retour : un trait entre leur lieu de départ et leur lieu d'arrivée.
@@ -135,7 +165,7 @@ struct CarteDuVoyage: View {
             resultat.append(segment("\(depart.uid)-\(liste[j].uid)", a, b, mode))
         }
         // Liaisons avec l'hébergement : tracées seulement quand un transport est prévu.
-        for (d, s) in liens(du: jour) where d.apresJour || s.apresJour {
+        for (d, s) in liens(du: jour) + departDeLaVeille(pour: jour) where d.apresJour || s.apresJour || !Calendar.current.isDate(d.jour ?? jour, inSameDayAs: s.jour ?? jour) {
             guard let mode = d.transport?.mode, let a = d.coordonnee, let b = s.coordonnee else { continue }
             resultat.append(segment("\(d.uid)-\(s.uid)", a, b, mode))
         }
@@ -167,6 +197,8 @@ struct CarteDuVoyage: View {
 
     var body: some View {
         GeometryReader { geo in
+            // Lu ici pour que la carte soit redessinée dès qu'un itinéraire arrive (le contenu de la carte n'est pas observé seul).
+            let _ = Itineraires.shared.trajets.count
             Map(position: $position) {
                 ForEach(voyage.etapesSansJour.filter { $0.coordonnee != nil }) { etape in
                     Annotation(etape.titre, coordinate: etape.coordonnee!) {
@@ -195,15 +227,15 @@ struct CarteDuVoyage: View {
                         }
                     }
                     let etapes = voyage.etapes(du: jour).filter { $0.coordonnee != nil }
-                    ForEach(voyage.hebergements(apres: jour).filter { $0.coordonnee != nil }) { h in
+                    ForEach(hebergementsAffiches(pour: jour)) { h in
                         Annotation(h.titre, coordinate: h.coordonnee!) {
                             Button { onEtape(h) } label: {
                                 Image(systemName: "bed.double.fill")
                                     .font(.caption2).foregroundStyle(.white)
                                     .frame(width: 26, height: 26)
-                                    .background(.mint, in: RoundedRectangle(cornerRadius: 7))
+                                    .background(voyage.couleurNuit(apres: h.jour ?? jour), in: RoundedRectangle(cornerRadius: 7))
                                     .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white, lineWidth: 2))
-                                    .opacity(attenue ? 0.4 : 1)
+                                    .opacity(attenue && !precedeLeFocus(h) ? 0.4 : 1)
                             }
                             .buttonStyle(.plain)
                         }
@@ -230,12 +262,25 @@ struct CarteDuVoyage: View {
                     ForEach(Array(etapes.enumerated()), id: \.element.id) { rang, etape in
                         Annotation(etape.titre, coordinate: etape.coordonnee!) {
                             Button { onEtape(etape) } label: {
-                                Text("\(rang + 1)")
-                                    .font(.caption.bold())
-                                    .foregroundStyle(.white)
-                                    .frame(width: focus && jourFocus != nil ? 30 : 26, height: focus && jourFocus != nil ? 30 : 26)
-                                    .background(Self.couleur(du: index), in: Circle())
-                                    .overlay(Circle().stroke(.white, lineWidth: 2))
+                                let taille: CGFloat = focus && jourFocus != nil ? 30 : 26
+                                Group {
+                                    if etape.categorie == .repas {
+                                        // Un repas : couverts dans un carré arrondi plutôt qu'un numéro dans un rond.
+                                        Image(systemName: "fork.knife")
+                                            .font(.system(size: taille * 0.5, weight: .bold))
+                                            .foregroundStyle(.white)
+                                            .frame(width: taille, height: taille)
+                                            .background(Self.couleur(du: index), in: RoundedRectangle(cornerRadius: 8))
+                                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(.white, lineWidth: 2))
+                                    } else {
+                                        Text("\(rang + 1)")
+                                            .font(.caption.bold())
+                                            .foregroundStyle(.white)
+                                            .frame(width: taille, height: taille)
+                                            .background(Self.couleur(du: index), in: Circle())
+                                            .overlay(Circle().stroke(.white, lineWidth: 2))
+                                    }
+                                }
                                     .opacity(attenue ? 0.4 : 1)
                             }
                             .buttonStyle(.plain)
@@ -313,5 +358,13 @@ extension Color {
     /// Couleur sRGB à partir de valeurs de 0 à 255.
     init(rouge: Int, vert: Int, bleu: Int) {
         self.init(.sRGB, red: Double(rouge) / 255, green: Double(vert) / 255, blue: Double(bleu) / 255, opacity: 1)
+    }
+}
+
+extension Voyage {
+    /// Couleur de la nuit qui suit `jour` : menthe, puis orange une nuit sur deux, pour mieux distinguer les hôtels.
+    func couleurNuit(apres jour: Date) -> Color {
+        let rang = jours.firstIndex { Calendar.current.isDate($0, inSameDayAs: jour) } ?? 0
+        return rang % 2 == 0 ? .mint : .orange
     }
 }

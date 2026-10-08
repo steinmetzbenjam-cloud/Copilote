@@ -7,6 +7,7 @@ struct EtapesView: View {
     @Bindable var voyage: Voyage
     @Environment(\.modelContext) private var contexte
     @State private var etapeEnEdition: Etape?
+    @State private var nuitEnAjout: NuitAjout?
     @State private var transportEnEdition: PaireEtapes?
     @State private var transportExtremiteEnEdition: Extremite?
 
@@ -65,6 +66,7 @@ struct EtapesView: View {
         .sheet(item: $transportExtremiteEnEdition) { transportExtremite($0) }
         .sheet(item: $transportEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
         .sheet(item: $avisOuvert) { AvisEtapeView(voyage: voyage, etape: $0) }
+        .sheet(item: $nuitEnAjout, onDismiss: nettoyer) { NuitAjoutView(voyage: voyage, nuit: $0) }
         .sheet(item: $etapeEnEdition, onDismiss: nettoyer) { etape in
             EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
         }
@@ -141,6 +143,11 @@ struct EtapesView: View {
             if etapes.isEmpty {
                 Text("Aucune étape ce jour-là.").font(.footnote).foregroundStyle(.secondary)
             }
+            // Transport après l'hôtel de la veille : il ouvre la journée.
+            if let veille = Calendar.current.date(byAdding: .day, value: -1, to: jour),
+               let h = voyage.hebergements(apres: veille).first, let premiere = voyage.suivante(de: h) {
+                ligneTransport(h, premiere)
+            }
             ForEach(etapes) { etape in
                 ligneGlissable(etape, jour: jour, couleur: couleur)
                 if let suivante = voyage.suivante(de: etape) { ligneTransport(etape, suivante) }
@@ -163,28 +170,31 @@ struct EtapesView: View {
     /// Bande entre deux jours : les hébergements de la nuit, ou un bouton pour en ajouter un.
     private func carteNuit(apres jour: Date) -> some View {
         let nuits = voyage.hebergements(apres: jour)
+        let couleurNuit = voyage.couleurNuit(apres: jour)
         return VStack(alignment: .leading, spacing: 8) {
             if !nuits.isEmpty {
-                Label(self.nuits(jour), systemImage: "moon.zzz.fill").font(.caption.bold()).foregroundStyle(Self.couleurNuit)
+                Label(self.nuits(jour), systemImage: "moon.zzz.fill").font(.caption.bold()).foregroundStyle(couleurNuit)
             }
             ForEach(nuits) { h in
-                ligneGlissable(h, jour: nil, couleur: Self.couleurNuit, deposable: false)
-                if let suivante = voyage.suivante(de: h) { ligneTransport(h, suivante) }
+                ligneGlissable(h, jour: nil, couleur: couleurNuit, deposable: false)
+            }
+            if nuits.isEmpty, let t = voyage.transportDeNuit(apres: jour), t.depart.transport != nil {
+                ligneTransport(t.depart, t.arrivee)
             }
             if nuits.isEmpty {
-                Button("Ajouter un hébergement", systemImage: "plus.circle.fill") { ajouterHebergement(apres: jour) }
-                    .buttonStyle(.borderless).tint(Self.couleurNuit).font(.footnote)
+                Button("Ajouter un hébergement ou un transport", systemImage: "plus.circle.fill") { ajouterHebergement(apres: jour) }
+                    .buttonStyle(.borderless).tint(couleurNuit).font(.footnote)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background {
             RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.background)
-            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Self.couleurNuit.opacity(0.22))
+            RoundedRectangle(cornerRadius: 14, style: .continuous).fill(couleurNuit.opacity(0.22))
         }
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .strokeBorder(Self.couleurNuit.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: nuits.isEmpty ? [5, 4] : [])))
-        .overlay { surbrillance(idZone("nuit", jour), couleur: Self.couleurNuit) }
+            .strokeBorder(couleurNuit.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: nuits.isEmpty ? [5, 4] : [])))
+        .overlay { surbrillance(idZone("nuit", jour), couleur: couleurNuit) }
         // Seuls les hébergements se posent dans une nuit.
         .dropDestination(for: String.self) { elements, _ in
             recevoir(elements, jour: jour, avant: nil, nuit: true)
@@ -325,16 +335,7 @@ struct EtapesView: View {
             })
     }
 
-    private func descriptif(_ t: Transport) -> String {
-        var morceaux = [t.mode.libelle]
-        if t.mode == .commun, !t.sousType.isEmpty { morceaux = [t.sousType] }
-        let ligne = [t.compagnie, t.numero].filter { !$0.isEmpty }.joined(separator: " ")
-        if !ligne.isEmpty { morceaux.append(ligne) }
-        if let d = t.depart {
-            morceaux.append(d.formatted(date: .omitted, time: .shortened) + (t.arrivee.map { " → " + $0.formatted(date: .omitted, time: .shortened) } ?? ""))
-        }
-        return morceaux.joined(separator: " · ")
-    }
+    private func descriptif(_ t: Transport) -> String { t.descriptif }
 
     /// La photo déjà enregistrée dans l'étape, sinon l'icône de sa catégorie. Rien n'est téléchargé ici (pas d'appel à Google ni Tripadvisor).
     @ViewBuilder private func vignette(_ etape: Etape) -> some View {
@@ -416,7 +417,6 @@ struct EtapesView: View {
         .accessibilityAddTraits(.isButton)
     }
 
-    private static let couleurNuit = Color.mint
 
     private func nuits(_ jour: Date) -> String {
         let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
@@ -429,7 +429,7 @@ struct EtapesView: View {
         etape.ordre = (voyage.hebergements(apres: jour).map(\.ordre).max() ?? -1) + 1
         etape.voyage = voyage
         contexte.insert(etape)
-        etapeEnEdition = etape
+        nuitEnAjout = NuitAjout(etape: etape, jour: jour)
     }
 
     private func ajouter(jour: Date) {
@@ -456,7 +456,7 @@ struct EtapesView: View {
     }
 }
 
-private struct ResumeItineraire: View {
+struct ResumeItineraire: View {
     let a: CLLocationCoordinate2D
     let b: CLLocationCoordinate2D
     let mode: ModeTransport

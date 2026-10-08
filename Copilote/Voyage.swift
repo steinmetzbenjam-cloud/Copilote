@@ -87,6 +87,14 @@ extension Voyage {
             .sorted { ($0.ordre, $0.creeLe) < ($1.ordre, $1.creeLe) }
     }
 
+    /// Nuit sans hébergement : la dernière étape du jour et la première du lendemain, entre lesquelles on peut prévoir un transport.
+    func transportDeNuit(apres jour: Date) -> (depart: Etape, arrivee: Etape)? {
+        guard hebergements(apres: jour).isEmpty else { return nil }
+        let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
+        guard let depart = etapes(du: jour).last, let arrivee = etapes(du: lendemain).first else { return nil }
+        return (depart, arrivee)
+    }
+
     /// Place l'étape (un hébergement) entre `jour` et le suivant.
     func placerEntreJours(_ etape: Etape, apres jour: Date) {
         let ancien = etape.apresJour ? nil : etape.jour
@@ -131,6 +139,19 @@ extension Voyage {
         let liste = etapes(du: jour)
         guard let i = liste.firstIndex(where: { $0 === etape }) else { return nil }
         return i + 1 < liste.count ? liste[i + 1] : hebergements(apres: jour).first
+    }
+
+    /// Élément qui précède `etape` pour le transport (celui qui porte le transport pour y arriver) : l'inverse de `suivante(de:)`,
+    /// avec en plus, sans hôtel la veille, la dernière étape de la veille.
+    func precedente(de etape: Etape) -> Etape? {
+        guard let jour = etape.jour else { return nil }
+        let cal = Calendar.current
+        if etape.apresJour { return etapes(du: jour).last }
+        let liste = etapes(du: jour)
+        guard let i = liste.firstIndex(where: { $0 === etape }) else { return nil }
+        if i > 0 { return liste[i - 1] }
+        let veille = cal.date(byAdding: .day, value: -1, to: jour) ?? jour
+        return hebergements(apres: veille).first ?? etapes(du: veille).last
     }
 
     /// Étapes dont le transport serait perdu si on déplaçait `etape` à cet endroit
