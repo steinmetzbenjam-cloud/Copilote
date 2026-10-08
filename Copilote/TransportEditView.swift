@@ -425,14 +425,16 @@ struct NuitAjoutView: View {
 
 extension Transport {
     /// « Avion · AF 123 · 10:00 → 12:30 » : le résumé affiché sur les lignes de transport.
-    var descriptif: String {
+    var descriptif: String { descriptif(avecHoraires: true) }
+
+    func descriptif(avecHoraires: Bool) -> String {
         let t = self
         var morceaux = [t.mode.libelle]
         if t.mode == .commun, !t.sousType.isEmpty { morceaux = [t.sousType] }
         let ligne = [t.compagnie, t.numero].filter { !$0.isEmpty }.joined(separator: " ")
         if t.mode == .commun, let duree = t.itineraireCommun?.resume.split(separator: " · ").first, t.depart == nil { morceaux.append(String(duree)) }
         if !ligne.isEmpty { morceaux.append(ligne) }
-        if let d = t.depart {
+        if avecHoraires, let d = t.depart {
             morceaux.append(d.formatted(date: .omitted, time: .shortened) + (t.arrivee.map { " → " + $0.formatted(date: .omitted, time: .shortened) } ?? ""))
         }
         return morceaux.joined(separator: " · ")

@@ -290,7 +290,7 @@ struct ItineraireView: View {
         Button { transportDeNuitEnEdition = NuitTransport(depart: depart, arrivee: arrivee) } label: {
             HStack(spacing: 8) {
                 Image(systemName: t.mode.symbole).frame(width: 24)
-                Text(t.descriptif)
+                Text(voyage.descriptifLocal(t, depuis: depart, vers: arrivee))
                 if t.mode.aUnItineraire, let a = depart.coordonnee, let b = arrivee.coordonnee {
                     Spacer()
                     ResumeItineraire(a: a, b: b, mode: t.mode)
@@ -542,7 +542,7 @@ struct ItineraireView: View {
                 }
                 Spacer()
                 if etape.heure == nil, let fin = etape.heureFin {
-                    Text("→ \(fin.formatted(date: .omitted, time: .shortened))")
+                    Text("→ \(etape.heureAffichee(fin))")
                         .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
                 }
                 if let heure = etape.heure {
@@ -558,10 +558,10 @@ struct ItineraireView: View {
                                     Label(incoherence == nil ? "Horaires qui se chevauchent" : "Horaire incohérent", systemImage: "exclamationmark.triangle.fill")
                                         .font(.headline).foregroundStyle(.orange)
                                     if incoherence == nil, let autre = chevauche, let fin = autre.heureFin {
-                                        Text("Cette étape commence à \(heure.formatted(date: .omitted, time: .shortened)), mais « \(autre.titre) » dure jusqu'à \(fin.formatted(date: .omitted, time: .shortened)). Change une des heures.")
+                                        Text("Cette étape commence à \(etape.heureAffichee(heure)), mais « \(autre.titre) » dure jusqu'à \(autre.heureAffichee(fin)). Change une des heures.")
                                             .font(.subheadline)
                                     } else if let incoherence {
-                                    Text("Cette étape est prévue à \(heure.formatted(date: .omitted, time: .shortened)), mais elle est placée après une étape prévue à \(incoherence.formatted(date: .omitted, time: .shortened)). Change l'heure, ou son rang dans la journée.")
+                                    Text("Cette étape est prévue à \(etape.heureAffichee(heure)), mais elle est placée après une étape prévue à \(incoherence.formatted(date: .omitted, time: .shortened)). Change l'heure, ou son rang dans la journée.")
                                         .font(.subheadline)
                                     }
                                     Text("Le menu « ··· » du jour propose « Trier par heure ».")
@@ -573,8 +573,8 @@ struct ItineraireView: View {
                                 .presentationCompactAdaptation(.popover)
                             }
                     }
-                    Text(etape.heureFin.map { "\(heure.formatted(date: .omitted, time: .shortened)) – \($0.formatted(date: .omitted, time: .shortened))" }
-                         ?? heure.formatted(date: .omitted, time: .shortened))
+                    Text(etape.heureFin.map { "\(etape.heureAffichee(heure)) – \(etape.heureAffichee($0))" }
+                         ?? etape.heureAffichee(heure))
                         .font(.subheadline.monospacedDigit()).foregroundStyle(incoherence == nil && chevauche == nil ? Color.secondary : Color.orange)
                 }
             }

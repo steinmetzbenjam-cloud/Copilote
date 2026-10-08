@@ -238,13 +238,15 @@ extension Voyage {
     /// Étapes d'un jour dont l'heure précède celle d'une étape placée avant elle (ordre et horaires en contradiction).
     /// Associe l'identifiant de l'étape à l'heure de l'étape précédente qui la contredit.
     /// Les étapes sans heure ne comptent pas.
-    func etapesAuxHorairesIncoherents(du jour: Date) -> [String: Date] {
+    @MainActor func etapesAuxHorairesIncoherents(du jour: Date) -> [String: Date] {
         let cal = Calendar.current
         func minutes(_ d: Date) -> Int { cal.component(.hour, from: d) * 60 + cal.component(.minute, from: d) }
         var resultat: [String: Date] = [:]
         var plusTardive: Date?
         for etape in etapes(du: jour) {
-            guard let heure = etape.heure else { continue }
+            // Les heures sont comparées en heure locale du lieu visité : des fuseaux différents ne créent pas de fausse incohérence.
+            guard let saisie = etape.heure else { continue }
+            let heure = etape.enHeureLocale(saisie).date
             if let reference = plusTardive, minutes(heure) < minutes(reference) {
                 resultat[etape.uid] = reference
             } else {
@@ -256,15 +258,16 @@ extension Voyage {
 
     /// Étapes dont l'heure de début tombe avant la fin d'une étape placée avant elle (les deux se chevauchent).
     /// Associe l'identifiant de l'étape à l'étape précédente qu'elle chevauche.
-    func etapesEnChevauchement(du jour: Date) -> [String: Etape] {
+    @MainActor func etapesEnChevauchement(du jour: Date) -> [String: Etape] {
         let cal = Calendar.current
         func minutes(_ d: Date) -> Int { cal.component(.hour, from: d) * 60 + cal.component(.minute, from: d) }
         var resultat: [String: Etape] = [:]
         var precedentes: [Etape] = []
         for etape in etapes(du: jour) {
-            guard let debut = etape.heure else { continue }
+            guard let saisie = etape.heure else { continue }
+            let debut = etape.enHeureLocale(saisie).date
             if let autre = precedentes.last(where: { p in
-                guard let d = p.heure, let f = p.heureFin else { return false }
+                guard let d = p.heure.map({ p.enHeureLocale($0).date }), let f = p.heureFin.map({ p.enHeureLocale($0).date }) else { return false }
                 return minutes(debut) >= minutes(d) && minutes(debut) < minutes(f)
             }) {
                 resultat[etape.uid] = autre
@@ -275,8 +278,9 @@ extension Voyage {
     }
 
     /// Remet les étapes d'un jour dans l'ordre des heures (celles sans heure à la fin).
-    func trierParHeure(_ jour: Date) {
-        let triees = etapes(du: jour).sorted { ($0.heure ?? .distantFuture, $0.creeLe) < ($1.heure ?? .distantFuture, $1.creeLe) }
+    @MainActor func trierParHeure(_ jour: Date) {
+        // Le moment réel (heure saisie lue dans son fuseau) : des étapes notées dans des fuseaux différents restent dans le bon ordre.
+        let triees = etapes(du: jour).sorted { ($0.dateHeure ?? .distantFuture, $0.creeLe) < ($1.dateHeure ?? .distantFuture, $1.creeLe) }
         for (i, e) in triees.enumerated() { e.ordre = Double(i) }
     }
 

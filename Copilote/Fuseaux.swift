@@ -83,9 +83,9 @@ extension Voyage {
         return (d, a)
     }
 
-    /// Le fuseau d'un jour : celui de sa première étape.
+    /// Le fuseau d'un jour : celui du lieu de sa première étape (l'heure locale du pays visité), sans tenir compte d'un fuseau choisi pour une heure saisie.
     @MainActor func fuseau(du jour: Date) -> TimeZone {
-        etapes(du: jour).first?.fuseau ?? fuseauParDefaut ?? .current
+        etapes(du: jour).first?.fuseauParDefaut ?? fuseauParDefaut ?? .current
     }
 }
 
@@ -109,7 +109,57 @@ extension Etape {
     }
 }
 
+extension Etape {
+    /// L'heure saisie pour cette étape, convertie en heure locale du lieu visité ce jour-là (avec le décalage de jour éventuel).
+    @MainActor func enHeureLocale(_ heure: Date) -> (date: Date, jours: Int) {
+        guard let jour, let voyage else { return (heure, 0) }
+        return Horaires.convertir(heure, jour: jour, de: fuseau, vers: voyage.fuseau(du: jour))
+    }
+
+    /// « 13:00 », ou « 03:30 (+1 j) » quand la conversion change de jour.
+    @MainActor func heureAffichee(_ heure: Date) -> String {
+        let r = enHeureLocale(heure)
+        let suffixe = r.jours > 0 ? " (+\(r.jours) j)" : (r.jours < 0 ? " (\(r.jours) j)" : "")
+        return r.date.formatted(date: .omitted, time: .shortened) + suffixe
+    }
+}
+
+extension Voyage {
+    /// Le résumé d'un transport avec ses heures converties en heure locale du lieu visité (jour du départ).
+    @MainActor func descriptifLocal(_ t: Transport, depuis depart: Etape?, vers arrivee: Etape?) -> String {
+        guard let d = t.depart else { return t.descriptif }
+        let jourDepart = depart?.jour.map { jour in depart?.apresJour == true ? (Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour) : jour }
+            ?? arrivee?.jour ?? jours.first ?? .now
+        let z = fuseaux(de: t, depuis: depart, vers: arrivee)
+        let local = fuseau(du: jourDepart)
+        let debut = Horaires.convertir(d, jour: jourDepart, de: z.depart, vers: local)
+        var heures = debut.date.formatted(date: .omitted, time: .shortened)
+        if let a = t.arrivee {
+            if let duree = Horaires.duree(t, jour: jourDepart, depart: z.depart, arrivee: z.arrivee) {
+                let fin = debut.date.addingTimeInterval(duree)
+                let cal = Calendar.current
+                let jours = cal.dateComponents([.day], from: cal.startOfDay(for: d), to: cal.startOfDay(for: fin)).day ?? 0
+                heures += " → " + fin.formatted(date: .omitted, time: .shortened) + (jours > 0 ? " (+\(jours) j)" : "")
+            } else {
+                heures += " → " + Horaires.convertir(a, jour: jourDepart, de: z.arrivee, vers: local).date.formatted(date: .omitted, time: .shortened)
+            }
+        }
+        return t.descriptif(avecHoraires: false) + " · " + heures
+    }
+}
+
 enum Horaires {
+    /// Une heure saisie dans `zone`, exprimée en heure du fuseau `local` : la date retournée se lit directement avec le fuseau de l'app.
+    /// `jours` : décalage de jour du résultat par rapport au jour de saisie.
+    static func convertir(_ heure: Date, jour: Date, de zone: TimeZone, vers local: TimeZone) -> (date: Date, jours: Int) {
+        guard zone.identifier != local.identifier, let moment = instant(jour: jour, heure: heure, zone: zone) else { return (heure, 0) }
+        let ecart = TimeInterval(local.secondsFromGMT(for: moment) - zone.secondsFromGMT(for: moment))
+        let converti = heure.addingTimeInterval(ecart)
+        let cal = Calendar.current
+        let jours = cal.dateComponents([.day], from: cal.startOfDay(for: heure), to: cal.startOfDay(for: converti)).day ?? 0
+        return (converti, jours)
+    }
+
     /// L'heure saisie (« 10:00 ») un jour donné, lue dans le fuseau indiqué : le moment réel correspondant.
     static func instant(jour: Date, heure: Date, zone: TimeZone) -> Date? {
         let cal = Calendar.current
