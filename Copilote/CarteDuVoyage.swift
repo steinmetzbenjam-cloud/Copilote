@@ -71,6 +71,8 @@ struct CarteDuVoyage: View {
         let points: [CLLocationCoordinate2D]
         let tirets: [CGFloat]
         var avion = false
+        /// Couleur propre au trait (ligne de métro, par exemple) ; sinon celle du jour.
+        var couleur: Color?
         /// Aller et retour : l'avion est plus grand.
         var grandAvion = false
 
@@ -162,36 +164,45 @@ struct CarteDuVoyage: View {
             // Prochaine étape localisée ; le transport ne compte que si c'est la suivante directe.
             guard let j = liste[(i + 1)...].firstIndex(where: { $0.coordonnee != nil }), let b = liste[j].coordonnee else { continue }
             let mode = j == i + 1 ? depart.transport?.mode : nil
-            resultat.append(segment("\(depart.uid)-\(liste[j].uid)", a, b, mode))
+            resultat += segment("\(depart.uid)-\(liste[j].uid)", a, b, mode, transport: j == i + 1 ? depart.transport : nil)
         }
         // Liaisons avec l'hébergement : tracées seulement quand un transport est prévu.
         for (d, s) in liens(du: jour) + departDeLaVeille(pour: jour) where d.apresJour || s.apresJour || !Calendar.current.isDate(d.jour ?? jour, inSameDayAs: s.jour ?? jour) {
             guard let mode = d.transport?.mode, let a = d.coordonnee, let b = s.coordonnee else { continue }
-            resultat.append(segment("\(d.uid)-\(s.uid)", a, b, mode))
+            resultat += segment("\(d.uid)-\(s.uid)", a, b, mode, transport: d.transport)
         }
         // L'aller se rattache au premier jour du voyage, le retour au dernier.
         for e in extremites {
             let jourCible = e.id == "aller" ? voyage.jours.first : voyage.jours.last
             if let jourCible, Calendar.current.isDate(jourCible, inSameDayAs: jour) {
-                var trait = segment(e.id, e.a, e.b, e.mode)
-                trait.grandAvion = true
-                resultat.append(trait)
+                let t = e.id == "aller" ? voyage.transportAller : voyage.transportRetour
+                resultat += segment(e.id, e.a, e.b, e.mode, transport: t).map { var trait = $0; trait.grandAvion = true; return trait }
             }
         }
         return resultat
     }
 
-    private func segment(_ id: String, _ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, _ mode: ModeTransport?) -> Segment {
+    private func segment(_ id: String, _ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, _ mode: ModeTransport?, transport: Transport? = nil) -> [Segment] {
         switch mode {
         case .avion:
-            return Segment(id: id, points: Itineraires.arc(a, b), tirets: [7, 6], avion: true)
+            return [Segment(id: id, points: Itineraires.arc(a, b), tirets: [7, 6], avion: true)]
         case .voiture, .pied, .velo:
             let trajet = Itineraires.shared.trajet(a, b, mode!)
-            return Segment(id: id, points: trajet?.points ?? [a, b], tirets: mode == .voiture ? [] : [1, 6])
+            return [Segment(id: id, points: trajet?.points ?? [a, b], tirets: mode == .voiture ? [] : [1, 6])]
         case .commun:
-            return Segment(id: id, points: [a, b], tirets: [10, 5])
+            // Itinéraire enregistré : un trait par tronçon, à la couleur de la ligne (marche en pointillés).
+            if let it = transport?.itineraireCommun, !it.etapes.isEmpty {
+                return it.etapes.enumerated().compactMap { i, e in
+                    let points = PolylineGoogle.decoder(e.trace)
+                    guard points.count >= 2 else { return nil }
+                    var s = Segment(id: "\(id)-\(i)", points: points, tirets: e.estMarche ? [1, 6] : [])
+                    s.couleur = e.estMarche ? nil : e.teinte
+                    return s
+                }
+            }
+            return [Segment(id: id, points: [a, b], tirets: [10, 5])]
         case nil:
-            return Segment(id: id, points: [a, b], tirets: [])
+            return [Segment(id: id, points: [a, b], tirets: [])]
         }
     }
 
@@ -243,7 +254,7 @@ struct CarteDuVoyage: View {
                     let traits = segments(du: jour)
                     ForEach(traits) { s in
                         MapPolyline(coordinates: s.points)
-                            .stroke(Self.couleur(du: index).opacity(attenue ? 0.2 : 0.65),
+                            .stroke((s.couleur ?? Self.couleur(du: index)).opacity(attenue ? 0.2 : (s.couleur == nil ? 0.65 : 0.9)),
                                     style: StrokeStyle(lineWidth: focus && jourFocus != nil ? 4 : 3, lineCap: .round, dash: s.tirets))
                     }
                     ForEach(traits.filter(\.avion)) { s in

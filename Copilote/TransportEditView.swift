@@ -17,6 +17,9 @@ struct TransportEditView: View {
     let enregistrer: (Transport?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var transport: Transport
+    @State private var planOuvert = false
+    @State private var rechercheEnCours = false
+    @State private var erreurRecherche: String?
 
     private enum ChoixLieu: String, Identifiable {
         case depart, arrivee
@@ -92,6 +95,7 @@ struct TransportEditView: View {
                 }
             }
             .formStyle(.grouped)
+            .disabled(voyageDuTransport?.lectureSeule ?? false)
             .navigationTitle("Transport")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -206,6 +210,97 @@ struct TransportEditView: View {
             champ("Station de départ", $transport.de)
             champ("Station d'arrivée", $transport.vers)
             horaires()
+            rechercheCommun
+        }
+    }
+
+    // MARK: Itinéraire en transports en commun
+
+    /// Les lieux entre lesquels chercher : ceux de l'aller ou du retour, sinon ceux des deux étapes.
+    private var lieuxDeRecherche: (CLLocationCoordinate2D, CLLocationCoordinate2D)? {
+        if lieuxExtremites {
+            if let a = transport.departCoordonnee, let b = transport.arriveeCoordonnee { return (a, b) }
+            return nil
+        }
+        return coordonnees
+    }
+
+    @ViewBuilder private var rechercheCommun: some View {
+        if let voyage = voyageDuTransport {
+            Button("Plan du métro", systemImage: "map") { planOuvert = true }
+                .buttonStyle(.borderless)
+                .sheet(isPresented: $planOuvert) { PlanMetroView(voyage: voyage) }
+        }
+        Button { Task { await chercherCommun() } } label: {
+            Label(rechercheEnCours ? "Recherche…" : (transport.itineraireCommun == nil ? "Chercher l'itinéraire" : "Relancer la recherche"),
+                  systemImage: "magnifyingglass")
+        }
+        .disabled(rechercheEnCours || lieuxDeRecherche == nil)
+        if lieuxDeRecherche == nil {
+            Text(lieuxExtremites ? "Choisis un lieu de départ et un lieu d'arrivée pour chercher l'itinéraire."
+                 : "Place les deux étapes sur la carte (lieu) pour chercher l'itinéraire.")
+                .font(.footnote).foregroundStyle(.secondary)
+        } else if Cles.lire(.google) == nil {
+            Text("La recherche utilise Google : ajoute ta clé dans les Réglages et active « Routes API » dans ton projet Google Cloud.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        if let erreurRecherche {
+            Text(erreurRecherche).font(.footnote).foregroundStyle(.red)
+            Text("Google ne fournit pas toujours les transports en commun (couverture variable selon les pays). Plans peut au moins estimer la durée, ou ouvrir l'itinéraire dans son app.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        if let (a, b) = lieuxDeRecherche {
+            HStack(spacing: 14) {
+                Button("Estimer la durée (Plans)", systemImage: "clock") { Task { await estimerAvecPlans() } }
+                    .disabled(rechercheEnCours)
+                Button("Ouvrir dans Plans", systemImage: "map") {
+                    EstimationPlans.ouvrir(de: a, vers: b, depart: transport.de.isEmpty ? nil : transport.de, arrivee: transport.vers.isEmpty ? nil : transport.vers)
+                }
+            }
+            .buttonStyle(.borderless)
+        }
+        if let itineraire = transport.itineraireCommun {
+            DetailItineraireCommun(itineraire: itineraire)
+            Text("Enregistré avec le transport et tracé sur la carte. Calculé \(itineraire.calculeLe.formatted(.relative(presentation: .named))).")
+                .font(.footnote).foregroundStyle(.secondary)
+            Button("Retirer l'itinéraire", systemImage: "xmark.circle", role: .destructive) { transport.itineraireCommun = nil }
+                .buttonStyle(.borderless)
+        }
+    }
+
+    private func estimerAvecPlans() async {
+        guard let (a, b) = lieuxDeRecherche else { return }
+        rechercheEnCours = true
+        defer { rechercheEnCours = false }
+        if let estimation = await EstimationPlans.estimer(de: a, vers: b) {
+            transport.itineraireCommun = estimation
+            erreurRecherche = nil
+        } else {
+            erreurRecherche = "Plans n'a pas pu estimer la durée de ce trajet."
+        }
+    }
+
+    private func chercherCommun() async {
+        guard let (a, b) = lieuxDeRecherche else { return }
+        rechercheEnCours = true
+        erreurRecherche = nil
+        defer { rechercheEnCours = false }
+        // L'heure de départ prévue, sur le jour du transport, oriente la recherche vers les bons horaires.
+        var quand: Date?
+        if let d = transport.depart {
+            let c = Calendar.current.dateComponents([.hour, .minute], from: d)
+            quand = Calendar.current.date(bySettingHour: c.hour ?? 0, minute: c.minute ?? 0, second: 0, of: Calendar.current.startOfDay(for: jour))
+        }
+        do {
+            let resultat = try await RoutesGoogle.chercher(de: a, vers: b, sousType: transport.sousType, depart: quand)
+            transport.itineraireCommun = resultat
+            // Les stations et l'opérateur se remplissent s'ils sont vides.
+            let premiere = resultat.etapes.first { !$0.estMarche }, derniere = resultat.etapes.last { !$0.estMarche }
+            if transport.de.isEmpty { transport.de = premiere?.depart ?? "" }
+            if transport.vers.isEmpty { transport.vers = derniere?.arrivee ?? "" }
+            if transport.numero.isEmpty { transport.numero = resultat.lignes }
+        } catch {
+            erreurRecherche = error.localizedDescription
         }
     }
 
@@ -300,6 +395,7 @@ extension Transport {
         var morceaux = [t.mode.libelle]
         if t.mode == .commun, !t.sousType.isEmpty { morceaux = [t.sousType] }
         let ligne = [t.compagnie, t.numero].filter { !$0.isEmpty }.joined(separator: " ")
+        if t.mode == .commun, let duree = t.itineraireCommun?.resume.split(separator: " · ").first, t.depart == nil { morceaux.append(String(duree)) }
         if !ligne.isEmpty { morceaux.append(ligne) }
         if let d = t.depart {
             morceaux.append(d.formatted(date: .omitted, time: .shortened) + (t.arrivee.map { " → " + $0.formatted(date: .omitted, time: .shortened) } ?? ""))

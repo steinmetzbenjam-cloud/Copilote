@@ -24,14 +24,11 @@ struct ApercuView: View {
         ScrollView {
             VStack(spacing: 14) {
                 compteARebours
-                if case .apres = voyage.etat {
-                    cadreResume
-                    cadreMeteo
-                } else {
-                    cadreProgramme
-                    cadreMeteo
-                    cadreResume
-                }
+                // La météo n'a de sens qu'en voyage ; le résumé, qu'en souvenir.
+                if voyage.mode == .souvenir { cadreResume }
+                if voyage.mode != .souvenir { cadreProgramme }
+                if voyage.mode == .voyage { cadreMeteo }
+                CadrePlansMetro(voyage: voyage)
                 cadreRappels
                 cadreSynchro
             }
@@ -41,6 +38,12 @@ struct ApercuView: View {
         }
         .background(FondDePage.couleur)
         .task {
+            guard voyage.mode == .voyage else { return }
+            lieu = await voyage.lieuMeteo()
+            if let lieu { await meteo.actualiser(lieu) }
+        }
+        .task(id: voyage.mode) {
+            guard voyage.mode == .voyage, lieu == nil else { return }
             lieu = await voyage.lieuMeteo()
             if let lieu { await meteo.actualiser(lieu) }
         }

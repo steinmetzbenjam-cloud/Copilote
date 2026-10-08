@@ -85,6 +85,9 @@ struct CadreFamilles: View {
                     HStack(spacing: 6) {
                         Text(membre.nom).foregroundStyle(.primary)
                         if moi { Text("(moi)").font(.footnote).foregroundStyle(.secondary) }
+                        if voyage.role(de: membre.uid) != .voyageur || voyage.membres.contains(where: { $0.roleExplicite != nil }) {
+                            if voyage.role(de: membre.uid) != .voyageur { PastilleRole(role: voyage.role(de: membre.uid)) }
+                        }
                     }
                     Text([membre.age.map { "\($0) ans" }, membre.tarif.libelle].compactMap { $0 }.joined(separator: " · "))
                         .font(.footnote).foregroundStyle(.secondary)
@@ -232,6 +235,16 @@ struct MembreEditView: View {
                     Text("Invitation dans l'app")
                 } footer: {
                     Text("Quand cette personne ouvre le voyage avec le même e-mail dans son profil, l'app la reconnaît : ses règlements sont rattachés à sa famille. Laisse vide si elle n'utilise pas l'app.")
+                }
+                Section {
+                    Picker("Rôle", selection: Binding(get: { voyage.role(de: membre.uid) }, set: { voyage.attribuer($0, a: membre) })) {
+                        ForEach(RoleVoyage.allCases) { Label($0.libelle, systemImage: $0.symbole).tag($0) }
+                    }
+                    .disabled(!voyage.peutChangerRole(de: membre))
+                } header: {
+                    Text("Rôle dans le voyage")
+                } footer: {
+                    Text(voyage.role(de: membre.uid).description + (voyage.estOrganisateur && !voyage.peutChangerRole(de: membre) ? " Il faut toujours au moins un organisateur." : "") + " Les rôles règlent ce que l'app propose à chacun.")
                 }
                 Section {
                     Button("Retirer du voyage", role: .destructive) {

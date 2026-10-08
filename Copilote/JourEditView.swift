@@ -55,6 +55,7 @@ struct JourEditView: View {
                 }
             }
             .formStyle(.grouped)
+            .disabled(jour.voyage?.lectureSeule ?? false)
             .navigationTitle("Jour \(numero)")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

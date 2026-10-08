@@ -5,7 +5,7 @@ import CryptoKit
 
 enum TypeCloud: String, CaseIterable {
     case voyage = "Voyage", jour = "Jour", membre = "Membre", depense = "Depense", reservation = "Reservation", etape = "Etape", document = "Document"
-    case commentaire = "Commentaire", avisEtape = "AvisEtape", famille = "Famille"
+    case commentaire = "Commentaire", avisEtape = "AvisEtape", famille = "Famille", sondage = "Sondage", vote = "Vote"
 }
 
 /// Donne un identifiant stable aux objets créés avant l'arrivée de la synchronisation.
@@ -26,6 +26,8 @@ enum Identifiants {
         remplir(Commentaire.self, \.uid)
         remplir(AvisEtape.self, \.uid)
         remplir(Famille.self, \.uid)
+        remplir(Sondage.self, \.uid)
+        remplir(VoteSondage.self, \.uid)
         try? contexte.save()
     }
 }
@@ -79,6 +81,8 @@ enum Codec {
         case .commentaire: return try? contexte.fetch(FetchDescriptor<Commentaire>(predicate: #Predicate { $0.uid == uid })).first
         case .avisEtape: return try? contexte.fetch(FetchDescriptor<AvisEtape>(predicate: #Predicate { $0.uid == uid })).first
         case .famille: return try? contexte.fetch(FetchDescriptor<Famille>(predicate: #Predicate { $0.uid == uid })).first
+        case .sondage: return try? contexte.fetch(FetchDescriptor<Sondage>(predicate: #Predicate { $0.uid == uid })).first
+        case .vote: return try? contexte.fetch(FetchDescriptor<VoteSondage>(predicate: #Predicate { $0.uid == uid })).first
         }
     }
 
@@ -108,6 +112,8 @@ enum Codec {
             for c in v.commentaires { ajouter(c, .commentaire, c.uid, zone) }
             for a in v.avisEtapes { ajouter(a, .avisEtape, a.uid, zone) }
             for f in v.fichesFamilles { ajouter(f, .famille, f.uid, zone) }
+            for s in v.sondages { ajouter(s, .sondage, s.uid, zone) }
+            for x in v.votes { ajouter(x, .vote, x.uid, zone) }
         }
         return entrees
     }
@@ -175,6 +181,7 @@ enum Codec {
             r["nom"] = m.nom; r["creeLe"] = m.creeLe; r["voyageUID"] = m.voyage?.uid
             r["nomFamille"] = m.nomFamille; r["email"] = m.email
             r["famille"] = m.familleNom; r["age"] = m.age; r["tarif"] = m.tarifBrut; r["emailInvitation"] = m.emailInvitation
+            r["role"] = m.roleBrut
             // L'empreinte de la photo (un texte) permet de détecter son changement : les fichiers ne comptent pas dans l'empreinte.
             r["avatarEmpreinte"] = m.avatar.map(empreinteDonnees)
             if avecAsset {
@@ -212,6 +219,7 @@ enum Codec {
             r["nom"] = d.nom; r["extensionFichier"] = d.extensionFichier; r["taille"] = d.donnees.count
             r["creeLe"] = d.creeLe; r["voyageUID"] = d.voyage?.uid; r["reservationUID"] = d.reservation?.uid
             r["etapeUID"] = d.etape?.uid
+            r["membreUID"] = d.membreUID; r["typeDoc"] = d.typeBrut; r["expireLe"] = d.expireLe; r["notes"] = d.notes
             if avecAsset {
                 let fichier = FileManager.default.temporaryDirectory.appending(path: "\(d.uid).\(d.extensionFichier)")
                 if (try? d.donnees.write(to: fichier)) != nil { r["donnees"] = CKAsset(fileURL: fichier) }
@@ -226,6 +234,16 @@ enum Codec {
             r["etapeUID"] = a.etapeUID; r["auteurUID"] = a.auteurUID; r["etoiles"] = a.etoiles
             r["envie"] = a.envie.rawValue; r["commentaire"] = a.commentaire; r["modifieLe"] = a.modifieLe
             r["voyageUID"] = a.voyage?.uid
+            return r
+        case let s as Sondage:
+            let r = base(.sondage, s.uid, zone, systeme)
+            r["titre"] = s.titre; r["notes"] = s.notes; r["options"] = s.optionsJSON; r["clos"] = s.clos ? 1 : 0
+            r["optionRetenue"] = s.optionRetenue; r["auteurUID"] = s.auteurUID; r["creeLe"] = s.creeLe; r["voyageUID"] = s.voyage?.uid
+            return r
+        case let x as VoteSondage:
+            let r = base(.vote, x.uid, zone, systeme)
+            r["sondageUID"] = x.sondageUID; r["optionID"] = x.optionID; r["compteCle"] = x.compteCle
+            r["auteurUID"] = x.auteurUID; r["modifieLe"] = x.modifieLe; r["voyageUID"] = x.voyage?.uid
             return r
         case let f as Famille:
             let r = base(.famille, f.uid, zone, systeme)
@@ -325,7 +343,7 @@ enum Codec {
             m.nom = texte("nom"); m.creeLe = date("creeLe") ?? m.creeLe; m.voyage = parent
             m.nomFamille = r["nomFamille"] as? String; m.email = r["email"] as? String
             m.familleNom = r["famille"] as? String; m.age = entier("age"); m.tarifBrut = r["tarif"] as? String
-            m.emailInvitation = r["emailInvitation"] as? String
+            m.emailInvitation = r["emailInvitation"] as? String; m.roleBrut = r["role"] as? String
             if let fichier = (r["avatar"] as? CKAsset)?.fileURL, let photo = try? Data(contentsOf: fichier) {
                 m.avatar = photo
             } else if r["avatarEmpreinte"] as? String == nil {
@@ -379,6 +397,7 @@ enum Codec {
             d.nom = texte("nom"); d.extensionFichier = texte("extensionFichier"); d.creeLe = date("creeLe") ?? d.creeLe
             if let fichier = (r["donnees"] as? CKAsset)?.fileURL, let donnees = try? Data(contentsOf: fichier) { d.donnees = donnees }
             d.voyage = parent; d.reservation = reservation; d.etape = etape
+            d.membreUID = r["membreUID"] as? String; d.typeBrut = r["typeDoc"] as? String; d.expireLe = date("expireLe"); d.notes = r["notes"] as? String
             return d
 
         case .commentaire:
@@ -398,6 +417,26 @@ enum Codec {
             a.envie = EnvieEtape(rawValue: texte("envie")) ?? .neutre; a.commentaire = texte("commentaire")
             a.modifieLe = date("modifieLe") ?? a.modifieLe; a.voyage = parent
             return a
+
+        case .sondage:
+            guard let parent else { return nil }
+            let s = (objet(recordName: r.recordID.recordName, contexte) as? Sondage) ?? {
+                let nouveau = Sondage(titre: "", auteurUID: ""); nouveau.uid = uid; contexte.insert(nouveau); return nouveau
+            }()
+            s.titre = texte("titre"); s.notes = texte("notes"); s.optionsJSON = (r["options"] as? String) ?? "[]"
+            s.clos = (entier("clos") ?? 0) == 1; s.optionRetenue = r["optionRetenue"] as? String
+            s.auteurUID = texte("auteurUID"); s.creeLe = date("creeLe") ?? s.creeLe; s.voyage = parent
+            return s
+
+        case .vote:
+            guard let parent else { return nil }
+            let x = (objet(recordName: r.recordID.recordName, contexte) as? VoteSondage) ?? {
+                let nouveau = VoteSondage(sondageUID: "", optionID: "", compteCle: "", auteurUID: ""); nouveau.uid = uid
+                contexte.insert(nouveau); return nouveau
+            }()
+            x.sondageUID = texte("sondageUID"); x.optionID = texte("optionID"); x.compteCle = texte("compteCle")
+            x.auteurUID = texte("auteurUID"); x.modifieLe = date("modifieLe") ?? x.modifieLe; x.voyage = parent
+            return x
 
         case .famille:
             guard let parent else { return nil }

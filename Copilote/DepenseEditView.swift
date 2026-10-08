@@ -107,6 +107,7 @@ struct DepenseEditView: View {
                 }
             }
             .formStyle(.grouped)
+            .disabled(voyage.lectureSeule)
             .navigationTitle("Dépense")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

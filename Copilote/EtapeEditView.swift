@@ -192,6 +192,7 @@ struct EtapeEditView: View {
                 }
             }
             .formStyle(.grouped)
+            .disabled(etape.voyage?.lectureSeule ?? false)
             .navigationTitle(etape.categorie == .hebergement ? "Hébergement" : "Étape")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

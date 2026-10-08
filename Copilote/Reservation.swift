@@ -89,6 +89,12 @@ final class Document {
     var reservation: Reservation?
     /// Renseigné pour les photos rapatriées d'un lieu proposé.
     var etape: Etape?
+    /// Voyageur à qui appartient le document (passeport, assurance…), et son type et sa date de validité.
+    var membreUID: String?
+    var typeBrut: String?
+    var expireLe: Date?
+    /// Texte libre : pour un plan de métro, sa source, son auteur et sa licence.
+    var notes: String?
 
     init(nom: String, extensionFichier: String, donnees: Data) {
         self.nom = nom

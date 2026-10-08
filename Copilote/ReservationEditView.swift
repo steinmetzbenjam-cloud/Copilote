@@ -85,6 +85,7 @@ struct ReservationEditView: View {
                 }
             }
             .formStyle(.grouped)
+            .disabled(reservation.voyage?.lectureSeule ?? false)
             .navigationTitle("Réservation")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

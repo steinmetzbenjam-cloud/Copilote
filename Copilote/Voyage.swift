@@ -43,6 +43,10 @@ final class Voyage {
     var avisEtapes: [AvisEtape] = []
     @Relationship(deleteRule: .cascade, inverse: \Famille.voyage)
     var fichesFamilles: [Famille] = []
+    @Relationship(deleteRule: .cascade, inverse: \Sondage.voyage)
+    var sondages: [Sondage] = []
+    @Relationship(deleteRule: .cascade, inverse: \VoteSondage.voyage)
+    var votes: [VoteSondage] = []
 
     init(titre: String, destination: String = "", debut: Date = .now, fin: Date = .now.addingTimeInterval(7 * 86_400)) {
         self.titre = titre

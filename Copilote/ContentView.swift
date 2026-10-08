@@ -93,12 +93,12 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $reglagesOuverts) { ReglagesView() }
-        .sheet(isPresented: $profilPremiereFois, onDismiss: proposerLesVoyages) { ProfilEditView(premiereFois: true) }
+        .sheet(isPresented: $profilPremiereFois, onDismiss: rouvrirOuProposer) { ProfilEditView(premiereFois: true) }
         .sheet(isPresented: $selecteurOuvert) {
             SelecteurVoyageView(voyages: voyages, onChoix: { selection = $0 }, onNouveau: { nouveauVoyageOuvert = true })
         }
         .onAppear {
-            if !Profil.partage.estRenseigne { profilPremiereFois = true } else { proposerLesVoyages() }
+            if !Profil.partage.estRenseigne { profilPremiereFois = true } else { rouvrirOuProposer() }
         }
         .sheet(isPresented: $choixSauvegardeOuvert, onDismiss: {
             // L'enregistrement s'ouvre une fois la feuille de choix refermée.
@@ -134,6 +134,7 @@ struct ContentView: View {
         }
         .onChange(of: selection) { _, voyage in
             guard let voyage else { return }
+            UserDefaults.standard.set(voyage.uid, forKey: Self.cleDernierVoyage)
             voyageOuvert = voyage
             withAnimation { colonnes = .detailOnly }
         }
@@ -166,6 +167,20 @@ struct ContentView: View {
         voyages.map { v in
             "\(v.uid)\(v.debut.timeIntervalSince1970)\(v.etapes.map { "\($0.uid)\($0.jour?.timeIntervalSince1970 ?? 0)\($0.heure?.timeIntervalSince1970 ?? 0)\($0.apresJour)\($0.transportJSON ?? "")" }.joined())\(v.transportAllerJSON ?? "")\(v.transportRetourJSON ?? "")"
         }.joined(separator: "|")
+    }
+
+    private static let cleDernierVoyage = "dernierVoyageOuvert"
+
+    /// Au lancement : on rouvre le dernier voyage consulté (à l'itinéraire) ; s'il n'existe plus, on propose le choix.
+    private func rouvrirOuProposer() {
+        guard !selecteurDejaPropose, voyageOuvert == nil else { return }
+        if let uid = UserDefaults.standard.string(forKey: Self.cleDernierVoyage), !uid.isEmpty,
+           let dernier = voyages.first(where: { $0.uid == uid }) {
+            selecteurDejaPropose = true
+            selection = dernier
+            return
+        }
+        proposerLesVoyages()
     }
 
     /// Une seule fois par lancement, et seulement s'il y a des voyages et qu'aucun n'est ouvert.
@@ -206,6 +221,9 @@ struct ContentView: View {
     }
 
     private func supprimer(_ voyage: Voyage) {
+        if UserDefaults.standard.string(forKey: Self.cleDernierVoyage) == voyage.uid {
+            UserDefaults.standard.removeObject(forKey: Self.cleDernierVoyage)
+        }
         if selection == voyage { selection = nil }
         if voyageOuvert == voyage {
             voyageOuvert = nil
@@ -217,5 +235,5 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView().modelContainer(for: [Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self, Commentaire.self, AvisEtape.self, Famille.self], inMemory: true)
+    ContentView().modelContainer(for: [Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self, Commentaire.self, AvisEtape.self, Famille.self, Sondage.self, VoteSondage.self], inMemory: true)
 }

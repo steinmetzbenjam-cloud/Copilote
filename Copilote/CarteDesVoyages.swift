@@ -19,6 +19,7 @@ struct SelecteurVoyageView: View {
     @State private var position: MapCameraPosition = .region(Self.monde)
     @State private var emplacements: [PersistentIdentifier: Emplacement] = [:]
     @State private var choisi: PersistentIdentifier?
+    @State private var largeur: CGFloat = 700
 
     private static let monde = MKCoordinateRegion(center: CLLocationCoordinate2D(latitude: 25, longitude: 10),
                                                   span: MKCoordinateSpan(latitudeDelta: 130, longitudeDelta: 330))
@@ -97,15 +98,22 @@ struct SelecteurVoyageView: View {
 
     // MARK: Cadres en bas
 
+    /// Les cadres rétrécissent pour tenir tous côte à côte ; en dessous de 118 pt, la rangée se met à défiler.
+    private var largeurCadre: CGFloat {
+        let n = CGFloat(max(voyages.count, 1))
+        return max(118, min(190, (largeur - 28 - 10 * (n - 1)) / n))
+    }
+
     private var cadres: some View {
         ScrollViewReader { lecteur in
             ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
+                HStack(spacing: 10) {
                     ForEach(voyages) { voyage in carte(voyage).id(voyage.persistentModelID) }
                 }
-                .padding(.horizontal, 14).padding(.vertical, 12)
+                .padding(.horizontal, 14).padding(.vertical, 10)
             }
             .background(.regularMaterial)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { largeur = $0 }
             .onChange(of: choisi) { _, nouveau in
                 if let nouveau { withAnimation { lecteur.scrollTo(nouveau, anchor: .center) } }
             }
@@ -116,30 +124,32 @@ struct SelecteurVoyageView: View {
         let actif = choisi == voyage.persistentModelID
         let teinte = couleur(voyage)
         let place = emplacements[voyage.persistentModelID] != nil
-        return VStack(alignment: .leading, spacing: 6) {
+        let etroit = largeurCadre < 150
+        return VStack(alignment: .leading, spacing: 4) {
             HStack {
-                Text(drapeaux(voyage).isEmpty ? "📍" : drapeaux(voyage)).font(.title3)
+                Text(drapeaux(voyage).isEmpty ? "📍" : drapeaux(voyage)).font(etroit ? .body : .title3).lineLimit(1)
                 Spacer()
                 Text(voyage.compteARebours).font(.caption.weight(.bold)).padding(.horizontal, 8).padding(.vertical, 3)
                     .background(.white.opacity(0.25), in: Capsule())
                 if !place { Image(systemName: "mappin.slash").font(.footnote) }
             }
-            Text(voyage.titre.isEmpty ? "Voyage" : voyage.titre).font(.headline).lineLimit(2)
-            Text("\(voyage.debut.formatted(.dateTime.day().month(.abbreviated).year())) – \(voyage.fin.formatted(.dateTime.day().month(.abbreviated)))")
-                .font(.caption).opacity(0.9)
+            Text(voyage.titre.isEmpty ? "Voyage" : voyage.titre).font(etroit ? .subheadline.weight(.bold) : .headline).lineLimit(2)
+            Text(etroit ? voyage.debut.formatted(.dateTime.day().month(.abbreviated).year(.twoDigits))
+                        : "\(voyage.debut.formatted(.dateTime.day().month(.abbreviated).year())) – \(voyage.fin.formatted(.dateTime.day().month(.abbreviated)))")
+                .font(.caption).opacity(0.9).lineLimit(1)
             Spacer(minLength: 0)
             if actif {
                 Button { ouvrir(voyage) } label: {
-                    Label("Ouvrir", systemImage: "arrow.right.circle.fill").font(.subheadline.weight(.bold))
-                        .frame(maxWidth: .infinity).padding(.vertical, 7)
+                    Label("Ouvrir", systemImage: "arrow.right.circle.fill").font(.footnote.weight(.bold))
+                        .frame(maxWidth: .infinity).padding(.vertical, 5)
                         .background(Capsule().fill(.white)).foregroundStyle(teinte)
                 }
                 .buttonStyle(.plain)
             }
         }
         .foregroundStyle(.white)
-        .padding(14)
-        .frame(width: 200, height: 142, alignment: .topLeading)
+        .padding(etroit ? 10 : 12)
+        .frame(width: largeurCadre, height: 116, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .fill(LinearGradient(colors: [teinte, teinte.opacity(0.7)], startPoint: .topLeading, endPoint: .bottomTrailing)))
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(.white.opacity(actif ? 0.9 : 0), lineWidth: 3))
@@ -195,8 +205,8 @@ struct SelecteurVoyageView: View {
         }
         let lat = lieux.map(\.centre.latitude), lon = lieux.map(\.centre.longitude)
         let centre = CLLocationCoordinate2D(latitude: (lat.min()! + lat.max()!) / 2, longitude: (lon.min()! + lon.max()!) / 2)
-        let dLat = min(max((lat.max()! - lat.min()!) * 1.6, 20), 130)
-        let dLon = min(max((lon.max()! - lon.min()!) * 1.6, 30), 330)
+        let dLat = min(max((lat.max()! - lat.min()!) * 2.0, 24), 130)
+        let dLon = min(max((lon.max()! - lon.min()!) * 2.0, 40), 330)
         withAnimation(.easeInOut(duration: 0.6)) {
             position = .region(MKCoordinateRegion(center: centre, span: MKCoordinateSpan(latitudeDelta: dLat, longitudeDelta: dLon)))
         }

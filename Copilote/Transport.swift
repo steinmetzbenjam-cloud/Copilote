@@ -86,6 +86,8 @@ struct Transport: Codable, Equatable {
     var prixAdulteLocal: Bool?
     var prixEtudiantLocal: Bool?
     var prixEnfantLocal: Bool?
+    /// Itinéraire en transports en commun cherché avec Google, gardé avec le transport (absent des anciens transports).
+    var itineraireCommun: ItineraireCommun?
 
     var departCoordonnee: CLLocationCoordinate2D? {
         guard let departLatitude, let departLongitude else { return nil }

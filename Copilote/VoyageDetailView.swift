@@ -14,20 +14,27 @@ struct VoyageDetailView: View {
         ScrollView {
             VStack(spacing: 14) {
                 cadreProfil
-                cadreVoyageEtDates
+                cadreVoyageEtDates.disabled(!voyage.estOrganisateur)
                 CadreInfos(titre: "Monnaie locale", symbole: "coloncurrencysign.circle.fill", couleur: .orange) {
                     SectionMonnaie(voyage: voyage)
                 }
+                .disabled(!voyage.estOrganisateur)
                 CadreInfos(titre: "Partage avec le groupe", symbole: "person.2.fill", couleur: .pink) {
                     SectionPartage(voyage: voyage)
                 }
+                .disabled(!voyage.estOrganisateur)
                 CadreFamilles(voyage: voyage) { profilOuvert = true }
+                if !voyage.estOrganisateur {
+                    Label("Seul un organisateur modifie le voyage, ses familles et les rôles. Ton rôle : \(voyage.monRole.libelle).", systemImage: voyage.monRole.symbole)
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
                 CadreInfos(titre: "Notes", symbole: "note.text", couleur: .brown) {
                     TextEditor(text: $voyage.notes)
                         .scrollContentBackground(.hidden)
                         .frame(minHeight: 110)
                         .padding(8)
                         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .disabled(voyage.lectureSeule)
                 }
             }
             .padding(12)

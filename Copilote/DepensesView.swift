@@ -84,7 +84,7 @@ struct DepensesView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(membres.count < 2)
+        .disabled(membres.count < 2 || voyage.lectureSeule)
     }
 
     /// Toutes les dépenses, en cadres que l'on fait glisser de gauche à droite.
@@ -98,7 +98,7 @@ struct DepensesView: View {
                         ForEach(depensesTriees) { d in
                             Button { enEdition = d } label: { carte(d) }
                                 .buttonStyle(.plain)
-                                .contextMenu { Button("Supprimer", role: .destructive) { contexte.delete(d) } }
+                                .contextMenu { if !voyage.lectureSeule { Button("Supprimer", role: .destructive) { contexte.delete(d) } } }
                         }
                     }
                     .padding(.vertical, 4).padding(.horizontal, 2)
@@ -175,6 +175,7 @@ struct DepensesView: View {
                         Text(monnaie(v.montant, devise)).monospacedDigit()
                         Button("Remboursé") { rembourser(v, devise: devise) }
                             .buttonStyle(.bordered).controlSize(.small)
+                            .disabled(voyage.lectureSeule)
                     }
                 }
             } header: {

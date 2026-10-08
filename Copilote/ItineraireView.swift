@@ -89,6 +89,7 @@ struct ItineraireView: View {
         .onGeometryChange(for: Bool.self) { $0.size.width >= 700 } action: { ecranLarge = $0 }
         // Déposer une étape en dehors d'une carte de jour : elle n'a plus de jour.
         .dropDestination(for: String.self) { elements, _ in
+            guard !voyage.lectureSeule else { return false }
             guard let uid = elements.first(where: { $0.hasPrefix(Self.prefixe) })?.dropFirst(Self.prefixe.count),
                   let etape = voyage.etapes.first(where: { $0.uid == String(uid) }) else { return false }
             return demander(etape, vers: nil, avant: nil)
@@ -207,6 +208,7 @@ struct ItineraireView: View {
                     }
             }
             Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouterSansJour() }
+                .disabled(voyage.lectureSeule)
                 .buttonStyle(.borderless)
         }
         .padding(16)
@@ -254,6 +256,7 @@ struct ItineraireView: View {
             }
             if hebergements.isEmpty {
                 Button("Ajouter un hébergement ou un transport", systemImage: "plus.circle.fill") { ajouterHebergement(apres: jour) }
+                .disabled(voyage.lectureSeule)
                     .buttonStyle(.borderless).tint(couleurNuit).font(.footnote)
             }
         }
@@ -267,6 +270,7 @@ struct ItineraireView: View {
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
             .strokeBorder(couleurNuit.opacity(0.6), style: StrokeStyle(lineWidth: vise ? 2 : 1, dash: hebergements.isEmpty ? [5, 4] : [])))
         .dropDestination(for: String.self) { elements, _ in
+            guard !voyage.lectureSeule else { return false }
             defer { nuitVisee = nil }
             guard let etape = etapeGlissee(elements), etape.categorie == .hebergement else { return false }
             return demanderNuit(etape, apres: jour)
@@ -395,6 +399,7 @@ struct ItineraireView: View {
             }
 
             Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouter(le: jour) }
+                .disabled(voyage.lectureSeule)
                 .buttonStyle(.borderless)
                 .tint(couleur)
                 .padding(.top, 2)
@@ -417,7 +422,8 @@ struct ItineraireView: View {
             }
         }
         .dropDestination(for: String.self) { elements, _ in
-            recevoir(elements, jour: jour, avant: nil)
+            guard !voyage.lectureSeule else { return false }
+            return recevoir(elements, jour: jour, avant: nil)
         } isTargeted: { visee in
             if visee { jourVise = jour } else if let actuel = jourVise, cal.isDate(actuel, inSameDayAs: jour) { jourVise = nil }
         }
@@ -439,7 +445,8 @@ struct ItineraireView: View {
                 }
             }
             .dropDestination(for: String.self) { elements, _ in
-                recevoir(elements, jour: jour, avant: etape)
+            guard !voyage.lectureSeule else { return false }
+                return recevoir(elements, jour: jour, avant: etape)
             } isTargeted: { visee in
                 if visee { etapeVisee = etape.uid } else if etapeVisee == etape.uid { etapeVisee = nil }
             }

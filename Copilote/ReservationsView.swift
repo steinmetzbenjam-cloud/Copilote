@@ -23,11 +23,12 @@ struct ReservationsView: View {
                 ForEach(reservations) { r in
                     Button { enEdition = r } label: { ligne(r) }.buttonStyle(.plain)
                         .swipeActions {
-                            Button("Supprimer", role: .destructive) { contexte.delete(r) }
+                            if !voyage.lectureSeule { Button("Supprimer", role: .destructive) { contexte.delete(r) } }
                         }
                 }
                 Button("Ajouter une réservation", systemImage: "plus.circle", action: ajouter)
                     .buttonStyle(.borderless)
+                    .disabled(voyage.lectureSeule)
             } header: {
                 Text("Réservations")
             } footer: {

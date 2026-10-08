@@ -69,6 +69,8 @@ enum Sauvegarde {
             objets += v.commentaires.map { objet($0, .commentaire, $0.uid) }
             objets += v.avisEtapes.map { objet($0, .avisEtape, $0.uid) }
             objets += v.fichesFamilles.map { objet($0, .famille, $0.uid) }
+            objets += v.sondages.map { objet($0, .sondage, $0.uid) }
+            objets += v.votes.map { objet($0, .vote, $0.uid) }
             return VoyageSauve(uid: v.uid, titre: v.titre, objets: objets.compactMap { $0 })
         }
         let encodeur = JSONEncoder()

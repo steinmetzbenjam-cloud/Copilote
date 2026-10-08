@@ -12,17 +12,18 @@ struct VoyageView: View {
 
     init(voyage: Voyage) {
         self.voyage = voyage
-        _onglet = State(initialValue: .apercu)
+        _onglet = State(initialValue: .itineraire)
     }
 
     enum Onglet: String, CaseIterable, Identifiable {
         case apercu = "Aperçu"
         case itineraire = "Itinéraire"
-        case etapes = "Étapes"
+        case timing = "Timing"
         case carte = "Carte"
         case reservations = "Réserv."
         case depenses = "Dépenses"
         case budget = "Budget"
+        case groupe = "Groupe"
         case infos = "Infos"
         var id: String { rawValue }
 
@@ -30,14 +31,24 @@ struct VoyageView: View {
             switch self {
             case .apercu: "gauge.with.dots.needle.67percent"
             case .itineraire: "list.bullet.rectangle"
-            case .etapes: "mappin.and.ellipse"
+            case .timing: "calendar.day.timeline.left"
             case .carte: "map"
             case .reservations: "ticket"
             case .depenses: "eurosign.circle"
             case .budget: "chart.pie"
+            case .groupe: "person.3.sequence"
             case .infos: "info.circle"
             }
         }
+    }
+
+    /// Les vues proposées : sur Mac, l'aperçu n'a pas d'onglet (le compte à rebours est dans la barre de titre).
+    private var onglets: [Onglet] {
+        #if os(macOS)
+        Onglet.allCases.filter { $0 != .apercu }
+        #else
+        Onglet.allCases
+        #endif
     }
 
     /// Sur iPhone, des icônes : cinq noms ne tiendraient pas dans la barre.
@@ -148,11 +159,12 @@ struct VoyageView: View {
             switch onglet {
             case .apercu: ApercuView(voyage: voyage)
             case .itineraire: ItineraireView(voyage: voyage)
-            case .etapes: EtapesView(voyage: voyage)
+            case .timing: TimingView(voyage: voyage)
             case .carte: CarteView(voyage: voyage)
             case .reservations: ReservationsView(voyage: voyage)
             case .depenses: DepensesView(voyage: voyage)
             case .budget: BudgetView(voyage: voyage)
+            case .groupe: GroupeView(voyage: voyage)
             case .infos: VoyageDetailView(voyage: voyage)
             }
         }
@@ -196,11 +208,21 @@ struct VoyageView: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.55)
                         .frame(maxWidth: iconesSeules ? 140 : 260, alignment: .leading)
+                    #if os(macOS)
+                    // Le compte à rebours, juste à droite du nom du voyage.
+                    Text(voyage.compteARebours)
+                        .font(.system(size: 12, weight: .bold, design: .rounded)).monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 9).padding(.vertical, 3)
+                        .background(Capsule().fill(voyage.mode.couleur))
+                        .fixedSize()
+                        .help("Compte à rebours du voyage")
+                    #endif
                 }
             }
             ToolbarItem(placement: .principal) {
                 Picker("Section", selection: $onglet) {
-                    ForEach(Onglet.allCases) { onglet in
+                    ForEach(onglets) { onglet in
                         if iconesSeules {
                             Image(systemName: onglet.symbole).accessibilityLabel(onglet.rawValue).tag(onglet)
                         } else {
