@@ -5,6 +5,7 @@ import SwiftData
 struct ItineraireView: View {
     @Bindable var voyage: Voyage
     @Environment(\.modelContext) private var contexte
+    /// Étape dont le détail est ouvert dans un cadre posé sur la colonne des jours ; la carte zoome dessus.
     @State private var etapeEnEdition: Etape?
     @State private var nuitEnAjout: NuitAjout?
     @State private var transportDeNuitEnEdition: NuitTransport?
@@ -57,6 +58,7 @@ struct ItineraireView: View {
                     ScrollView { listeDesJours(avecEtapesAPlacer: false).padding(12) }
                         .frame(width: Self.largeurPanneau)
                         .scrollIndicators(.hidden)
+                        .overlay { cadreEtape.padding(12) }
                     // À droite, sous le bouton : la discussion puis les étapes à placer. Seuls les cadres captent le toucher.
                     VStack(alignment: .trailing, spacing: 0) {
                         if discussionOuverte {
@@ -83,6 +85,7 @@ struct ItineraireView: View {
                     fondDeCarte(margeGauche: 0).frame(height: max(220, geo.size.height * 0.36))
                     ScrollView { listeDesJours(avecEtapesAPlacer: true).padding(12) }
                         .background(FondDePage.couleur)
+                        .overlay { cadreEtape.padding(8) }
                 }
             }
         }
@@ -132,10 +135,7 @@ struct ItineraireView: View {
         .sheet(item: $membreAffiche) { ProfilMembreView(membre: $0) }
         .sheet(isPresented: Binding(get: { discussionOuverte && !ecranLarge }, set: { discussionOuverte = $0 })) { CommentairesView(voyage: voyage) }
         .sheet(item: $transportDeNuitEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
-        .sheet(item: $nuitEnAjout, onDismiss: nettoyer) { NuitAjoutView(voyage: voyage, nuit: $0) }
-        .sheet(item: $etapeEnEdition, onDismiss: nettoyer) { etape in
-            EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
-        }
+        .sheet(item: $nuitEnAjout, onDismiss: { nettoyer(sauf: etapeEnEdition) }) { NuitAjoutView(voyage: voyage, nuit: $0) }
         .sheet(item: $jourEnEdition, onDismiss: nettoyerJours) { infos in
             JourEditView(jour: infos, voyage: voyage, numero: (voyage.jours.firstIndex { cal.isDate($0, inSameDayAs: infos.date) } ?? 0) + 1)
         }
@@ -168,9 +168,37 @@ struct ItineraireView: View {
     }
 
     private func fondDeCarte(margeGauche: CGFloat) -> some View {
-        CarteDuVoyage(voyage: voyage, jourFocus: jourSelectionne, masquerAutresJours: false, margeGauche: margeGauche) { etape in
-            etapeEnEdition = etape
+        CarteDuVoyage(voyage: voyage, jourFocus: jourSelectionne, masquerAutresJours: false, margeGauche: margeGauche,
+                      etapeFocus: etapeEnEdition) { etape in
+            ouvrir(etape)
         }
+    }
+
+    // MARK: Détail d'une étape
+
+    /// Le détail de l'étape, dans un cadre qui recouvre la colonne des jours : la carte reste libre à côté.
+    @ViewBuilder private var cadreEtape: some View {
+        if let etape = etapeEnEdition {
+            EtapeEditView(etape: etape, jours: voyage.jours, onSupprimer: {
+                if etapeEnEdition === etape { etapeEnEdition = nil }
+                contexte.delete(etape)
+            }, onFermer: { fermerEtape() })
+            .id(etape.uid)
+            .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            .modifier(FondDeCarte())
+            .transition(.move(edge: .leading).combined(with: .opacity))
+        }
+    }
+
+    private func ouvrir(_ etape: Etape) {
+        // Passer d'une étape à l'autre : l'étape quittée, si elle est restée vide, est retirée.
+        if etapeEnEdition.map({ $0 !== etape }) ?? false { nettoyer(sauf: etape) }
+        withAnimation(.snappy) { etapeEnEdition = etape }
+    }
+
+    private func fermerEtape() {
+        withAnimation(.snappy) { etapeEnEdition = nil }
+        nettoyer()
     }
 
     /// Les jours, les uns au-dessus des autres.
@@ -221,7 +249,7 @@ struct ItineraireView: View {
         etape.ordre = (voyage.etapesSansJour.map(\.ordre).max() ?? -1) + 1
         etape.voyage = voyage
         contexte.insert(etape)
-        etapeEnEdition = etape
+        ouvrir(etape)
     }
 
     // MARK: Hébergements entre deux jours
@@ -580,7 +608,7 @@ struct ItineraireView: View {
             }
             .contentShape(Rectangle())
         // Pas de Button : sur Mac, un bouton capte le clic et empêche de démarrer un glissé à la souris.
-        .onTapGesture { etapeEnEdition = etape }
+        .onTapGesture { ouvrir(etape) }
         .accessibilityAddTraits(.isButton)
     }
 
@@ -598,8 +626,8 @@ struct ItineraireView: View {
     }
 
     /// Une étape créée puis laissée vide est retirée à la fermeture.
-    private func nettoyer() {
-        for etape in voyage.etapes where etape.titre.trimmingCharacters(in: .whitespaces).isEmpty && etape.lieu.isEmpty {
+    private func nettoyer(sauf gardee: Etape? = nil) {
+        for etape in voyage.etapes where etape !== gardee && etape.titre.trimmingCharacters(in: .whitespaces).isEmpty && etape.lieu.isEmpty {
             contexte.delete(etape)
         }
     }
@@ -613,7 +641,7 @@ struct ItineraireView: View {
         etape.ordre = voyage.prochainOrdre(du: jour)
         etape.voyage = voyage
         contexte.insert(etape)
-        etapeEnEdition = etape
+        ouvrir(etape)
     }
 }
 

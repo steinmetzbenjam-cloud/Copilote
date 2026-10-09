@@ -11,6 +11,8 @@ struct CarteDuVoyage: View {
     var masquerAutresJours = false
     /// Largeur recouverte à gauche par un panneau : la carte cadre le contenu dans la partie visible.
     var margeGauche: CGFloat = 0
+    /// Étape dont le détail est ouvert : la carte zoome sur son lieu et grossit son repère.
+    var etapeFocus: Etape? = nil
     var onEtape: (Etape) -> Void
 
     @State private var position: MapCameraPosition = .automatic
@@ -56,12 +58,18 @@ struct CarteDuVoyage: View {
         var largeur: CGFloat
         var hauteur: CGFloat
         var pays: [String]
+        var etape: String?
+        var latitude: Double?
+        var longitude: Double?
     }
+
+    private func estEtapeFocus(_ etape: Etape) -> Bool { etapeFocus === etape }
 
     private func signature(_ taille: CGSize) -> Signature {
         let somme = points(du: nil).reduce(0.0) { $0 + $1.latitude * 3 + $1.longitude }
         return Signature(jour: jourFocus, empreinte: somme + Double(points(du: nil).count),
-                         largeur: taille.width.rounded(), hauteur: taille.height.rounded(), pays: voyage.pays)
+                         largeur: taille.width.rounded(), hauteur: taille.height.rounded(), pays: voyage.pays,
+                         etape: etapeFocus?.uid, latitude: etapeFocus?.latitude, longitude: etapeFocus?.longitude)
     }
 
     // MARK: Tracés entre étapes
@@ -219,6 +227,7 @@ struct CarteDuVoyage: View {
                                 .frame(width: 24, height: 24)
                                 .background(.gray, in: Circle())
                                 .overlay(Circle().stroke(.white, lineWidth: 2))
+                                .scaleEffect(estEtapeFocus(etape) ? 1.4 : 1)
                         }
                         .buttonStyle(.plain)
                     }
@@ -246,7 +255,8 @@ struct CarteDuVoyage: View {
                                     .frame(width: 26, height: 26)
                                     .background(voyage.couleurNuit(apres: h.jour ?? jour), in: RoundedRectangle(cornerRadius: 7))
                                     .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white, lineWidth: 2))
-                                    .opacity(attenue && !precedeLeFocus(h) ? 0.4 : 1)
+                                    .opacity(attenue && !precedeLeFocus(h) && !estEtapeFocus(h) ? 0.4 : 1)
+                                    .scaleEffect(estEtapeFocus(h) ? 1.4 : 1)
                             }
                             .buttonStyle(.plain)
                         }
@@ -287,7 +297,9 @@ struct CarteDuVoyage: View {
                                             .overlay(Circle().stroke(.white, lineWidth: 2))
                                     }
                                 }
-                                    .opacity(attenue ? 0.4 : 1)
+                                    .opacity(attenue && !estEtapeFocus(etape) ? 0.4 : 1)
+                                    .scaleEffect(estEtapeFocus(etape) ? 1.4 : 1)
+                                    .shadow(color: .black.opacity(estEtapeFocus(etape) ? 0.35 : 0), radius: 4, y: 2)
                             }
                             .buttonStyle(.plain)
                         }
@@ -316,6 +328,13 @@ struct CarteDuVoyage: View {
 
     private func recadrer(taille: CGSize) async {
         guard taille.width > 50, taille.height > 50 else { return }
+        // Détail d'une étape ouvert : un cadre serré (environ 1,5 km) centré sur son lieu.
+        if let coord = etapeFocus?.coordonnee {
+            let centre = MKMapPoint(coord)
+            let cote = 1_500 * MKMapPointsPerMeterAtLatitude(coord.latitude)
+            cadrer(MKMapRect(x: centre.x - cote / 2, y: centre.y - cote / 2, width: cote, height: cote), taille: taille)
+            return
+        }
         var rectangle: MKMapRect?
 
         func ajouter(_ r: MKMapRect) { rectangle = rectangle.map { $0.union(r) } ?? r }
@@ -341,7 +360,11 @@ struct CarteDuVoyage: View {
         if contenu.width < minimum { contenu = contenu.insetBy(dx: (contenu.width - minimum) / 2, dy: 0) }
         if contenu.height < minimum { contenu = contenu.insetBy(dx: 0, dy: (contenu.height - minimum) / 2) }
         contenu = contenu.insetBy(dx: -contenu.width * 0.5, dy: -contenu.height * 0.5)
+        cadrer(contenu, taille: taille)
+    }
 
+    /// Place `contenu` au centre de la partie de la carte que le panneau de gauche ne recouvre pas.
+    private func cadrer(_ contenu: MKMapRect, taille: CGSize) {
         // Échelle (points de carte par point d'écran) pour que le contenu tienne dans la partie visible.
         let visible = max(taille.width - margeGauche, taille.width * 0.4)
         let echelle = max(contenu.width / visible, contenu.height / taille.height)

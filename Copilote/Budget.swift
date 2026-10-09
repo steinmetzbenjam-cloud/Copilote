@@ -139,23 +139,31 @@ struct LignesPrix: View {
         let caseEuros = Binding<Double?>(
             get: { local.wrappedValue ? prix.wrappedValue.flatMap { voyage?.versEuros($0) } : prix.wrappedValue },
             set: { prix.wrappedValue = $0; local.wrappedValue = false })
-        return LabeledContent(titre) {
-            HStack(spacing: 14) {
-                if aLocale { saisie(caseLocale, suffixe: code) }
-                saisie(caseEuros, suffixe: "€")
-            }
+        // Libellé à gauche, cases de largeur fixe calées à droite : elles s'alignent d'une ligne à l'autre.
+        return HStack(spacing: 14) {
+            Text(titre)
+            Spacer(minLength: 8)
+            if aLocale { saisie(caseLocale, suffixe: code) }
+            saisie(caseEuros, suffixe: "€")
         }
     }
 
     private func saisie(_ valeur: Binding<Double?>, suffixe: String) -> some View {
         HStack(spacing: 4) {
-            TextField("—", value: valeur, format: .number.precision(.fractionLength(0...2)))
+            // Une case blanche bordée : on voit où cliquer pour taper le prix.
+            TextField("", value: valeur, format: .number.precision(.fractionLength(0...2)))
+                .textFieldStyle(.plain)
                 .multilineTextAlignment(.trailing)
-                .frame(maxWidth: 90)
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.gray.opacity(0.35), lineWidth: 1))
+                .foregroundStyle(.black)
+                .frame(width: 84)
                 #if os(iOS)
                 .keyboardType(.decimalPad)
                 #endif
             Text(suffixe).foregroundStyle(.secondary).font(.callout)
+                .frame(minWidth: 30, alignment: .leading)
         }
     }
 }
@@ -171,25 +179,7 @@ func piedBudget(_ voyage: Voyage?) -> Text {
     }
 }
 
-/// Fiche d'une étape : le prix pour les adultes, les enfants et les étudiants.
-struct SectionBudgetEtape: View {
-    @Bindable var etape: Etape
-
-    var body: some View {
-        Section {
-            LignesPrix(voyage: etape.voyage,
-                       adulte: $etape.prixAdulte, adulteLocal: $etape.prixAdulteLocal,
-                       etudiant: $etape.prixEtudiant, etudiantLocal: $etape.prixEtudiantLocal,
-                       enfant: $etape.prixEnfant, enfantLocal: $etape.prixEnfantLocal)
-        } header: {
-            Text("Budget")
-        } footer: {
-            piedBudget(etape.voyage)
-        }
-    }
-}
-
-/// Fiche d'un transport : le prix par personne, comme pour une étape.
+/// Fiche d'un transport : le prix par personne, comme pour une étape (voir `EtapeEditView`).
 struct SectionBudgetTransport: View {
     let voyage: Voyage?
     @Binding var transport: Transport
