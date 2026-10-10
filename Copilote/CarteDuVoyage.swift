@@ -1,5 +1,6 @@
 import SwiftUI
 import MapKit
+import SwiftData
 
 /// La carte d'un voyage : étapes numérotées par jour, tracés, et lieux de référence des journées.
 /// Utilisée telle quelle par l'onglet Carte et, en arrière-plan, par l'Itinéraire.
@@ -21,6 +22,8 @@ struct CarteDuVoyage: View {
     @State private var regionPays: MKCoordinateRegion?
     /// Point d'intérêt de la carte touché : une petite fiche propose d'en faire une étape.
     @State private var lieuChoisi: LieuCarte?
+    /// Fond de carte choisi (plan, satellite, mixte), retenu d'une ouverture à l'autre et commun aux deux cartes.
+    @AppStorage("fondDeCarte") private var fond = FondCarte.plan
     #if os(iOS)
     /// iPhone, iPad : le point d'intérêt sélectionné par Plans lui-même.
     @State private var pointSelectionne: MapFeature?
@@ -228,9 +231,16 @@ struct CarteDuVoyage: View {
             let _ = Itineraires.shared.trajets.count
             MapReader { proxy in
                 carte(proxy)
+                    .mapStyle(fond.style)
                     .mapControls {
                         MapCompass()
                         MapScaleView()
+                    }
+                    // Le choix du fond de carte, en haut à gauche de la partie visible de la carte.
+                    .overlay(alignment: .topLeading) {
+                        choixDuFond
+                            .padding(.leading, margeGauche)
+                            .padding(12)
                     }
                     .overlay(alignment: .bottom) {
                         if let lieu = lieuChoisi, let onLieu {
@@ -379,6 +389,32 @@ struct CarteDuVoyage: View {
         }
     }
 
+    // MARK: Fond de carte
+
+    private var choixDuFond: some View {
+        Menu {
+            Picker("Fond de carte", selection: $fond) {
+                ForEach(FondCarte.allCases) { f in
+                    Label(f.libelle, systemImage: f.symbole).tag(f)
+                }
+            }
+            .pickerStyle(.inline)
+        } label: {
+            Image(systemName: fond.symbole)
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(.regularMaterial))
+                .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .accessibilityLabel("Fond de carte : \(fond.libelle)")
+        .help("Fond de carte : plan, satellite ou mixte")
+    }
+
     // MARK: Point d'intérêt
 
     private func ficheLieu(_ lieu: LieuCarte, onLieu: @escaping (LieuCarte) -> Void) -> some View {
@@ -477,6 +513,39 @@ struct CarteDuVoyage: View {
     }
 }
 
+/// Les fonds de carte proposés par Plans.
+enum FondCarte: String, CaseIterable, Identifiable {
+    case plan, satellite, mixte, relief
+    var id: String { rawValue }
+
+    var libelle: String {
+        switch self {
+        case .plan: "Plan"
+        case .satellite: "Satellite"
+        case .mixte: "Satellite avec noms"
+        case .relief: "Plan en relief"
+        }
+    }
+
+    var symbole: String {
+        switch self {
+        case .plan: "map"
+        case .satellite: "globe.europe.africa.fill"
+        case .mixte: "square.2.layers.3d"
+        case .relief: "mountain.2"
+        }
+    }
+
+    var style: MapStyle {
+        switch self {
+        case .plan: .standard
+        case .satellite: .imagery(elevation: .realistic)
+        case .mixte: .hybrid(elevation: .realistic)
+        case .relief: .standard(elevation: .realistic, emphasis: .muted)
+        }
+    }
+}
+
 /// Un point d'intérêt de la carte (restaurant, musée, plage…) qui peut devenir une étape.
 struct LieuCarte: Identifiable {
     let id = UUID()
@@ -516,6 +585,40 @@ struct LieuCarte: Identifiable {
                 < ici.distance(from: CLLocation(latitude: $1.placemark.coordinate.latitude, longitude: $1.placemark.coordinate.longitude))
         }
         return proche.map(LieuCarte.init(item:))
+    }
+}
+
+extension Voyage {
+    /// Crée une étape à partir d'un point d'intérêt de la carte (nom, position, catégorie, adresse, site) :
+    /// à la fin du jour donné, ou « à placer » sans jour.
+    @discardableResult
+    func creerEtape(depuis lieu: LieuCarte, jour: Date?, dans contexte: ModelContext) -> Etape {
+        let etape = Etape(titre: lieu.nom, jour: jour.map { Calendar.current.startOfDay(for: $0) }, categorie: lieu.categorie)
+        etape.lieu = lieu.adresse.map { "\(lieu.nom), \($0)" } ?? lieu.nom
+        etape.latitude = lieu.coordonnee.latitude
+        etape.longitude = lieu.coordonnee.longitude
+        etape.siteWeb = lieu.site
+        if let jour {
+            etape.ordre = prochainOrdre(du: jour)
+            // Un hébergement va dans la nuit qui suit le jour.
+            if lieu.categorie == .hebergement { placerEntreJours(etape, apres: jour) }
+        } else {
+            etape.ordre = (etapesSansJour.map(\.ordre).max() ?? -1) + 1
+        }
+        etape.voyage = self
+        contexte.insert(etape)
+        // iPhone, iPad : l'adresse complète, quand Plans la donne pour ce point (iOS 18).
+        #if os(iOS)
+        if #available(iOS 18.0, *), let feature = lieu.feature {
+            Task {
+                guard let item = try? await MKMapItemRequest(feature: feature).mapItem else { return }
+                let complet = LieuCarte(item: item)
+                if let adresse = complet.adresse, etape.lieu == lieu.nom { etape.lieu = "\(lieu.nom), \(adresse)" }
+                if etape.siteWeb == nil { etape.siteWeb = complet.site }
+            }
+        }
+        #endif
+        return etape
     }
 }
 

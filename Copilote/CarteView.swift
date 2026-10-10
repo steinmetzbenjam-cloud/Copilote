@@ -19,7 +19,11 @@ struct CarteView: View {
     }
 
     var body: some View {
-        CarteDuVoyage(voyage: voyage, jourFocus: jourChoisi, masquerAutresJours: true) { etapeEnEdition = $0 }
+        // Un point d'intérêt touché devient une étape : du jour affiché, ou à placer quand tous les jours sont affichés.
+        CarteDuVoyage(voyage: voyage, jourFocus: jourChoisi, masquerAutresJours: true,
+                      onLieu: voyage.lectureSeule ? nil : { lieu in
+                          etapeEnEdition = voyage.creerEtape(depuis: lieu, jour: jourChoisi, dans: contexte)
+                      }) { etapeEnEdition = $0 }
             .safeAreaInset(edge: .bottom) { barreDesJours }
             .overlay {
                 if aucuneEtapePlacee && voyage.pays.isEmpty {

@@ -317,30 +317,12 @@ struct ItineraireView: View {
         .modifier(FondDeCarte())
     }
 
-    /// Un point d'intérêt touché sur la carte devient une étape à placer (nom, position, catégorie, adresse), et sa fiche s'ouvre.
+    /// Un point d'intérêt touché sur la carte devient une étape à placer, et sa fiche s'ouvre.
     private func creerEtape(depuis lieu: LieuCarte) {
-        let etape = Etape(titre: lieu.nom, jour: nil, categorie: lieu.categorie)
-        etape.lieu = lieu.adresse.map { "\(lieu.nom), \($0)" } ?? lieu.nom
-        etape.latitude = lieu.coordonnee.latitude
-        etape.longitude = lieu.coordonnee.longitude
-        etape.siteWeb = lieu.site
-        etape.ordre = (voyage.etapesSansJour.map(\.ordre).max() ?? -1) + 1
-        etape.voyage = voyage
-        contexte.insert(etape)
+        let etape = voyage.creerEtape(depuis: lieu, jour: nil, dans: contexte)
         withAnimation(.snappy) { etapesAPlacerOuvertes = true }
         Self.etapesAPlacerOuvertesSession = true
         ouvrir(etape)
-        // iPhone, iPad : l'adresse complète, quand Plans la donne pour ce point (iOS 18).
-        #if os(iOS)
-        if #available(iOS 18.0, *), let feature = lieu.feature {
-            Task {
-                guard let item = try? await MKMapItemRequest(feature: feature).mapItem else { return }
-                let complet = LieuCarte(item: item)
-                if let adresse = complet.adresse, etape.lieu == lieu.nom { etape.lieu = "\(lieu.nom), \(adresse)" }
-                if etape.siteWeb == nil { etape.siteWeb = complet.site }
-            }
-        }
-        #endif
     }
 
     private func ajouterSansJour() {
