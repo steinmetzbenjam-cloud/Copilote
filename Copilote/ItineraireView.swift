@@ -27,6 +27,8 @@ struct ItineraireView: View {
     @State private var ecranLarge = false
     /// Hauteur du contenu de « Étapes à placer » (iPad), pour que son défilement ne couvre pas la carte.
     @State private var hauteurEtapesAPlacer: CGFloat = .infinity
+    /// « Étapes à placer » replié : seul son titre reste visible. Retenu d'une ouverture à l'autre.
+    @AppStorage("etapesAPlacerRepliees") private var etapesAPlacerRepliees = false
     /// Déplacement qui effacerait des transports : en attente de confirmation.
     @State private var deplacementEnAttente: DeplacementEnAttente?
 
@@ -225,19 +227,43 @@ struct ItineraireView: View {
     /// Étapes préparées sans jour : on les glisse sur la carte d'un jour pour les placer.
     private var etapesAPlacer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label("Étapes à placer", systemImage: "tray.full").font(.headline)
-            Text("Glisse une étape sur un jour.").font(.footnote).foregroundStyle(.secondary)
-            Divider()
-            ForEach(voyage.etapesSansJour) { etape in
-                ligne(etape)
-                    .draggable(Self.prefixe + etape.uid) {
-                        Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
-                            .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            // Le titre replie ou déroule le cadre ; replié, il montre combien d'étapes attendent.
+            Button { withAnimation(.snappy) { etapesAPlacerRepliees.toggle() } } label: {
+                HStack {
+                    Label("Étapes à placer", systemImage: "tray.full").font(.headline)
+                    if etapesAPlacerRepliees {
+                        Text("\(voyage.etapesSansJour.count)")
+                            .font(.caption.bold()).foregroundStyle(.white)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(Capsule().fill(.tint))
                     }
+                    Spacer()
+                    Image(systemName: "chevron.down")
+                        .font(.subheadline.weight(.bold))
+                        .foregroundStyle(.secondary)
+                        .rotationEffect(.degrees(etapesAPlacerRepliees ? -90 : 0))
+                        .frame(width: 28, height: 28)
+                        .background(Circle().fill(Color.secondary.opacity(0.15)))
+                }
+                .contentShape(Rectangle())
             }
-            Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouterSansJour() }
-                .disabled(voyage.lectureSeule)
-                .buttonStyle(.borderless)
+            .buttonStyle(.plain)
+            .accessibilityLabel(etapesAPlacerRepliees ? "Déplier les étapes à placer" : "Replier les étapes à placer")
+            .help(etapesAPlacerRepliees ? "Déplier" : "Replier")
+            if !etapesAPlacerRepliees {
+                Text("Glisse une étape sur un jour.").font(.footnote).foregroundStyle(.secondary)
+                Divider()
+                ForEach(voyage.etapesSansJour) { etape in
+                    ligne(etape)
+                        .draggable(Self.prefixe + etape.uid) {
+                            Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
+                                .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        }
+                }
+                Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouterSansJour() }
+                    .disabled(voyage.lectureSeule)
+                    .buttonStyle(.borderless)
+            }
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -300,7 +326,8 @@ struct ItineraireView: View {
         .dropDestination(for: String.self) { elements, _ in
             guard !voyage.lectureSeule else { return false }
             defer { nuitVisee = nil }
-            guard let etape = etapeGlissee(elements), etape.categorie == .hebergement else { return false }
+            // Toute étape lâchée sur la nuit devient l'hébergement de cette nuit.
+            guard let etape = etapeGlissee(elements) else { return false }
             return demanderNuit(etape, apres: jour)
         } isTargeted: { visee in
             if visee { nuitVisee = jour } else if let actuel = nuitVisee, cal.isDate(actuel, inSameDayAs: jour) { nuitVisee = nil }
@@ -496,10 +523,7 @@ struct ItineraireView: View {
     private func recevoir(_ elements: [String], jour: Date, avant cible: Etape?) -> Bool {
         defer { etapeVisee = nil; jourVise = nil }
         guard let uid = elements.first(where: { $0.hasPrefix(Self.prefixe) })?.dropFirst(Self.prefixe.count) else { return false }
-        // Un hébergement lâché sur un jour va à la fin de ce jour, entre lui et le suivant.
-        if let etape = voyage.etapes.first(where: { $0.uid == String(uid) }), etape.categorie == .hebergement {
-            return demanderNuit(etape, apres: voyage.jourDeNuit(pourDepotSur: jour))
-        }
+        // Un hébergement lâché parmi les étapes d'un jour y reste, en gardant sa catégorie.
         return deplacer(String(uid), vers: jour, avant: cible)
     }
 
@@ -531,7 +555,11 @@ struct ItineraireView: View {
     private func appliquer(_ d: DeplacementEnAttente) -> Bool {
         withAnimation {
             for e in d.perdus { e.transport = nil }
-            if d.nuit, let jour = d.jour { voyage.placerEntreJours(d.etape, apres: jour); return true }
+            if d.nuit, let jour = d.jour {
+                d.etape.categorie = .hebergement
+                voyage.placerEntreJours(d.etape, apres: jour)
+                return true
+            }
             if let jour = d.jour { return voyage.deplacer(d.etape, vers: jour, avant: d.cible) }
             return voyage.retirerDuJour(d.etape)
         }
@@ -546,7 +574,25 @@ struct ItineraireView: View {
     private func ligne(_ etape: Etape, couleur: Color = .accentColor, rang: Int? = nil, incoherence: Date? = nil, chevauche: Etape? = nil) -> some View {
         HStack(spacing: 12) {
                 Group {
-                    if let rang {
+                    if let rang, etape.categorie == .repas {
+                        // Un repas : l'assiette numérotée entre la fourchette et le couteau, comme sur la carte.
+                        PionRepas(numero: rang + 1, couleur: couleur, taille: 22)
+                    } else if let rang, etape.categorie == .hebergement {
+                        // Un hébergement : un lit de la couleur du jour, son numéro dans une pastille.
+                        Image(systemName: "bed.double.fill")
+                            .font(.system(size: 20))
+                            .foregroundStyle(couleur)
+                            .frame(width: 34, height: 24)
+                            .overlay(alignment: .topTrailing) {
+                                Text("\(rang + 1)")
+                                    .font(.system(size: 10, weight: .bold))
+                                    .foregroundStyle(.white)
+                                    .frame(minWidth: 15, minHeight: 15)
+                                    .background(couleur, in: Circle())
+                                    .overlay(Circle().stroke(FondDePage.carte, lineWidth: 1.5))
+                                    .offset(x: 4, y: -7)
+                            }
+                    } else if let rang {
                         Text("\(rang + 1)")
                             .font(.caption.bold())
                             .foregroundStyle(.white)
@@ -558,6 +604,8 @@ struct ItineraireView: View {
                             .foregroundStyle(couleur)
                     }
                 }
+                // Même largeur pour tous les repères : les titres restent alignés d'une ligne à l'autre.
+                .frame(width: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(etape.titre.isEmpty ? "Sans titre" : etape.titre).font(.headline).foregroundStyle(.primary)
                     if etape.noteGoogle != nil || etape.noteTripadvisor != nil {
@@ -569,6 +617,11 @@ struct ItineraireView: View {
                     }
                 }
                 Spacer()
+                // Sans horaire : la durée prévue, si on l'a notée.
+                if etape.heure == nil, etape.heureFin == nil, let duree = etape.duree {
+                    Label(CategorieEtape.texteDuree(duree), systemImage: "hourglass")
+                        .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)
+                }
                 if etape.heure == nil, let fin = etape.heureFin {
                     Text("→ \(etape.heureAffichee(fin))")
                         .font(.subheadline.monospacedDigit()).foregroundStyle(.secondary)

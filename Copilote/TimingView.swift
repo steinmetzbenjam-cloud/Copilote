@@ -14,7 +14,6 @@ struct TimingView: View {
     @State private var nuitEnAjout: NuitAjout?
     @State private var aPlacerOuvert = false
     @State private var deplacement: Deplacement?
-    @State private var redimension: Redimension?
     @State private var confirmation: DeplacementEnAttente?
     @State private var itineraires = Itineraires.shared
     /// Vrai pour dessiner l'agenda hors écran (contrôles du système remplacés par de simples images).
@@ -31,7 +30,6 @@ struct TimingView: View {
     }
 
     private struct Deplacement: Equatable { var id: String; var dx: CGFloat; var dy: CGFloat }
-    private struct Redimension: Equatable { var id: String; var dy: CGFloat }
 
     private struct DeplacementEnAttente: Identifiable {
         let id = UUID()
@@ -80,6 +78,8 @@ struct TimingView: View {
         switch c {
         case .repas: 75
         case .visite: 90
+        case .musee: 120
+        case .nature: 120
         case .activite: 120
         case .transport: 60
         case .hebergement: 60
@@ -176,7 +176,8 @@ struct TimingView: View {
             let delta = e.heure.map { ecart($0, jour, ze) } ?? 0
             var debut = e.heure.map { minutes($0) + delta } ?? curseur
             debut = min(max(debut, 0), 24 * 60 - 30)
-            var fin = debut + dureeParDefaut(e.categorie)
+            // La durée de l'étape, sinon une durée type selon sa catégorie.
+            var fin = debut + (e.duree ?? dureeParDefaut(e.categorie))
             var estime = e.heure == nil
             if let f = e.heureFin, e.heure != nil, minutes(f) + delta > debut { fin = minutes(f) + delta } else if e.heure != nil { estime = false }
             fin = min(fin, 24 * 60)
@@ -258,6 +259,8 @@ struct TimingView: View {
         case .hebergement: .indigo
         case .transport: .blue
         case .visite: .pink
+        case .musee: .purple
+        case .nature: .mint
         case .activite: .green
         case .autre: .gray
         }
@@ -520,13 +523,11 @@ struct TimingView: View {
 
     @ViewBuilder private func bloc(_ b: Bloc, jourIndex: Int, jour: Date, voie: Int, total: Int, largeur: CGFloat) -> some View {
         let enDeplacement = deplacement?.id == b.id ? deplacement : nil
-        let enRedim = redimension?.id == b.id ? redimension : nil
         let dy = (enDeplacement?.dy ?? 0)
         let debut = b.debut + Double(dy / hauteurHeure) * 60
         // Un transport qui passe minuit s'arrête au bas de la colonne du jour.
         let decalageDeplacement: Double = Double((enDeplacement?.dy ?? 0) / hauteurHeure) * 60
-        let decalageRedim: Double = Double((enRedim?.dy ?? 0) / hauteurHeure) * 60
-        let finBrute: Double = b.fin + decalageDeplacement + decalageRedim
+        let finBrute: Double = b.fin + decalageDeplacement
         let fin: Double = min(finBrute, 24 * 60)
         let hauteur = max(CGFloat(fin - debut) / 60 * hauteurHeure, b.genre == .transport ? 30 : 30)
         let inset: CGFloat = b.genre == .transport ? 14 : 3
@@ -535,14 +536,14 @@ struct TimingView: View {
 
         Group {
             switch b.genre {
-            case .etape: carteEtape(b, hauteur: hauteur, debut: debut, fin: fin, jourIndex: jourIndex, actif: enDeplacement != nil || enRedim != nil)
+            case .etape: carteEtape(b, hauteur: hauteur, debut: debut, fin: fin, jourIndex: jourIndex, actif: enDeplacement != nil)
             case .transport: carteTransport(b, hauteur: hauteur)
             case .hotelSoir, .hotelMatin: carteHotel(b, hauteur: hauteur)
             }
         }
         .frame(width: w - 2, height: hauteur)
         .offset(x: x, y: CGFloat(debut) / 60 * hauteurHeure + 1)
-        .zIndex(enDeplacement != nil || enRedim != nil ? 10 : (b.genre == .transport ? 2 : 1))
+        .zIndex(enDeplacement != nil ? 10 : (b.genre == .transport ? 2 : 1))
     }
 
     private func heureTexte(_ m: Double) -> String {
@@ -555,7 +556,6 @@ struct TimingView: View {
         let c = couleurJour(jourIndex)
         let cat = couleurCategorie(b.etape?.categorie ?? .autre)
         let haut = hauteur >= 56
-        let quelconque = b.etape.map { !$0.photos.isEmpty } ?? false
         return ZStack(alignment: .bottom) {
             HStack(spacing: 0) {
                 Rectangle().fill(cat).frame(width: 5)
@@ -577,9 +577,6 @@ struct TimingView: View {
                 .padding(.horizontal, 7).padding(.vertical, 5)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            if quelconque == false, !(b.etape?.voyage?.lectureSeule ?? true), b.etape != nil {
-                Capsule().fill(.secondary.opacity(0.5)).frame(width: 28, height: 4).padding(.bottom, 2)
-            }
         }
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(.background))
         .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(c.opacity(0.16)))
@@ -590,19 +587,8 @@ struct TimingView: View {
         .contentShape(Rectangle())
         .onTapGesture { if let e = b.etape { etapeEnEdition = e } }
         .gesture(deplacementGeste(b, jourIndex: jourIndex))
-        .overlay(alignment: .bottom) { poignee(b) }
         .contextMenu { menuEtape(b) }
         .accessibilityLabel("\(b.titre), \(heureTexte(debut)) à \(heureTexte(fin))")
-    }
-
-    /// La poignée du bas : la tirer règle l'heure de fin.
-    @ViewBuilder private func poignee(_ b: Bloc) -> some View {
-        if b.etape != nil, !voyage.lectureSeule {
-            Color.clear.frame(height: 14).contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 2)
-                    .onChanged { redimension = Redimension(id: b.id, dy: $0.translation.height) }
-                    .onEnded { v in terminerRedimension(b, dy: v.translation.height); redimension = nil })
-        }
     }
 
     @ViewBuilder private func menuEtape(_ b: Bloc) -> some View {
@@ -750,15 +736,6 @@ struct TimingView: View {
             if let duree = c.duree { c.etape.heureFin = date(c.jour, min(c.minutes + duree, 24 * 60 - 1)) }
             // L'ordre suit les heures, sauf si des transports entre étapes en dépendent.
             if voyage.etapes(du: c.jour).allSatisfy({ $0.transport == nil }) { voyage.trierParHeure(c.jour) }
-        }
-    }
-
-    private func terminerRedimension(_ b: Bloc, dy: CGFloat) {
-        guard let e = b.etape, let jour = e.jour else { return }
-        let fin = min(max(arrondi(b.fin + Double(dy / hauteurHeure) * 60), b.debut + 15) - b.delta, 24 * 60 - 1)
-        withAnimation(.snappy) {
-            if e.heure == nil { e.heure = date(jour, b.debut - b.delta) }
-            e.heureFin = date(jour, fin)
         }
     }
 

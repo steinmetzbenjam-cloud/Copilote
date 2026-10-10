@@ -140,16 +140,17 @@ struct LignesPrix: View {
             get: { local.wrappedValue ? prix.wrappedValue.flatMap { voyage?.versEuros($0) } : prix.wrappedValue },
             set: { prix.wrappedValue = $0; local.wrappedValue = false })
         // Libellé à gauche, cases de largeur fixe calées à droite : elles s'alignent d'une ligne à l'autre.
-        return HStack(spacing: 14) {
-            Text(titre)
-            Spacer(minLength: 8)
+        return HStack(spacing: 10) {
+            // Le libellé garde sa taille : jamais tronqué ni coupé sur deux lignes.
+            Text(titre).lineLimit(1).fixedSize()
+            Spacer(minLength: 4)
             if aLocale { saisie(caseLocale, suffixe: code) }
             saisie(caseEuros, suffixe: "€")
         }
     }
 
     private func saisie(_ valeur: Binding<Double?>, suffixe: String) -> some View {
-        HStack(spacing: 4) {
+        HStack(spacing: 3) {
             // Une case blanche bordée : on voit où cliquer pour taper le prix.
             TextField("", value: valeur, format: .number.precision(.fractionLength(0...2)))
                 .textFieldStyle(.plain)
@@ -158,12 +159,13 @@ struct LignesPrix: View {
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 7))
                 .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.gray.opacity(0.35), lineWidth: 1))
                 .foregroundStyle(.black)
-                .frame(width: 84)
+                .frame(width: 72)
                 #if os(iOS)
                 .keyboardType(.decimalPad)
                 #endif
             Text(suffixe).foregroundStyle(.secondary).font(.callout)
-                .frame(minWidth: 30, alignment: .leading)
+                .lineLimit(1).fixedSize()
+                .frame(minWidth: 26, alignment: .leading)
         }
     }
 }

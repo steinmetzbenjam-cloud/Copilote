@@ -43,6 +43,8 @@ struct BudgetView: View {
         case .hebergement: .indigo
         case .transport: .blue
         case .visite: .pink
+        case .musee: .purple
+        case .nature: .mint
         case .activite: .green
         case .autre: .gray
         }

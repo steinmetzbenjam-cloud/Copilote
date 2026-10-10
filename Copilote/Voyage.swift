@@ -198,14 +198,6 @@ extension Voyage {
         return true
     }
 
-    /// Jour dont la nuit reçoit un hébergement lâché sur `jour` : la nuit qui suit, ou celle d'avant si c'est le dernier jour.
-    func jourDeNuit(pourDepotSur jour: Date) -> Date {
-        let cal = Calendar.current
-        let jours = self.jours
-        guard jours.count > 1, let dernier = jours.last, cal.isDate(dernier, inSameDayAs: jour) else { return jour }
-        return jours[jours.count - 2]
-    }
-
     /// Étapes dont le jour n'est plus dans les dates du voyage : elles repartent dans « À placer ».
     func rangerEtapesHorsDates() {
         let cal = Calendar.current

@@ -3,13 +3,15 @@ import SwiftData
 import CoreLocation
 
 enum CategorieEtape: String, Codable, CaseIterable, Identifiable {
-    case visite, repas, transport, hebergement, activite, autre
+    case visite, musee, nature, repas, transport, hebergement, activite, autre
 
     var id: String { rawValue }
 
     var libelle: String {
         switch self {
         case .visite: "Visite"
+        case .musee: "Musée"
+        case .nature: "Nature"
         case .repas: "Repas"
         case .transport: "Transport"
         case .hebergement: "Hébergement"
@@ -21,12 +23,23 @@ enum CategorieEtape: String, Codable, CaseIterable, Identifiable {
     var symbole: String {
         switch self {
         case .visite: "mappin.and.ellipse"
+        case .musee: "building.columns.fill"
+        case .nature: "leaf.fill"
         case .repas: "fork.knife"
         case .transport: "car.fill"
         case .hebergement: "bed.double.fill"
-        case .activite: "figure.hiking"
+        case .activite: "ticket.fill"
         case .autre: "star.fill"
         }
+    }
+}
+
+extension CategorieEtape {
+    /// Texte court d'une durée en minutes : « 45 min », « 2 h », « 1 h 30 ».
+    static func texteDuree(_ minutes: Double) -> String {
+        let m = Int(minutes.rounded())
+        if m < 60 { return "\(m) min" }
+        return m % 60 == 0 ? "\(m / 60) h" : "\(m / 60) h \(String(format: "%02d", m % 60))"
     }
 }
 
@@ -41,6 +54,8 @@ final class Etape {
     var heure: Date?
     /// Heure de fin (facultative).
     var heureFin: Date?
+    /// Durée de l'activité, en minutes (facultative). Avec une heure de début, elle donne l'heure de fin.
+    var duree: Double?
     /// Fuseau horaire des heures de l'étape (identifiant, ex. « America/Costa_Rica »), si différent de celui de son lieu.
     var fuseauChoisi: String?
     var categorie: CategorieEtape

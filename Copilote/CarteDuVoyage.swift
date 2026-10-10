@@ -399,7 +399,8 @@ extension Voyage {
 }
 
 /// Un rond de la couleur du jour avec le numéro en blanc, entouré d'une fourchette à gauche et d'un couteau à droite.
-private struct PionRepas: View {
+/// Sert sur la carte et dans la liste des jours de l'Itinéraire.
+struct PionRepas: View {
     let numero: Int
     let couleur: Color
     let taille: CGFloat

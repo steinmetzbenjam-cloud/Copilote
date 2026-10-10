@@ -38,9 +38,10 @@ struct EtapeEditView: View {
     private var jourChoisi: Binding<Date?> {
         Binding(get: { etape.jour },
                 set: {
+                    // Un hébergement qui n'était pas parmi les étapes d'un jour va dans la nuit qui suit le jour choisi.
+                    let dansUnJour = etape.jour != nil && !etape.apresJour
                     etape.jour = $0
-                    // Un hébergement est toujours entre ce jour et le suivant.
-                    if let jour = $0, etape.categorie == .hebergement, let voyage = etape.voyage { voyage.placerEntreJours(etape, apres: jour) }
+                    if let jour = $0, etape.categorie == .hebergement, !dansUnJour, let voyage = etape.voyage { voyage.placerEntreJours(etape, apres: jour) }
                     if $0 == nil { etape.heure = nil; etape.heureFin = nil; etape.apresJour = false; horaireOuvert = false }
                 })
     }
@@ -51,6 +52,42 @@ struct EtapeEditView: View {
                     horaireOuvert = $0
                     if !$0 { etape.heure = nil; etape.heureFin = nil }
                 })
+    }
+
+    /// Début : avec une durée connue, l'heure de fin suit.
+    private var heureDebut: Binding<Date?> {
+        Binding(get: { etape.heure },
+                set: {
+                    etape.heure = $0
+                    if let debut = $0, let duree = etape.duree { etape.heureFin = debut.addingTimeInterval(duree * 60) }
+                })
+    }
+
+    /// Fin : choisie après le début, elle redonne la durée.
+    private var heureDeFin: Binding<Date?> {
+        Binding(get: { etape.heureFin },
+                set: {
+                    etape.heureFin = $0
+                    if let debut = etape.heure, let fin = $0, fin > debut { etape.duree = fin.timeIntervalSince(debut) / 60 }
+                })
+    }
+
+    /// Durée : avec une heure de début, l'heure de fin suit.
+    private var dureeChoisie: Binding<Double?> {
+        Binding(get: { etape.duree },
+                set: {
+                    etape.duree = $0
+                    if let debut = etape.heure {
+                        etape.heureFin = $0.map { debut.addingTimeInterval($0 * 60) }
+                    }
+                })
+    }
+
+    /// Les durées proposées, plus celle de l'étape si elle n'en fait pas partie (venue d'une heure de fin).
+    private var durees: [Double] {
+        let base: [Double] = [15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480]
+        guard let d = etape.duree, !base.contains(d) else { return base }
+        return (base + [d]).sorted()
     }
 
     private func bulleHeure(_ valeur: Binding<Date?>, depart: Int) -> some View {
@@ -170,9 +207,19 @@ struct EtapeEditView: View {
         return (voyage.transportAller, vue)
     }
 
-    /// Les catégories proposées : transport et hébergement ont leur propre fenêtre, on ne les garde que pour une étape qui l'est déjà.
+    /// Les catégories proposées, hébergement en tête. Le transport a sa propre fenêtre : on ne le garde que pour une étape qui l'est déjà.
     private var categories: [CategorieEtape] {
-        CategorieEtape.allCases.filter { ![.transport, .hebergement].contains($0) || $0 == etape.categorie }
+        [.hebergement] + CategorieEtape.allCases.filter { $0 != .hebergement && ($0 != .transport || $0 == etape.categorie) }
+    }
+
+    /// Change la catégorie. Un hébergement de nuit qui n'en est plus un rejoint la fin des étapes de son jour.
+    private func choisir(_ c: CategorieEtape) {
+        withAnimation(.snappy) {
+            etape.categorie = c
+            if c != .hebergement, etape.apresJour, let jour = etape.jour, let voyage = etape.voyage {
+                _ = voyage.deplacer(etape, vers: jour, avant: nil)
+            }
+        }
     }
 
     /// Une petite tuile par catégorie, côte à côte ; la catégorie choisie est remplie de couleur.
@@ -180,7 +227,7 @@ struct EtapeEditView: View {
         FlowLayout(espacement: 6) {
             ForEach(categories) { c in
                 let choisie = etape.categorie == c
-                Button { withAnimation(.snappy) { etape.categorie = c } } label: {
+                Button { choisir(c) } label: {
                     Label(c.libelle, systemImage: c.symbole)
                         .font(.caption.weight(.medium))
                         .lineLimit(1)
@@ -199,9 +246,7 @@ struct EtapeEditView: View {
     private var champs: some View {
         ScrollView {
             VStack(spacing: 14) {
-                if etape.categorie != .hebergement {
-                    CadreSection("Catégorie", symbole: "square.grid.2x2", couleur: .purple) { tuilesCategories }
-                }
+                CadreSection("Catégorie", symbole: "square.grid.2x2", couleur: .purple) { tuilesCategories }
                 CadreSection("Jour et horaire", symbole: "calendar", couleur: .blue) {
                     LabeledContent("Jour") {
                         Picker("Jour", selection: jourChoisi) {
@@ -218,13 +263,21 @@ struct EtapeEditView: View {
                         Text("Nuit du \(jour.formatted(.dateTime.day().month(.wide))) au \(lendemain.formatted(.dateTime.day().month(.wide)))")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
+                    LabeledContent("Durée") {
+                        Picker("Durée", selection: dureeChoisie) {
+                            Text("Non précisée").tag(Double?.none)
+                            ForEach(durees, id: \.self) { Text(CategorieEtape.texteDuree($0)).tag(Double?.some($0)) }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
+                    }
                     if etape.jour != nil { Toggle("Horaire", isOn: horaireActive) }
                     if etape.jour != nil, horaireActive.wrappedValue {
                         HStack {
                             Spacer()
-                            bulleHeure($etape.heure, depart: 9)
+                            bulleHeure(heureDebut, depart: 9)
                             Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                            bulleHeure($etape.heureFin, depart: (etape.heure.map { Calendar.current.component(.hour, from: $0) + 1 } ?? 10) % 24)
+                            bulleHeure(heureDeFin, depart: (etape.heure.map { Calendar.current.component(.hour, from: $0) + 1 } ?? 10) % 24)
                         }
                         // L'heure saisie est celle du lieu de l'étape ; on peut la noter dans un autre fuseau.
                         LigneFuseau(choisi: $etape.fuseauChoisi, parDefaut: etape.fuseauParDefaut,
@@ -291,10 +344,14 @@ struct EtapeEditView: View {
                     onSupprimer()
                     fermer()
                 }
+                // Rouge plein, texte blanc : le bouton se voit bien, même en mode sombre.
+                .font(.body.weight(.semibold))
+                .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 12)
-                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.red.opacity(0.08)))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.red.opacity(0.35), lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.red))
+                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .buttonStyle(.plain)
             }
             .buttonStyle(.borderless)
             .padding(14)
