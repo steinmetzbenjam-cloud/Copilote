@@ -11,6 +11,7 @@ struct ReglagesView: View {
     @State private var referent = Cles.referentTripadvisor
     @State private var messageSchema = ""
     @State private var schemaEnCours = false
+    @State private var tutorielOuvert = false
 
     private func etat(_ service: Cles.Service, saisie: String) -> Cles.Etat {
         saisie.isEmpty ? .absente : Cles.etat(service)
@@ -29,6 +30,13 @@ struct ReglagesView: View {
     var body: some View {
         NavigationStack {
             Form {
+                Section {
+                    Button("Revoir le tutoriel", systemImage: "graduationcap") { tutorielOuvert = true }
+                } header: {
+                    Text("Aide")
+                } footer: {
+                    Text("Les grands points du fonctionnement de Copilote, en quelques pages.")
+                }
                 Section {
                     SecureField("Clé d'API", text: $google)
                         .autocorrectionDisabled()
@@ -122,6 +130,7 @@ struct ReglagesView: View {
             }
             .formStyle(.grouped)
             .navigationTitle("Réglages")
+            .sheet(isPresented: $tutorielOuvert) { TutorielView() }
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
             #endif

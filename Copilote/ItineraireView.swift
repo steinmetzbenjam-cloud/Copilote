@@ -20,6 +20,8 @@ struct ItineraireView: View {
     /// Étape dont on affiche l'explication de l'avertissement d'horaire.
     @State private var avertissementOuvert: String?
     @State private var discussionOuverte = false
+    /// Fenêtre des votes, ouverte depuis le rond « Votes » de la carte.
+    @State private var votesOuverts = false
     @State private var profilOuvert = false
     /// Dernier moment où la discussion était ouverte : au-delà, les messages des autres sont « nouveaux ».
     @State private var discussionVueLe = Date.now
@@ -138,6 +140,16 @@ struct ItineraireView: View {
         .onChange(of: discussionOuverte) { marquerDiscussionVue() }
         .onChange(of: voyage.commentaires.count) { if discussionOuverte { marquerDiscussionVue() } }
         .sheet(isPresented: $profilOuvert) { ProfilEditView() }
+        .sheet(isPresented: $votesOuverts) {
+            NavigationStack {
+                VotesView(voyage: voyage)
+                    .navigationTitle("Votes")
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("OK") { votesOuverts = false } } }
+            }
+            #if os(macOS)
+            .frame(minWidth: 520, minHeight: 560)
+            #endif
+        }
         .sheet(item: $membreAffiche) { ProfilMembreView(membre: $0) }
         .sheet(isPresented: Binding(get: { discussionOuverte && !ecranLarge }, set: { discussionOuverte = $0 })) { CommentairesView(voyage: voyage) }
         .sheet(item: $transportDeNuitEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
@@ -154,9 +166,40 @@ struct ItineraireView: View {
     /// Les deux ronds, côte à côte : les étapes à placer, puis les messages.
     private var boutonsRonds: some View {
         HStack(spacing: 10) {
+            // Un vote en cours : raccourci vers la fenêtre des votes.
+            if !voyage.votesOuverts.isEmpty { boutonVotes }
             boutonEtapesAPlacer
             boutonMessages
         }
+    }
+
+    /// Votes en cours : la pastille rouge compte ceux où ma famille n'a pas encore voté.
+    private var boutonVotes: some View {
+        let enAttente = voyage.votesEnAttenteDeMoi.count
+        return Button { votesOuverts = true } label: {
+            Image(systemName: "hand.thumbsup.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 46, height: 46)
+                .background(Circle().fill(Color.purple))
+                .overlay(Circle().stroke(.white, lineWidth: 2))
+                .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                .overlay(alignment: .topTrailing) {
+                    if enAttente > 0 {
+                        Text("\(enAttente)")
+                            .font(.system(size: 11, weight: .bold)).monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 20, minHeight: 20)
+                            .background(Capsule().fill(.red))
+                            .overlay(Capsule().stroke(Color.white, lineWidth: 2))
+                            .offset(x: 5, y: -4)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(enAttente > 0 ? "Votes en cours, \(enAttente) en attente de ma voix" : "Votes en cours")
+        .help("Vote en cours : ouvrir les votes")
     }
 
     /// Ouvre ou ferme la fenêtre des étapes à placer ; une pastille rouge donne le nombre d'étapes qui attendent.

@@ -355,6 +355,12 @@ struct EtapeEditView: View {
                                     coordonnees: etape.coordonnee.map { [$0] } ?? [])
                     }
                 }
+                // Ma note et mon commentaire, puis ce qu'en pensent les autres voyageurs.
+                if let voyage = etape.voyage {
+                    CadreSection("Note et commentaires", symbole: "star.bubble", couleur: .pink) {
+                        AvisEtapeSection(voyage: voyage, etape: etape)
+                    }
+                }
                 CadreSection("Budget", symbole: "eurosign.circle", couleur: .green) {
                     LignesPrix(voyage: etape.voyage,
                                adulte: $etape.prixAdulte, adulteMonnaie: $etape.monnaieAdulte,
@@ -412,12 +418,6 @@ struct EtapeEditView: View {
                         .padding(6)
                         .frame(minHeight: 80)
                         .background(RoundedRectangle(cornerRadius: 8).fill(FondDePage.carte))
-                }
-                // Qui a noté et qui a écrit quoi : le groupe donne son avis en préparation.
-                if let voyage = etape.voyage, !voyage.avis(de: etape).isEmpty {
-                    CadreSection("Avis du groupe", symbole: "star.bubble", couleur: .pink) {
-                        ListeAvisEtape(voyage: voyage, etape: etape)
-                    }
                 }
                 Button(etape.categorie == .hebergement ? "Supprimer l'hébergement" : "Supprimer l'étape", systemImage: "trash", role: .destructive) {
                     onSupprimer()

@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var reglagesOuverts = false
     /// Première ouverture de l'app : on demande qui est l'utilisateur.
     @State private var profilPremiereFois = false
+    /// Première ouverture de l'app : un petit tutoriel, avant de demander qui est l'utilisateur.
+    @State private var tutorielOuvert = false
     /// Au lancement, sans voyage ouvert : liste de tous les voyages à choisir.
     @State private var selecteurOuvert = false
     @State private var selecteurDejaPropose = false
@@ -97,8 +99,16 @@ struct ContentView: View {
         .sheet(isPresented: $selecteurOuvert) {
             SelecteurVoyageView(voyages: voyages, onChoix: { selection = $0 }, onNouveau: { nouveauVoyageOuvert = true })
         }
-        .onAppear {
+        .sheet(isPresented: $tutorielOuvert, onDismiss: {
             if !Profil.partage.estRenseigne { profilPremiereFois = true } else { rouvrirOuProposer() }
+        }) { TutorielView() }
+        .onAppear {
+            if !Profil.partage.estRenseigne {
+                // Nouvel utilisateur : le tutoriel d'abord (une seule fois), puis son profil.
+                if UserDefaults.standard.bool(forKey: TutorielView.cleVu) { profilPremiereFois = true } else { tutorielOuvert = true }
+            } else {
+                rouvrirOuProposer()
+            }
         }
         .sheet(isPresented: $choixSauvegardeOuvert, onDismiss: {
             // L'enregistrement s'ouvre une fois la feuille de choix refermée.

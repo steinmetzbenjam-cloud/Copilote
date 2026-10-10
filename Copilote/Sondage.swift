@@ -7,6 +7,9 @@ struct OptionSondage: Codable, Hashable, Identifiable {
     var id: String = UUID().uuidString
     var titre: String = ""
     var detail: String = ""
+    /// Étape ou logement du voyage que cette option propose (pour comparer deux étapes au même moment, ou deux logements).
+    /// Absent des options libres et des votes créés avant.
+    var etapeUID: String?
 }
 
 /// Une proposition soumise au vote du groupe : plusieurs options, une voix par famille.
@@ -91,6 +94,22 @@ extension Voyage {
             vote.voyage = self
             contexte.insert(vote)
         }
+    }
+
+    /// L'étape (ou le logement) liée à une option de vote, si elle existe encore.
+    func etape(de option: OptionSondage) -> Etape? {
+        option.etapeUID.flatMap { uid in etapes.first { $0.uid == uid } }
+    }
+
+    /// Votes encore ouverts.
+    var votesOuverts: [Sondage] { sondages.filter { !$0.clos } }
+
+    /// Votes ouverts où ma famille n'a pas encore voté.
+    var votesEnAttenteDeMoi: [Sondage] {
+        let moi = MoiVoyage.lire(self)
+        guard !moi.isEmpty else { return votesOuverts }
+        let cle = cleCompte(de: moi)
+        return votesOuverts.filter { s in !votes(de: s).contains { $0.compteCle == cle } }
     }
 
     /// Supprime un vote avec ses voix.

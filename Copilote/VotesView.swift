@@ -6,6 +6,8 @@ struct VotesView: View {
     @Bindable var voyage: Voyage
     @Environment(\.modelContext) private var contexte
     @State private var edition: EditionSondage?
+    /// Étape (ou logement) d'une option, ouverte en entier pour la regarder de près.
+    @State private var etapeOuverte: Etape?
 
     private struct EditionSondage: Identifiable {
         let id = UUID()
@@ -40,6 +42,9 @@ struct VotesView: View {
         }
         .background(FondDePage.couleur)
         .sheet(item: $edition) { PropositionEditView(voyage: voyage, sondage: $0.sondage) }
+        .sheet(item: $etapeOuverte) { etape in
+            EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
+        }
     }
 
     // MARK: Carte d'un vote
@@ -68,6 +73,15 @@ struct VotesView: View {
                 Spacer()
                 if sondage.clos { PastilleClos() }
             }
+            // Ceux qui n'ont pas encore donné leur voix.
+            let absents = unites.filter { u in !votes.contains { $0.compteCle == u.id } }
+            if !absents.isEmpty, !sondage.clos {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    Image(systemName: "hourglass").foregroundStyle(.orange)
+                    Text("Pas encore voté : " + absents.map(\.nom).joined(separator: ", "))
+                }
+                .font(.footnote).foregroundStyle(.secondary)
+            }
             if peutGerer { actions(sondage, options: options, decompte: decompte) }
         }
     }
@@ -76,46 +90,85 @@ struct VotesView: View {
                        monVote: Bool, nombre: Int, maximum: Int) -> some View {
         let retenue = sondage.optionRetenue == option.id
         let electeurs = unites.filter { u in votes.contains { $0.optionID == option.id && $0.compteCle == cle(de: u) } }
-        return Button {
-            guard !voyage.lectureSeule, !moi.isEmpty else { return }
-            voyage.voter(option, dans: sondage, par: moi, contexte: contexte)
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
-                    Image(systemName: monVote ? "checkmark.circle.fill" : "circle").font(.title3)
-                        .foregroundStyle(monVote ? Color.purple : .secondary)
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(option.titre).fontWeight(.semibold).foregroundStyle(.primary)
-                        if !option.detail.isEmpty { Text(option.detail).font(.footnote).foregroundStyle(.secondary) }
-                    }
-                    Spacer()
-                    if retenue { Label("Retenue", systemImage: "star.fill").font(.caption.bold()).foregroundStyle(.orange) }
-                    Text("\(nombre)").font(.title3.weight(.bold)).monospacedDigit().foregroundStyle(.primary)
-                }
-                GeometryReader { g in
-                    ZStack(alignment: .leading) {
-                        Capsule().fill(Color.secondary.opacity(0.15))
-                        Capsule().fill(retenue ? Color.orange : Color.purple)
-                            .frame(width: maximum > 0 ? g.size.width * Double(nombre) / Double(max(unites.count, 1)) : 0)
-                    }
-                }
-                .frame(height: 6)
-                if !electeurs.isEmpty {
-                    HStack(spacing: -6) {
-                        ForEach(electeurs) { u in
-                            VignetteFamille(photo: u.photo, nom: u.nom, taille: 24).overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+        return VStack(alignment: .leading, spacing: 8) {
+            // Le haut de la carte vote (ou retire ma voix).
+            Button {
+                guard !voyage.lectureSeule, !moi.isEmpty else { return }
+                voyage.voter(option, dans: sondage, par: moi, contexte: contexte)
+            } label: {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 10) {
+                        Image(systemName: monVote ? "checkmark.circle.fill" : "circle").font(.title3)
+                            .foregroundStyle(monVote ? Color.purple : .secondary)
+                        VStack(alignment: .leading, spacing: 1) {
+                            HStack(spacing: 5) {
+                                // Option liée à une étape ou un logement du voyage : son icône.
+                                if let e = voyage.etape(de: option) {
+                                    Image(systemName: e.categorie.symbole).font(.caption).foregroundStyle(.purple)
+                                }
+                                Text(option.titre).fontWeight(.semibold).foregroundStyle(.primary)
+                            }
+                            if !option.detail.isEmpty { Text(option.detail).font(.footnote).foregroundStyle(.secondary) }
                         }
-                        Text(electeurs.map(\.nom).joined(separator: ", ")).font(.caption).foregroundStyle(.secondary).padding(.leading, 12).lineLimit(1)
+                        Spacer()
+                        if retenue { Label("Retenue", systemImage: "star.fill").font(.caption.bold()).foregroundStyle(.orange) }
+                        Text("\(nombre)").font(.title3.weight(.bold)).monospacedDigit().foregroundStyle(.primary)
+                    }
+                    GeometryReader { g in
+                        ZStack(alignment: .leading) {
+                            Capsule().fill(Color.secondary.opacity(0.15))
+                            Capsule().fill(retenue ? Color.orange : Color.purple)
+                                .frame(width: maximum > 0 ? g.size.width * Double(nombre) / Double(max(unites.count, 1)) : 0)
+                        }
+                    }
+                    .frame(height: 6)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(sondage.clos)
+
+            // Étape ou logement du voyage : tout son détail en un clic, même une fois le vote clos.
+            if let e = voyage.etape(de: option) {
+                Button { etapeOuverte = e } label: {
+                    Label(e.categorie == .hebergement ? "Voir tout le détail du logement" : "Voir tout le détail de l'étape", systemImage: "info.circle")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.purple)
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(Capsule().fill(Color.purple.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Qui a voté pour cette option : la famille, la personne qui a voté pour elle, et quand.
+            if !electeurs.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(electeurs) { u in
+                        let vote = votes.first { $0.optionID == option.id && $0.compteCle == cle(de: u) }
+                        HStack(spacing: 8) {
+                            VignetteFamille(photo: u.photo, nom: u.nom, taille: 24)
+                            VStack(alignment: .leading, spacing: 0) {
+                                Text(u.nom).font(.caption.weight(.semibold)).foregroundStyle(.primary)
+                                if let vote {
+                                    let auteur = voyage.membre(uid: vote.auteurUID)?.nom
+                                    Text([u.membres.count > 1 ? auteur.map { "voté par \($0)" } : nil,
+                                          vote.modifieLe.formatted(.relative(presentation: .named))]
+                                            .compactMap { $0 }.joined(separator: " · "))
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                }
+                            }
+                            Spacer()
+                            if u.membres.count > 1 {
+                                Text("\(u.membres.count) pers.").font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
                     }
                 }
             }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(monVote ? Color.purple.opacity(0.12) : Color.secondary.opacity(0.06)))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(monVote ? Color.purple : .clear, lineWidth: 2))
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .disabled(sondage.clos)
+        .padding(12)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(monVote ? Color.purple.opacity(0.12) : Color.secondary.opacity(0.06)))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(monVote ? Color.purple : .clear, lineWidth: 2))
     }
 
     /// La clé de compte d'une unité (famille ou voyageur seul), pour retrouver ses voix.
@@ -125,7 +178,8 @@ struct VotesView: View {
         HStack(spacing: 14) {
             if sondage.clos {
                 Button("Rouvrir", systemImage: "arrow.uturn.backward") { sondage.clos = false; sondage.optionRetenue = nil }
-                if let id = sondage.optionRetenue, let option = options.first(where: { $0.id == id }) {
+                // Une option libre retenue peut devenir une étape ; une option liée est déjà une étape du voyage.
+                if let id = sondage.optionRetenue, let option = options.first(where: { $0.id == id }), voyage.etape(de: option) == nil {
                     Button("Créer l'étape", systemImage: "mappin.and.ellipse") { creerEtape(option, sondage) }
                 }
             } else {
@@ -183,8 +237,15 @@ struct PropositionEditView: View {
                 Section {
                     ForEach($options) { $option in
                         VStack(alignment: .leading, spacing: 4) {
-                            TextField("Option", text: $option.titre)
+                            HStack {
+                                TextField("Option", text: $option.titre)
+                                menuEtape($option)
+                            }
                             TextField("Détail : adresse, prix… (facultatif)", text: $option.detail).font(.footnote).foregroundStyle(.secondary)
+                            if let e = option.etapeUID.flatMap({ uid in voyage.etapes.first { $0.uid == uid } }) {
+                                Label(e.categorie == .hebergement ? "Logement du voyage" : "Étape du voyage", systemImage: e.categorie.symbole)
+                                    .font(.caption).foregroundStyle(.purple)
+                            }
                         }
                     }
                     .onDelete { options.remove(atOffsets: $0) }
@@ -192,7 +253,7 @@ struct PropositionEditView: View {
                 } header: {
                     Text("Options")
                 } footer: {
-                    Text("Il en faut au moins deux. Chaque famille a une voix.")
+                    Text("Il en faut au moins deux. Chaque famille a une voix. Le bouton à droite d'une option y met une étape ou un logement du voyage, pour comparer deux étapes prévues au même moment ou deux logements.")
                 }
             }
             .formStyle(.grouped)
@@ -214,6 +275,55 @@ struct PropositionEditView: View {
         #endif
     }
 
+    /// Étapes et logements du voyage, dans l'ordre des jours (puis ceux à placer).
+    private var etapesTriees: [Etape] {
+        voyage.etapes.filter { !$0.titre.isEmpty }.sorted { ($0.jour ?? .distantFuture, $0.ordre) < ($1.jour ?? .distantFuture, $1.ordre) }
+    }
+
+    /// « Jour 3 · 10:00 · Adresse » : de quoi comparer les options d'un coup d'œil.
+    private func resume(_ e: Etape) -> String {
+        var morceaux: [String] = []
+        if let jour = e.jour, let i = voyage.jours.firstIndex(where: { Calendar.current.isDate($0, inSameDayAs: jour) }) {
+            morceaux.append(e.apresJour ? "Nuit du jour \(i + 1)" : "Jour \(i + 1)")
+        }
+        if let h = e.heure { morceaux.append(e.heureAffichee(h)) }
+        if !e.lieu.isEmpty { morceaux.append(e.lieu) }
+        if let budget = e.resumeBudget { morceaux.append(budget) }
+        return morceaux.joined(separator: " · ")
+    }
+
+    /// Mettre une étape ou un logement du voyage dans l'option (ou l'en retirer).
+    private func menuEtape(_ option: Binding<OptionSondage>) -> some View {
+        Menu {
+            Section("Logements") {
+                ForEach(etapesTriees.filter { $0.categorie == .hebergement }) { e in
+                    Button(e.titre, systemImage: e.categorie.symbole) { lier(option, e) }
+                }
+            }
+            Section("Étapes") {
+                ForEach(etapesTriees.filter { $0.categorie != .hebergement }) { e in
+                    Button(e.titre, systemImage: e.categorie.symbole) { lier(option, e) }
+                }
+            }
+            if option.wrappedValue.etapeUID != nil {
+                Button("Retirer le lien", systemImage: "link.badge.minus", role: .destructive) { option.wrappedValue.etapeUID = nil }
+            }
+        } label: {
+            Image(systemName: option.wrappedValue.etapeUID == nil ? "mappin.and.ellipse" : "link")
+                .foregroundStyle(option.wrappedValue.etapeUID == nil ? Color.secondary : Color.purple)
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Choisir une étape ou un logement du voyage")
+    }
+
+    private func lier(_ option: Binding<OptionSondage>, _ e: Etape) {
+        option.wrappedValue.etapeUID = e.uid
+        option.wrappedValue.titre = e.titre
+        option.wrappedValue.detail = resume(e)
+    }
+
     private func enregistrer() {
         let cible = sondage ?? {
             let nouveau = Sondage(titre: "", auteurUID: MoiVoyage.lire(voyage))
@@ -223,7 +333,7 @@ struct PropositionEditView: View {
         }()
         cible.titre = titre.trimmingCharacters(in: .whitespaces)
         cible.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        cible.options = valides.map { OptionSondage(id: $0.id, titre: $0.titre.trimmingCharacters(in: .whitespaces), detail: $0.detail) }
+        cible.options = valides.map { OptionSondage(id: $0.id, titre: $0.titre.trimmingCharacters(in: .whitespaces), detail: $0.detail, etapeUID: $0.etapeUID) }
         dismiss()
     }
 }

@@ -88,12 +88,11 @@ struct ListeAvisEtape: View {
     }
 }
 
-/// Fenêtre d'avis sur une étape : le mien (étoiles, envie, un mot) et ceux des autres voyageurs.
-struct AvisEtapeView: View {
+/// Dans la fiche d'une étape : mon avis (étoiles, envie, un commentaire) puis ceux des autres voyageurs.
+struct AvisEtapeSection: View {
     @Bindable var voyage: Voyage
     let etape: Etape
     @Environment(\.modelContext) private var contexte
-    @Environment(\.dismiss) private var fermer
     @State private var moi: String
     @State private var commentaire = ""
 
@@ -111,30 +110,17 @@ struct AvisEtapeView: View {
     private var aDesAutres: Bool { !voyage.avis(de: etape).filter { $0.auteurUID != moi }.isEmpty }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    entete
-                    // Profil renseigné : on sait déjà qui note, rien à demander.
-                    if !(Profil.partage.estRenseigne && jeSuisIdentifie) { choixIdentite }
-                    if jeSuisIdentifie { monAvisCarte }
-                    carteGroupe
-                }
-                .padding(16)
-                .frame(maxWidth: 560)
-                .frame(maxWidth: .infinity)
+        VStack(alignment: .leading, spacing: 12) {
+            // Profil renseigné : on sait déjà qui note, rien à demander.
+            if !(Profil.partage.estRenseigne && jeSuisIdentifie) { choixIdentite }
+            if jeSuisIdentifie { monAvisEditable }
+            if aDesAutres {
+                Divider()
+                Text("Les autres voyageurs").font(.subheadline.weight(.semibold))
+                ListeAvisEtape(voyage: voyage, etape: etape, sans: moi)
             }
-            .background(FondDePage.couleur)
-            .navigationTitle("Avis")
-            #if os(iOS)
-            .navigationBarTitleDisplayMode(.inline)
-            #endif
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("OK") { fermer() } } }
-            .onAppear(perform: identifier)
         }
-        #if os(macOS)
-        .frame(minWidth: 440, minHeight: 540)
-        #endif
+        .onAppear(perform: identifier)
     }
 
     /// Avec un profil renseigné, on retrouve (ou crée) mon voyageur sans rien demander.
@@ -144,101 +130,63 @@ struct AvisEtapeView: View {
         commentaire = monAvis?.commentaire ?? ""
     }
 
-    // MARK: Éléments
-
-    private var entete: some View {
-        VStack(spacing: 8) {
-            Image(systemName: etape.categorie.symbole)
-                .font(.title2).foregroundStyle(.white)
-                .frame(width: 52, height: 52)
-                .background(Color.accentColor, in: Circle())
-            Text(etape.titre.isEmpty ? "Étape" : etape.titre)
-                .font(.title3.bold()).multilineTextAlignment(.center)
-            if !etape.lieu.isEmpty {
-                Text(etape.lieu).font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center).lineLimit(2)
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, 4)
-    }
-
     /// Seulement quand le profil n'est pas renseigné : choisir qui on est parmi les voyageurs.
-    private var choixIdentite: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Picker("Qui es-tu ?", selection: $moi) {
-                Text("—").tag("")
-                ForEach(membres) { Text($0.nom).tag($0.uid) }
-            }
-            .onChange(of: moi) {
-                MoiVoyage.ecrire(moi, voyage)
-                commentaire = monAvis?.commentaire ?? ""
-            }
-            if membres.isEmpty {
-                Text("Ajoute d'abord les participants du voyage (onglet Infos ou Dépenses).").font(.footnote).foregroundStyle(.secondary)
-            }
+    @ViewBuilder private var choixIdentite: some View {
+        Picker("Qui es-tu ?", selection: $moi) {
+            Text("—").tag("")
+            ForEach(membres) { Text($0.nom).tag($0.uid) }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(FondDeCarte())
+        .onChange(of: moi) {
+            MoiVoyage.ecrire(moi, voyage)
+            commentaire = monAvis?.commentaire ?? ""
+        }
+        if membres.isEmpty {
+            Text("Ajoute d'abord les participants du voyage (onglet Infos ou Dépenses).").font(.footnote).foregroundStyle(.secondary)
+        }
     }
 
-    private var monAvisCarte: some View {
-        VStack(spacing: 18) {
-            Text("Mon avis").font(.headline).frame(maxWidth: .infinity, alignment: .leading)
-
-            HStack(spacing: 10) {
-                ForEach(1...5, id: \.self) { rang in
-                    Image(systemName: rang <= (monAvis?.etoiles ?? 0) ? "star.fill" : "star")
-                        .font(.system(size: 34)).foregroundStyle(.orange)
-                        .onTapGesture { withAnimation(.snappy(duration: 0.15)) { choisirEtoiles(rang) } }
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Étoiles : \(monAvis?.etoiles ?? 0) sur 5")
-            .accessibilityAdjustableAction { sens in
-                let n = monAvis?.etoiles ?? 0
-                choisirEtoiles(sens == .increment ? min(n + 1, 5) : max(n - 1, 0), basculer: false)
-            }
-
-            HStack(spacing: 8) {
-                ForEach(EnvieEtape.allCases) { envie in
-                    let choisi = (monAvis?.envie ?? .neutre) == envie
-                    Button { choisirEnvie(envie) } label: {
-                        Label(envie.libelle, systemImage: envie.symbole)
-                            .font(.footnote.weight(.medium))
-                            .lineLimit(1).minimumScaleFactor(0.8)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 9)
-                            .foregroundStyle(choisi ? Color.white : envie.couleur)
-                            .background(choisi ? envie.couleur : envie.couleur.opacity(0.12), in: Capsule())
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-
-            TextField("Un mot (facultatif)", text: $commentaire, axis: .vertical)
-                .lineLimit(2...5)
-                .textFieldStyle(.plain)
-                .padding(12)
-                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .onChange(of: commentaire) { enregistrer { $0.commentaire = commentaire } }
-        }
-        .padding(16)
-        .modifier(FondDeCarte())
-    }
-
-    private var carteGroupe: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Avis du groupe").font(.headline)
-            if aDesAutres {
-                ListeAvisEtape(voyage: voyage, etape: etape, sans: moi)
-            } else {
-                Text("Personne d'autre n'a encore donné son avis.").font(.footnote).foregroundStyle(.secondary)
+    @ViewBuilder private var monAvisEditable: some View {
+        // Ma note : un second toucher sur la même étoile l'efface.
+        HStack(spacing: 8) {
+            Text("Ma note").lineLimit(1).fixedSize()
+            Spacer(minLength: 4)
+            ForEach(1...5, id: \.self) { rang in
+                Image(systemName: rang <= (monAvis?.etoiles ?? 0) ? "star.fill" : "star")
+                    .font(.system(size: 22)).foregroundStyle(.orange)
+                    .contentShape(Rectangle())
+                    .onTapGesture { withAnimation(.snappy(duration: 0.15)) { choisirEtoiles(rang) } }
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .modifier(FondDeCarte())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Ma note : \(monAvis?.etoiles ?? 0) sur 5")
+        .accessibilityAdjustableAction { sens in
+            let n = monAvis?.etoiles ?? 0
+            choisirEtoiles(sens == .increment ? min(n + 1, 5) : max(n - 1, 0), basculer: false)
+        }
+
+        // Mon envie : de « incontournable » à « pas envie ».
+        HStack(spacing: 6) {
+            ForEach(EnvieEtape.allCases) { envie in
+                let choisi = (monAvis?.envie ?? .neutre) == envie
+                Button { choisirEnvie(envie) } label: {
+                    Label(envie.libelle, systemImage: envie.symbole)
+                        .font(.caption.weight(.medium))
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 7)
+                        .foregroundStyle(choisi ? Color.white : envie.couleur)
+                        .background(choisi ? envie.couleur : envie.couleur.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+
+        TextField("Mon commentaire (facultatif)", text: $commentaire, axis: .vertical)
+            .lineLimit(2...5)
+            .textFieldStyle(.plain)
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 8).fill(FondDePage.carte))
+            .onChange(of: commentaire) { enregistrer { $0.commentaire = commentaire } }
     }
 
     /// Retrouve mon avis ou le crée, applique le changement ; un avis redevenu vide est supprimé.

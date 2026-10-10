@@ -208,9 +208,11 @@ final class PartageCloud {
         aTraiter.sort { Codec.ordre($0.recordType) < Codec.ordre($1.recordType) }
 
         for record in aTraiter {
-            let nouvelle = record.recordType == TypeCloud.depense.rawValue && Codec.objet(recordName: record.recordID.recordName, contexte) == nil
+            let nouvelle = [TypeCloud.depense.rawValue, TypeCloud.sondage.rawValue].contains(record.recordType)
+                && Codec.objet(recordName: record.recordID.recordName, contexte) == nil
             if let objet = Codec.appliquer(record, contexte) {
                 if nouvelle, let depense = objet as? Depense { Rappels.notifierNouvelleDepense(depense) }
+                if nouvelle, let sondage = objet as? Sondage { Rappels.notifierNouveauVote(sondage) }
                 let nom = record.recordID.recordName
                 metas[nom] = Meta(empreinte: Codec.empreinte(de: objet), champsSysteme: Codec.champsSysteme(record),
                                   zoneName: record.recordID.zoneID.zoneName, zoneOwner: record.recordID.zoneID.ownerName)

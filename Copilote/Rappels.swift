@@ -103,6 +103,22 @@ enum Rappels {
                               titre: t.mode == .avion ? "Ton vol part dans 3 h" : "Départ dans 45 minutes", corps: detail))
     }
 
+    /// Un vote lancé par quelqu'un d'autre, reçu par la synchronisation : on prévient pour que sa famille donne sa voix.
+    static func notifierNouveauVote(_ sondage: Sondage) {
+        guard let voyage = sondage.voyage, !sondage.clos else { return }
+        let moi = MoiVoyage.lire(voyage)
+        guard sondage.auteurUID != moi, sondage.creeLe > Date.now.addingTimeInterval(-7 * 86_400) else { return }
+        let auteur = voyage.membre(uid: sondage.auteurUID)?.nom ?? "Quelqu'un"
+        let contenu = UNMutableNotificationContent()
+        contenu.title = "Nouveau vote · \(voyage.titre)"
+        let choix = sondage.options.map(\.titre).filter { !$0.isEmpty }.prefix(3).joined(separator: " ou ")
+        contenu.body = "\(auteur) propose de voter : \(sondage.titre.isEmpty ? "nouveau vote" : sondage.titre)" + (choix.isEmpty ? "." : " (\(choix)).")
+        contenu.sound = .default
+        let demande = UNNotificationRequest(identifier: prefixe + "vote-\(sondage.uid)", content: contenu,
+                                            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 1, repeats: false))
+        UNUserNotificationCenter.current().add(demande)
+    }
+
     /// Une dépense déclarée par quelqu'un d'autre et qui concerne ma famille, reçue par la synchronisation.
     static func notifierNouvelleDepense(_ depense: Depense) {
         guard actifs, let voyage = depense.voyage else { return }
