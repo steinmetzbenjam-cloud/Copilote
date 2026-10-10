@@ -10,6 +10,8 @@ struct EtapeEditView: View {
     var onFermer: (() -> Void)? = nil
     /// Reçoit l'étape qui vient d'être créée par « Dupliquer » ou « Revenir à… » (l'Itinéraire l'ouvre) ; sans rappel, la fiche reste sur l'original.
     var onDupliquer: ((Etape) -> Void)? = nil
+    /// Ouverte depuis un vote : les infos du lieu remontent juste sous la catégorie, pour comparer les propositions.
+    var depuisVote = false
     /// Petit message « Copie créée » après une duplication.
     @State private var copieFaite = false
     @Environment(\.dismiss) private var dismiss
@@ -307,66 +309,91 @@ struct EtapeEditView: View {
         }
     }
 
+    private var sectionCategorie: some View {
+        CadreSection("Catégorie", symbole: "square.grid.2x2", couleur: .purple) { tuilesCategories }
+    }
+
+    private var sectionJourHoraire: some View {
+        CadreSection("Jour et horaire", symbole: "calendar", couleur: .blue) {
+            LabeledContent("Jour") {
+                Picker("Jour", selection: jourChoisi) {
+                    Text("Pas encore de jour").tag(Date?.none)
+                    ForEach(jours, id: \.self) { j in
+                        Text(j.formatted(.dateTime.weekday(.wide).day().month())).tag(Date?.some(j))
+                    }
+                }
+                .labelsHidden()
+                .fixedSize()
+            }
+            if etape.jour != nil, etape.categorie == .hebergement, etape.apresJour, let jour = etape.jour {
+                let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
+                Text("Nuit du \(jour.formatted(.dateTime.day().month(.wide))) au \(lendemain.formatted(.dateTime.day().month(.wide)))")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
+            // Durée à la minute près : des heures et des minutes (au-delà de 59 min, elles passent en heures).
+            HStack(spacing: 10) {
+                Text("Durée").lineLimit(1).fixedSize()
+                Spacer(minLength: 4)
+                caseDuree(heuresDuree, unite: "h")
+                caseDuree(minutesDuree, unite: "min")
+                if etape.duree != nil {
+                    Button { dureeChoisie.wrappedValue = nil } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Effacer la durée")
+                    .help("Effacer la durée")
+                }
+            }
+            if etape.jour != nil { Toggle("Horaire", isOn: horaireActive) }
+            if etape.jour != nil, horaireActive.wrappedValue {
+                HStack {
+                    Spacer()
+                    bulleHeure(heureDebut, depart: 9)
+                    Image(systemName: "arrow.right").foregroundStyle(.secondary)
+                    bulleHeure(heureDeFin, depart: (etape.heure.map { Calendar.current.component(.hour, from: $0) + 1 } ?? 10) % 24)
+                }
+                // L'heure saisie est celle du lieu de l'étape ; on peut la noter dans un autre fuseau.
+                LigneFuseau(choisi: $etape.fuseauChoisi, parDefaut: etape.fuseauParDefaut,
+                            coordonnees: etape.coordonnee.map { [$0] } ?? [])
+            }
+        }
+    }
+
+    /// Ma note et mon commentaire, puis ce qu'en pensent les autres voyageurs.
+    @ViewBuilder private var sectionAvis: some View {
+        if let voyage = etape.voyage {
+            CadreSection("Note et commentaires", symbole: "star.bubble", couleur: .pink) {
+                AvisEtapeSection(voyage: voyage, etape: etape)
+            }
+        }
+    }
+
+    private var sectionBudget: some View {
+        CadreSection("Budget", symbole: "eurosign.circle", couleur: .green) {
+            LignesPrix(voyage: etape.voyage,
+                       adulte: $etape.prixAdulte, adulteMonnaie: $etape.monnaieAdulte,
+                       etudiant: $etape.prixEtudiant, etudiantMonnaie: $etape.monnaieEtudiant,
+                       enfant: $etape.prixEnfant, enfantMonnaie: $etape.monnaieEnfant)
+            piedBudget(etape.voyage).font(.footnote).foregroundStyle(.secondary)
+        }
+    }
+
     private var champs: some View {
         ScrollView {
             VStack(spacing: 14) {
-                CadreSection("Catégorie", symbole: "square.grid.2x2", couleur: .purple) { tuilesCategories }
-                CadreSection("Jour et horaire", symbole: "calendar", couleur: .blue) {
-                    LabeledContent("Jour") {
-                        Picker("Jour", selection: jourChoisi) {
-                            Text("Pas encore de jour").tag(Date?.none)
-                            ForEach(jours, id: \.self) { j in
-                                Text(j.formatted(.dateTime.weekday(.wide).day().month())).tag(Date?.some(j))
-                            }
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-                    }
-                    if etape.jour != nil, etape.categorie == .hebergement, etape.apresJour, let jour = etape.jour {
-                        let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
-                        Text("Nuit du \(jour.formatted(.dateTime.day().month(.wide))) au \(lendemain.formatted(.dateTime.day().month(.wide)))")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                    // Durée à la minute près : des heures et des minutes (au-delà de 59 min, elles passent en heures).
-                    HStack(spacing: 10) {
-                        Text("Durée").lineLimit(1).fixedSize()
-                        Spacer(minLength: 4)
-                        caseDuree(heuresDuree, unite: "h")
-                        caseDuree(minutesDuree, unite: "min")
-                        if etape.duree != nil {
-                            Button { dureeChoisie.wrappedValue = nil } label: {
-                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("Effacer la durée")
-                            .help("Effacer la durée")
-                        }
-                    }
-                    if etape.jour != nil { Toggle("Horaire", isOn: horaireActive) }
-                    if etape.jour != nil, horaireActive.wrappedValue {
-                        HStack {
-                            Spacer()
-                            bulleHeure(heureDebut, depart: 9)
-                            Image(systemName: "arrow.right").foregroundStyle(.secondary)
-                            bulleHeure(heureDeFin, depart: (etape.heure.map { Calendar.current.component(.hour, from: $0) + 1 } ?? 10) % 24)
-                        }
-                        // L'heure saisie est celle du lieu de l'étape ; on peut la noter dans un autre fuseau.
-                        LigneFuseau(choisi: $etape.fuseauChoisi, parDefaut: etape.fuseauParDefaut,
-                                    coordonnees: etape.coordonnee.map { [$0] } ?? [])
-                    }
-                }
-                // Ma note et mon commentaire, puis ce qu'en pensent les autres voyageurs.
-                if let voyage = etape.voyage {
-                    CadreSection("Note et commentaires", symbole: "star.bubble", couleur: .pink) {
-                        AvisEtapeSection(voyage: voyage, etape: etape)
-                    }
-                }
-                CadreSection("Budget", symbole: "eurosign.circle", couleur: .green) {
-                    LignesPrix(voyage: etape.voyage,
-                               adulte: $etape.prixAdulte, adulteMonnaie: $etape.monnaieAdulte,
-                               etudiant: $etape.prixEtudiant, etudiantMonnaie: $etape.monnaieEtudiant,
-                               enfant: $etape.prixEnfant, enfantMonnaie: $etape.monnaieEnfant)
-                    piedBudget(etape.voyage).font(.footnote).foregroundStyle(.secondary)
+                if depuisVote {
+                    // Depuis un vote : de quoi comparer d'abord (le lieu, les avis, le prix), puis la catégorie et le moment.
+                    if etape.aDesInfosDeLieu { infosDuLieu }
+                    sectionAvis
+                    sectionBudget
+                    sectionCategorie
+                    sectionJourHoraire
+                } else {
+                    sectionCategorie
+                    sectionJourHoraire
+                    sectionAvis
+                    sectionBudget
                 }
                 CadreSection("Lieu", symbole: "mappin.and.ellipse", couleur: .orange) {
                     TextField("Lieu ou adresse", text: $etape.lieu, axis: .vertical)
@@ -411,7 +438,7 @@ struct EtapeEditView: View {
                         .sheet(isPresented: $transportOuvert) { existant.vue }
                     }
                 }
-                if etape.aDesInfosDeLieu { infosDuLieu }
+                if !depuisVote, etape.aDesInfosDeLieu { infosDuLieu }
                 CadreSection("Notes", symbole: "note.text", couleur: .yellow) {
                     TextEditor(text: $etape.notes)
                         .scrollContentBackground(.hidden)

@@ -43,7 +43,7 @@ struct VotesView: View {
         .background(FondDePage.couleur)
         .sheet(item: $edition) { PropositionEditView(voyage: voyage, sondage: $0.sondage) }
         .sheet(item: $etapeOuverte) { etape in
-            EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
+            EtapeEditView(etape: etape, jours: voyage.jours, onSupprimer: { contexte.delete(etape) }, depuisVote: true)
         }
     }
 
