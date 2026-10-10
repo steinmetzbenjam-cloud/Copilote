@@ -252,7 +252,7 @@ struct ItineraireView: View {
             EtapeEditView(etape: etape, jours: voyage.jours, onSupprimer: {
                 if etapeEnEdition === etape { etapeEnEdition = nil }
                 contexte.delete(etape)
-            }, onFermer: { fermerEtape() })
+            }, onFermer: { fermerEtape() }, onDupliquer: { ouvrir($0) })
             .id(etape.uid)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .modifier(FondDeCarte())

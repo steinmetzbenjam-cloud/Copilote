@@ -152,6 +152,14 @@ extension Voyage {
         return i + 1 < liste.count ? liste[i + 1] : hebergements(apres: jour).first
     }
 
+    /// Place `etape` juste après `reference` dans les étapes du jour, et renumérote le jour.
+    func inserer(_ etape: Etape, apres reference: Etape, du jour: Date) {
+        var liste = etapes(du: jour).filter { $0 !== etape }
+        let index = (liste.firstIndex { $0 === reference } ?? liste.count - 1) + 1
+        liste.insert(etape, at: min(index, liste.count))
+        for (i, e) in liste.enumerated() { e.ordre = Double(i) }
+    }
+
     /// Élément qui précède `etape` pour le transport (celui qui porte le transport pour y arriver) : l'inverse de `suivante(de:)`,
     /// avec en plus, sans hôtel la veille, la dernière étape de la veille.
     func precedente(de etape: Etape) -> Etape? {

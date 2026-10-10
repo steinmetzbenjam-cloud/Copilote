@@ -44,6 +44,69 @@ extension CategorieEtape {
     }
 }
 
+extension Etape {
+    /// Une copie de l'étape (lieu, horaires, durée, prix, notes, infos et photos), placée juste après elle dans son jour.
+    /// Le transport vers l'étape suivante n'est pas copié. Un hébergement de nuit n'a qu'une place : sa copie va dans « à placer ».
+    func copie(dans contexte: ModelContext) -> Etape {
+        let c = nouvelleCopie(jour: apresJour ? nil : jour, avecHoraires: !apresJour, dans: contexte)
+        if let voyage {
+            if let j = c.jour {
+                // Juste après l'original : les étapes du jour sont renumérotées.
+                voyage.inserer(c, apres: self, du: j)
+            } else {
+                c.ordre = (voyage.etapesSansJour.filter { $0 !== c }.map(\.ordre).max() ?? -1) + 1
+            }
+        }
+        return c
+    }
+
+    /// La copie elle-même (sans transport), insérée dans le contexte mais pas encore rangée dans son jour.
+    private func nouvelleCopie(jour: Date?, avecHoraires: Bool, dans contexte: ModelContext) -> Etape {
+        let c = Etape(titre: titre, jour: jour, categorie: categorie)
+        c.lieu = lieu
+        if avecHoraires { c.heure = heure; c.heureFin = heureFin }
+        c.duree = duree; c.fuseauChoisi = fuseauChoisi; c.notes = notes
+        c.latitude = latitude; c.longitude = longitude
+        c.resume = resume; c.horaires = horaires; c.photoURL = photoURL
+        c.noteGoogle = noteGoogle; c.avisGoogle = avisGoogle; c.lienGoogle = lienGoogle
+        c.noteTripadvisor = noteTripadvisor; c.avisTripadvisor = avisTripadvisor; c.lienTripadvisor = lienTripadvisor
+        c.siteWeb = siteWeb
+        c.prixAdulte = prixAdulte; c.prixEnfant = prixEnfant; c.prixEtudiant = prixEtudiant
+        c.monnaieAdulte = monnaieAdulte; c.monnaieEnfant = monnaieEnfant; c.monnaieEtudiant = monnaieEtudiant
+        c.voyage = voyage
+        contexte.insert(c)
+        for photo in photos {
+            let p = Document(nom: photo.nom, extensionFichier: photo.extensionFichier, donnees: photo.donnees)
+            p.voyage = voyage
+            p.etape = c
+            contexte.insert(p)
+        }
+        return c
+    }
+
+    /// L'étape d'où l'on vient pour arriver ici (la précédente du jour, ou l'hôtel de la veille), si un retour vers elle est possible.
+    var departPourRetour: Etape? {
+        guard jour != nil, !apresJour, let voyage else { return nil }
+        return voyage.precedente(de: self)
+    }
+
+    /// Aller-retour : ajoute juste après cette étape un retour vers celle d'où l'on vient (copie de son lieu, sans horaires),
+    /// avec le même mode de transport qu'à l'aller. Le transport qui partait d'ici part désormais du retour.
+    func ajouterRetour(dans contexte: ModelContext) -> Etape? {
+        guard let depart = departPourRetour, let voyage, let j = jour else { return nil }
+        let retour = depart.nouvelleCopie(jour: j, avecHoraires: false, dans: contexte)
+        retour.transport = transport
+        let aller = depart.transport
+        var trajet = Transport()
+        trajet.mode = aller?.mode ?? .voiture
+        trajet.sousType = aller?.sousType ?? ""
+        trajet.compagnie = aller?.compagnie ?? ""
+        transport = trajet
+        voyage.inserer(retour, apres: self, du: j)
+        return retour
+    }
+}
+
 extension CategorieEtape {
     /// La catégorie qui correspond à un point d'intérêt de Plans (restaurant, musée, parc, hôtel…).
     init(pointDInteret c: MKPointOfInterestCategory?) {

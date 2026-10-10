@@ -8,6 +8,10 @@ struct EtapeEditView: View {
     var onSupprimer: () -> Void
     /// Fiche ouverte dans un cadre posé sur la colonne des jours (Itinéraire) : fermée par ce rappel au lieu d'une feuille.
     var onFermer: (() -> Void)? = nil
+    /// Reçoit l'étape qui vient d'être créée par « Dupliquer » ou « Revenir à… » (l'Itinéraire l'ouvre) ; sans rappel, la fiche reste sur l'original.
+    var onDupliquer: ((Etape) -> Void)? = nil
+    /// Petit message « Copie créée » après une duplication.
+    @State private var copieFaite = false
     @Environment(\.dismiss) private var dismiss
     @FocusState private var titreActif: Bool
     /// Case de la durée en cours de saisie (« h » ou « min ») : son contenu est sélectionné dès qu'on y entre.
@@ -207,6 +211,19 @@ struct EtapeEditView: View {
                 // Un léger fond quand on écrit : on voit que le titre se modifie.
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(titreActif ? 0.12 : 0)))
                 .help("Cliquer pour renommer")
+            // Dupliquer : une icône discrète, à côté de la fermeture.
+            if !(etape.voyage?.lectureSeule ?? true) {
+                Button { dupliquer() } label: {
+                    Image(systemName: copieFaite ? "checkmark" : "plus.square.on.square")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(copieFaite ? Color.green : Color.secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Dupliquer l'étape")
+                .help(copieFaite ? "Copie créée" : "Dupliquer l'étape")
+            }
             if enCadre {
                 Button { fermer() } label: {
                     // Grande croix bien contrastée : on la trouve tout de suite pour fermer le détail.
@@ -373,6 +390,14 @@ struct EtapeEditView: View {
                             Button("Changer de lieu", systemImage: "magnifyingglass") { rechercheOuverte = true }
                         }
                     }
+                    // Aller-retour : revenir là d'où l'on vient (l'hôtel, par exemple), juste après cette étape.
+                    if let depart = etape.departPourRetour, !(etape.voyage?.lectureSeule ?? true) {
+                        Button("Revenir à « \(depart.titre.isEmpty ? "l'étape précédente" : depart.titre) »", systemImage: "arrow.uturn.backward") {
+                            guard let contexte = etape.modelContext, let retour = etape.ajouterRetour(dans: contexte) else { return }
+                            onDupliquer?(retour)
+                        }
+                        .help("Ajoute après cette étape un retour vers l'étape d'où l'on vient, avec le même mode de transport")
+                    }
                     if let voyage = etape.voyage, let existant = transportPourArriver(voyage) {
                         Button(existant.transport == nil ? "Ajouter un transport" : "Modifier le transport", systemImage: "arrow.triangle.swap") {
                             transportOuvert = true
@@ -412,6 +437,18 @@ struct EtapeEditView: View {
         }
         .scrollIndicators(.hidden)
         .disabled(etape.voyage?.lectureSeule ?? false)
+    }
+
+    /// Crée une copie de l'étape, juste après elle dans son jour (ou à placer pour un hébergement de nuit, qui n'a qu'une place).
+    private func dupliquer() {
+        guard let contexte = etape.modelContext else { return }
+        let copie = etape.copie(dans: contexte)
+        if let onDupliquer {
+            onDupliquer(copie)
+        } else {
+            withAnimation { copieFaite = true }
+            Task { try? await Task.sleep(for: .seconds(1.5)); withAnimation { copieFaite = false } }
+        }
     }
 
     /// Valide un lieu proposé : l'étape reprend titre, adresse, position, notes, et on rapatrie les photos.

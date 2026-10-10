@@ -442,7 +442,7 @@ struct TimingView: View {
                         .background(.white.opacity(0.28), in: Capsule()).foregroundStyle(.white) }
                 }
                 Text(jour.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))).font(.headline).foregroundStyle(.white)
-                Text("Heure locale · \(voyage.fuseau(du: jour).libelle)").font(.caption2).foregroundStyle(.white.opacity(0.85))
+                Text("Heure locale · \(voyage.fuseau(du: jour).libelle(le: jour))").font(.caption2).foregroundStyle(.white.opacity(0.85))
             }
             Spacer()
             if rendu { Image(systemName: "plus.circle.fill").font(.title3).foregroundStyle(.white) } else { Menu {

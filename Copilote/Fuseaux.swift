@@ -19,6 +19,9 @@ extension TimeZone {
     }
 
     var libelle: String { "\(ville) (\(decalage()))" }
+
+    /// « Paris (UTC+1) » : le décalage en vigueur à cette date (heure d'été ou d'hiver).
+    func libelle(le date: Date) -> String { "\(ville) (\(decalage(le: date)))" }
 }
 
 // MARK: - Fuseau d'un lieu
@@ -42,6 +45,32 @@ final class FuseauxHoraires {
         cache[Self.cle(c)].flatMap(TimeZone.init(identifier:))
     }
 
+    /// Le fuseau d'un pays (code ISO), une fois trouvé.
+    func fuseau(pays code: String) -> TimeZone? {
+        cache["pays:" + code].flatMap(TimeZone.init(identifier:))
+    }
+
+    /// Cherche le fuseau d'un pays avec Plans : celui que Plans donne pour le pays, sinon celui du centre du pays.
+    /// Un pays à plusieurs fuseaux (États-Unis, Brésil…) prend celui de son centre.
+    func chargerPays(_ code: String) async {
+        let cle = "pays:" + code
+        guard cache[cle] == nil, !enCours.contains(cle), let pays = Pays.avec(code: code) else { return }
+        enCours.insert(cle)
+        defer { enCours.remove(cle) }
+        let requete = MKLocalSearch.Request()
+        requete.naturalLanguageQuery = pays.nom
+        requete.resultTypes = .address
+        var zone = (try? await MKLocalSearch(request: requete).start())?.mapItems.first?.timeZone
+        if zone == nil, let region = await Pays.region(de: code) {
+            let centre = CLLocation(latitude: region.center.latitude, longitude: region.center.longitude)
+            zone = (try? await CLGeocoder().reverseGeocodeLocation(centre))?.first?.timeZone
+        }
+        if let zone {
+            cache[cle] = zone.identifier
+            UserDefaults.standard.set(cache, forKey: cleStockage)
+        }
+    }
+
     func charger(_ c: CLLocationCoordinate2D) async {
         let cle = Self.cle(c)
         guard cache[cle] == nil, !enCours.contains(cle) else { return }
@@ -58,13 +87,9 @@ final class FuseauxHoraires {
 // MARK: - Fuseaux des étapes et des transports
 
 extension Voyage {
-    /// Le fuseau du voyage quand rien de plus précis n'est connu : celui du centre de ses étapes localisées.
+    /// Le fuseau du voyage quand rien de plus précis n'est connu : celui du (premier) pays visité.
     @MainActor var fuseauParDefaut: TimeZone? {
-        let points = etapes.compactMap(\.coordonnee)
-        guard !points.isEmpty else { return nil }
-        let centre = CLLocationCoordinate2D(latitude: points.map(\.latitude).reduce(0, +) / Double(points.count),
-                                            longitude: points.map(\.longitude).reduce(0, +) / Double(points.count))
-        return FuseauxHoraires.shared.fuseau(centre)
+        pays.lazy.compactMap { FuseauxHoraires.shared.fuseau(pays: $0) }.first
     }
 
     /// Les fuseaux de départ et d'arrivée d'un transport : ceux choisis à la main, sinon ceux des lieux.
@@ -83,9 +108,12 @@ extension Voyage {
         return (d, a)
     }
 
-    /// Le fuseau d'un jour : celui du lieu de sa première étape (l'heure locale du pays visité), sans tenir compte d'un fuseau choisi pour une heure saisie.
+    /// Le fuseau d'un jour : celui du pays visité. Un voyage dans plusieurs pays prend le pays indiqué dans les lieux du jour,
+    /// sinon le premier pays du voyage. Sans pays (ou tant que son fuseau n'est pas trouvé), le fuseau d'enregistrement du voyage.
     @MainActor func fuseau(du jour: Date) -> TimeZone {
-        etapes(du: jour).first?.fuseauParDefaut ?? fuseauParDefaut ?? .current
+        let paysDuJour = (infos(du: jour)?.lieux ?? []).compactMap(\.codePays).filter { pays.contains($0) }
+        let cache = FuseauxHoraires.shared
+        return (paysDuJour + pays).lazy.compactMap { cache.fuseau(pays: $0) }.first ?? .current
     }
 }
 

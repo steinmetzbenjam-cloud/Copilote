@@ -192,6 +192,10 @@ struct VoyageView: View {
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        // Le fuseau de chaque pays visité : il règle l'heure locale de tous les jours.
+        .task(id: voyage.pays) {
+            for code in voyage.pays { await FuseauxHoraires.shared.chargerPays(code) }
+        }
         .onAppear {
             Profil.partage.reconnaitre(dans: voyage)
             Profil.partage.publier(dans: contexte)
