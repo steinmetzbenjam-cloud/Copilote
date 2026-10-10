@@ -8,6 +8,7 @@ struct TimingView: View {
     @Bindable var voyage: Voyage
     @Environment(\.modelContext) private var contexte
     @State private var hauteurHeure: CGFloat = 56
+    @Environment(\.horizontalSizeClass) private var tailleHorizontale
     @State private var etapeEnEdition: Etape?
     @State private var transportEnEdition: PaireTransport?
     @State private var extremiteEnEdition: ExtremiteTransport?
@@ -272,7 +273,8 @@ struct TimingView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            barre
+            // Sur iPhone, pas de barre : ni « À placer », ni les loupes, pour laisser toute la place à l'agenda.
+            if !iPhone { barre }
             ScrollViewReader { lecteur in
                 ScrollView(.vertical, showsIndicators: true) {
                     // Les jours se suivent de haut en bas ; l'en-tête du jour reste collé en haut pendant qu'on le parcourt.
@@ -396,14 +398,20 @@ struct TimingView: View {
         return CGFloat(max(((debuts.min() ?? 8 * 60) / 60) - 1, 0))
     }
 
+    private var iPhone: Bool {
+        #if os(iOS)
+        tailleHorizontale == .compact
+        #else
+        false
+        #endif
+    }
+
     private var barre: some View {
         HStack(spacing: 12) {
             Button { aPlacerOuvert = true } label: {
                 Label("À placer\(voyage.etapesSansJour.isEmpty ? "" : " (\(voyage.etapesSansJour.count))")", systemImage: "tray.full")
             }
             .buttonStyle(.bordered)
-            Spacer()
-            legende
             Spacer()
             HStack(spacing: 4) {
                 Button("Réduire", systemImage: "minus.magnifyingglass") { hauteurHeure = max(36, hauteurHeure - 14) }
@@ -413,20 +421,6 @@ struct TimingView: View {
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
         .background(.bar)
-    }
-
-    private var legende: some View {
-        HStack(spacing: 10) {
-            pastille("Étape", "mappin.and.ellipse", .pink)
-            pastille("Transport", "tram.fill", .indigo)
-            pastille("Hôtel", "moon.zzz.fill", Color(rouge: 0x3B, vert: 0x2A, bleu: 0x8C))
-        }
-        .font(.caption2.weight(.semibold))
-    }
-
-    private func pastille(_ texte: String, _ symbole: String, _ c: Color) -> some View {
-        Label(texte, systemImage: symbole).foregroundStyle(c)
-            .padding(.horizontal, 7).padding(.vertical, 3).background(c.opacity(0.12), in: Capsule())
     }
 
     // MARK: En-tête et colonne d'un jour

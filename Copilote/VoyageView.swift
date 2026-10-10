@@ -42,12 +42,13 @@ struct VoyageView: View {
         }
     }
 
-    /// Les vues proposées : sur Mac, l'aperçu n'a pas d'onglet (le compte à rebours est dans la barre de titre).
+    /// Les vues proposées : sur Mac, l'aperçu n'a pas d'onglet (le compte à rebours est dans la barre de titre) ;
+    /// sur iPhone et iPad, il n'apparaît pas en préparation.
     private var onglets: [Onglet] {
         #if os(macOS)
         Onglet.allCases.filter { $0 != .apercu }
         #else
-        Onglet.allCases
+        Onglet.allCases.filter { $0 != .apercu || voyage.mode != .preparation }
         #endif
     }
 
@@ -128,7 +129,7 @@ struct VoyageView: View {
 
     private var rangeeVues: some View {
         HStack(spacing: 10) {
-            ForEach(Onglet.allCases) { o in
+            ForEach(onglets) { o in
                 Button {
                     onglet = o
                     vuesDepliees = false
@@ -196,7 +197,10 @@ struct VoyageView: View {
         .task(id: voyage.pays) {
             for code in voyage.pays { await FuseauxHoraires.shared.chargerPays(code) }
         }
+        // L'aperçu disparaît en préparation : on revient alors à l'itinéraire.
+        .onChange(of: voyage.mode) { _, _ in if !onglets.contains(onglet) { onglet = .itineraire } }
         .onAppear {
+            if !onglets.contains(onglet) { onglet = .itineraire }
             Profil.partage.reconnaitre(dans: voyage)
             Profil.partage.publier(dans: contexte)
         }
