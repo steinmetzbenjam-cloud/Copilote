@@ -214,9 +214,19 @@ struct TimingView: View {
         if let h = voyage.hebergements(apres: jour).first {
             let zh = h.fuseau
             let e = h.heure.map { ecart($0, jour, zh) } ?? 0
-            let arrivee = min(h.heure.map { minutes($0) + e } ?? 20 * 60, 24 * 60 - 30)
+            // Une étape ou un transport qui finit plus tard repousse le début de la nuit : l'hôtel est raccourci d'autant.
+            let finActivites = r.filter { $0.genre == .etape || $0.genre == .transport }.map(\.fin).max() ?? 0
+            let arrivee = min(max(h.heure.map { minutes($0) + e } ?? 20 * 60, finActivites), 24 * 60 - 30)
             r.append(Bloc(id: "soir-\(h.uid)", genre: .hotelSoir, debut: arrivee, fin: 24 * 60, titre: h.titre.isEmpty ? "Hébergement" : h.titre,
                           detail: h.lieu, symbole: "bed.double.fill", etape: h, estime: h.heure == nil, delta: e, note: note(h.heure, zh)))
+        }
+        // Le matin, une étape (ou un transport) qui commence avant le départ de l'hôtel avance la fin de la nuit.
+        if let i = r.firstIndex(where: { $0.genre == .hotelMatin }) {
+            let hotel = r[i]
+            let premier = r.filter { b in
+                b.genre == .etape || (b.genre == .transport && b.id != "t-" + (hotel.etape?.uid ?? ""))
+            }.map(\.debut).min()
+            if let premier, premier < hotel.fin { r[i].fin = max(premier, 0) }
         }
         return r
     }
@@ -251,7 +261,8 @@ struct TimingView: View {
     /// Largeur du défilement ; la colonne d'un jour la remplit, jusqu'à 760 pt.
     @State private var largeurDisponible: CGFloat = 700
     private var largeurColonne: CGFloat { min(max(largeurDisponible, 300), 760) - gouttiere }
-    private let gouttiere: CGFloat = 38
+    /// Colonne des heures. Sur iPhone, un peu plus large pour que « 08 h » tienne sur une seule ligne.
+    private var gouttiere: CGFloat { iPhone ? 46 : 38 }
     private let enTete: CGFloat = 62
 
     private func couleurJour(_ i: Int) -> Color { CarteDuVoyage.couleur(du: i) }
@@ -473,8 +484,10 @@ struct TimingView: View {
             ForEach(0..<24, id: \.self) { h in
                 Rectangle().fill(c.opacity(h % 6 == 0 ? 0.65 : 0.38)).frame(height: h % 6 == 0 ? 1.5 : 1).offset(y: CGFloat(h) * hauteurHeure)
                 // Heure sur une pastille opaque, en texte foncé : lisible quelle que soit la couleur du jour.
-                Text(String(format: "%02d h", h)).font(.caption.weight(.bold).monospacedDigit()).foregroundStyle(.primary)
-                    .padding(.horizontal, 4).padding(.vertical, 1)
+                Text(String(format: "%02d h", h))
+                    .font((iPhone ? Font.caption2 : Font.caption).weight(.bold).monospacedDigit()).foregroundStyle(.primary)
+                    .lineLimit(1).fixedSize()
+                    .padding(.horizontal, iPhone ? 3 : 4).padding(.vertical, 1)
                     .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(.background))
                     .overlay(RoundedRectangle(cornerRadius: 5, style: .continuous).strokeBorder(c.opacity(0.7), lineWidth: 1))
                     .frame(width: gouttiere, alignment: .center).offset(y: CGFloat(h) * hauteurHeure + (h == 0 ? 3 : -8))
