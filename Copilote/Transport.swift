@@ -91,6 +91,9 @@ struct Transport: Codable, Equatable {
     var prixEnfantLocal: Bool?
     /// Itinéraire en transports en commun cherché avec Google, gardé avec le transport (absent des anciens transports).
     var itineraireCommun: ItineraireCommun?
+    /// Durée du trajet corrigée à la main après le calcul, en minutes. Le tracé calculé reste sur la carte ;
+    /// un nouveau calcul l'efface.
+    var dureeModifiee: Double?
 
     var departCoordonnee: CLLocationCoordinate2D? {
         guard let departLatitude, let departLongitude else { return nil }
@@ -163,6 +166,18 @@ final class Itineraires {
         guard mode.aUnItineraire else { return }
         let cle = Self.cle(a, b, mode)
         guard trajets[cle] == nil, !enCours.contains(cle) else { return }
+        await calculerMaintenant(a, b, mode, cle: cle)
+    }
+
+    /// Recalcule l'itinéraire ; l'ancien reste tracé tant que le nouveau n'est pas trouvé.
+    func recalculer(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, _ mode: ModeTransport) async {
+        guard mode.aUnItineraire else { return }
+        let cle = Self.cle(a, b, mode)
+        guard !enCours.contains(cle) else { return }
+        await calculerMaintenant(a, b, mode, cle: cle)
+    }
+
+    private func calculerMaintenant(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, _ mode: ModeTransport, cle: String) async {
         enCours.insert(cle)
         defer { enCours.remove(cle) }
         // Dans une tâche à part : si la vue qui demande disparaît ou se recalcule (ouverture du voyage), le calcul continue.
@@ -209,8 +224,11 @@ final class Itineraires {
 }
 
 extension Trajet {
-    var resume: String? {
-        guard let distance, let duree else { return nil }
+    var resume: String? { resume(dureeModifiee: nil) }
+
+    /// « 12,4 km · 25 min » ; avec une durée corrigée à la main (en minutes), c'est elle qui s'affiche.
+    func resume(dureeModifiee: Double?) -> String? {
+        guard let distance, let duree = dureeModifiee.map({ $0 * 60 }) ?? duree else { return nil }
         let km = distance >= 1000 ? "\((distance / 1000).formatted(.number.precision(.fractionLength(1)))) km" : "\(Int(distance)) m"
         let minutes = Int((duree / 60).rounded())
         let temps = minutes >= 60 ? "\(minutes / 60) h \(String(format: "%02d", minutes % 60))" : "\(minutes) min"

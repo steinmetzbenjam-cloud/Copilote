@@ -288,6 +288,21 @@ struct CarteDuVoyage: View {
                                     if etape.categorie == .repas {
                                         // Un repas : une assiette ronde avec le numéro au milieu, une fourchette et un couteau de chaque côté.
                                         PionRepas(numero: rang + 1, couleur: Self.couleur(du: index), taille: taille)
+                                    } else if etape.categorie == .hebergement {
+                                        // Un hébergement parmi les étapes du jour : le lit, comme pour les nuits, avec son numéro.
+                                        Image(systemName: "bed.double.fill")
+                                            .font(.system(size: taille * 0.42)).foregroundStyle(.white)
+                                            .frame(width: taille, height: taille)
+                                            .background(Self.couleur(du: index), in: RoundedRectangle(cornerRadius: 7))
+                                            .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white, lineWidth: 2))
+                                            .overlay(alignment: .topTrailing) {
+                                                Text("\(rang + 1)")
+                                                    .font(.system(size: 10, weight: .bold)).foregroundStyle(Self.couleur(du: index))
+                                                    .frame(minWidth: 15, minHeight: 15)
+                                                    .background(.white, in: Circle())
+                                                    .overlay(Circle().stroke(Self.couleur(du: index), lineWidth: 1.5))
+                                                    .offset(x: 6, y: -6)
+                                            }
                                     } else {
                                         Text("\(rang + 1)")
                                             .font(.caption.bold())

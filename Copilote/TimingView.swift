@@ -91,6 +91,8 @@ struct TimingView: View {
     private func dureeTransport(_ t: Transport, de depart: Etape?, vers arrivee: Etape?, jour: Date) -> (minutes: Double, estimee: Bool) {
         let z = voyage.fuseaux(de: t, depuis: depart, vers: arrivee)
         if let d = Horaires.duree(t, jour: jour, depart: z.depart, arrivee: z.arrivee) { return (d / 60, false) }
+        // Durée corrigée à la main après le calcul : elle remplace celle de l'itinéraire.
+        if let m = t.dureeModifiee, m > 0 { return (m, false) }
         if let s = t.itineraireCommun?.secondes, s > 0 { return (Double(s) / 60, false) }
         if t.mode.aUnItineraire, let a = depart?.coordonnee, let b = arrivee?.coordonnee,
            let duree = itineraires.trajet(a, b, t.mode)?.duree { return (max(duree / 60, 5), false) }

@@ -66,7 +66,7 @@ struct TransportEditView: View {
                 } footer: {
                     Text(trajet)
                 }
-                .onChange(of: transport.mode) { _, _ in transport.sousType = "" }
+                .onChange(of: transport.mode) { _, _ in transport.sousType = ""; transport.dureeModifiee = nil }
 
                 if lieuxExtremites {
                     Section {
@@ -298,7 +298,8 @@ struct TransportEditView: View {
             DetailItineraireCommun(itineraire: itineraire)
             Text("Enregistré avec le transport et tracé sur la carte. Calculé \(itineraire.calculeLe.formatted(.relative(presentation: .named))).")
                 .font(.footnote).foregroundStyle(.secondary)
-            Button("Retirer l'itinéraire", systemImage: "xmark.circle", role: .destructive) { transport.itineraireCommun = nil }
+            DureeDuTrajet(calculee: Double(itineraire.secondes) / 60, modifiee: $transport.dureeModifiee)
+            Button("Retirer l'itinéraire", systemImage: "xmark.circle", role: .destructive) { transport.itineraireCommun = nil; transport.dureeModifiee = nil }
                 .buttonStyle(.borderless)
         }
     }
@@ -309,6 +310,7 @@ struct TransportEditView: View {
         defer { rechercheEnCours = false }
         if let estimation = await EstimationPlans.estimer(de: a, vers: b) {
             transport.itineraireCommun = estimation
+            transport.dureeModifiee = nil
             erreurRecherche = nil
         } else {
             erreurRecherche = "Plans n'a pas pu estimer la durée de ce trajet."
@@ -329,6 +331,7 @@ struct TransportEditView: View {
         do {
             let resultat = try await RoutesGoogle.chercher(de: a, vers: b, sousType: transport.sousType, depart: quand)
             transport.itineraireCommun = resultat
+            transport.dureeModifiee = nil
             // Les stations et l'opérateur se remplissent s'ils sont vides.
             let premiere = resultat.etapes.first { !$0.estMarche }, derniere = resultat.etapes.last { !$0.estMarche }
             if transport.de.isEmpty { transport.de = premiere?.depart ?? "" }
@@ -342,7 +345,7 @@ struct TransportEditView: View {
     /// Distance et durée de l'itinéraire le plus court, si les deux étapes sont localisées.
     @ViewBuilder private var infoItineraire: some View {
         if let (a, b) = coordonnees {
-            LigneItineraire(a: a, b: b, mode: transport.mode)
+            LigneItineraire(a: a, b: b, mode: transport.mode, dureeModifiee: $transport.dureeModifiee)
         } else {
             Text("Place les deux étapes sur la carte (lieu) pour voir l'itinéraire.")
                 .font(.footnote).foregroundStyle(.secondary)
@@ -357,13 +360,105 @@ struct LigneItineraire: View {
     let a: CLLocationCoordinate2D
     let b: CLLocationCoordinate2D
     let mode: ModeTransport
+    @Binding var dureeModifiee: Double?
     @State private var itineraires = Itineraires.shared
+    @State private var recalcul = false
 
     var body: some View {
+        let trajet = itineraires.trajet(a, b, mode)
         LabeledContent("Itinéraire le plus court") {
-            Text(itineraires.trajet(a, b, mode)?.resume ?? "Calcul…").foregroundStyle(.secondary)
+            Text(trajet?.resume ?? "Calcul…").foregroundStyle(.secondary)
         }
         .task(id: Itineraires.cle(a, b, mode)) { await itineraires.charger(a, b, mode) }
+        if let duree = trajet?.duree {
+            DureeDuTrajet(calculee: duree / 60, modifiee: $dureeModifiee)
+        }
+        // Un nouveau calcul repart de zéro : la durée corrigée à la main est effacée.
+        Button(recalcul ? "Calcul…" : "Recalculer l'itinéraire", systemImage: "arrow.triangle.2.circlepath") {
+            recalcul = true
+            dureeModifiee = nil
+            Task {
+                await itineraires.recalculer(a, b, mode)
+                recalcul = false
+            }
+        }
+        .buttonStyle(.borderless)
+        .disabled(recalcul)
+    }
+}
+
+/// Durée du trajet, réglable à la minute après le calcul : seule la durée change, le tracé trouvé reste sur la carte.
+struct DureeDuTrajet: View {
+    /// Durée trouvée par le calcul, en minutes.
+    let calculee: Double
+    @Binding var modifiee: Double?
+    @FocusState private var caseActive: String?
+
+    private var minutesAffichees: Int { Int((modifiee ?? calculee).rounded()) }
+
+    private var heures: Binding<Int?> {
+        Binding(get: { minutesAffichees / 60 }, set: { regler(heures: $0 ?? 0, minutes: minutesAffichees % 60) })
+    }
+
+    private var minutes: Binding<Int?> {
+        Binding(get: { minutesAffichees % 60 }, set: { regler(heures: minutesAffichees / 60, minutes: $0 ?? 0) })
+    }
+
+    /// Revenir exactement à la durée calculée efface la correction.
+    private func regler(heures: Int, minutes: Int) {
+        let total = Double(max(heures, 0) * 60 + max(minutes, 0))
+        guard total > 0 else { return }
+        modifiee = Int(total) == Int(calculee.rounded()) ? nil : total
+    }
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Text("Durée du trajet").lineLimit(1).fixedSize()
+            Spacer(minLength: 4)
+            caseNombre(heures, unite: "h")
+            caseNombre(minutes, unite: "min")
+        }
+        .onChange(of: caseActive) { _, active in if active != nil { toutSelectionner() } }
+        if modifiee != nil {
+            HStack {
+                Text("Modifiée à la main (calcul : \(CategorieEtape.texteDuree(calculee))).")
+                    .font(.footnote).foregroundStyle(.orange)
+                Spacer()
+                Button("Reprendre le calcul") { modifiee = nil }
+                    .font(.footnote).buttonStyle(.borderless)
+            }
+        }
+    }
+
+    private func caseNombre(_ valeur: Binding<Int?>, unite: String) -> some View {
+        HStack(spacing: 3) {
+            TextField("", value: valeur, format: .number.grouping(.never))
+                .textFieldStyle(.plain)
+                .multilineTextAlignment(.trailing)
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder((modifiee != nil ? Color.orange : .gray).opacity(0.5), lineWidth: 1))
+                .foregroundStyle(.black)
+                .frame(width: 52)
+                .focused($caseActive, equals: unite)
+                #if os(iOS)
+                .keyboardType(.numberPad)
+                #endif
+            Text(unite).foregroundStyle(.secondary).font(.callout)
+        }
+    }
+
+    /// Le contenu de la case est sélectionné : on tape la nouvelle valeur sans effacer l'ancienne.
+    private func toutSelectionner() {
+        #if os(iOS)
+        DispatchQueue.main.async {
+            UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)), to: nil, from: nil, for: nil)
+        }
+        #else
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+        }
+        #endif
     }
 }
 
@@ -432,7 +527,10 @@ extension Transport {
         var morceaux = [t.mode.libelle]
         if t.mode == .commun, !t.sousType.isEmpty { morceaux = [t.sousType] }
         let ligne = [t.compagnie, t.numero].filter { !$0.isEmpty }.joined(separator: " ")
-        if t.mode == .commun, let duree = t.itineraireCommun?.resume.split(separator: " · ").first, t.depart == nil { morceaux.append(String(duree)) }
+        if t.mode == .commun, t.depart == nil {
+            if let m = t.dureeModifiee { morceaux.append(CategorieEtape.texteDuree(m)) }
+            else if let duree = t.itineraireCommun?.resume.split(separator: " · ").first { morceaux.append(String(duree)) }
+        }
         if !ligne.isEmpty { morceaux.append(ligne) }
         if avecHoraires, let d = t.depart {
             morceaux.append(d.formatted(date: .omitted, time: .shortened) + (t.arrivee.map { " → " + $0.formatted(date: .omitted, time: .shortened) } ?? ""))

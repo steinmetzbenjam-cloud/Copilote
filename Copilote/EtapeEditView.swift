@@ -10,6 +10,8 @@ struct EtapeEditView: View {
     var onFermer: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @FocusState private var titreActif: Bool
+    /// Case de la durée en cours de saisie (« h » ou « min ») : son contenu est sélectionné dès qu'on y entre.
+    @FocusState private var caseDureeActive: String?
     @State private var rechercheOuverte = false
     @State private var transportOuvert = false
     @State private var suggestionsOuvertes = false
@@ -83,11 +85,53 @@ struct EtapeEditView: View {
                 })
     }
 
-    /// Les durées proposées, plus celle de l'étape si elle n'en fait pas partie (venue d'une heure de fin).
-    private var durees: [Double] {
-        let base: [Double] = [15, 30, 45, 60, 90, 120, 150, 180, 240, 300, 360, 480]
-        guard let d = etape.duree, !base.contains(d) else { return base }
-        return (base + [d]).sorted()
+    /// Les heures et les minutes de la durée, saisies séparément ; les deux vides : durée non précisée.
+    private var heuresDuree: Binding<Int?> {
+        Binding(get: { etape.duree.map { Int($0.rounded()) / 60 } },
+                set: { regler(heures: $0, minutes: etape.duree.map { Int($0.rounded()) % 60 }) })
+    }
+
+    private var minutesDuree: Binding<Int?> {
+        Binding(get: { etape.duree.map { Int($0.rounded()) % 60 } },
+                set: { regler(heures: etape.duree.map { Int($0.rounded()) / 60 }, minutes: $0) })
+    }
+
+    private func regler(heures: Int?, minutes: Int?) {
+        let total = max(heures ?? 0, 0) * 60 + max(minutes ?? 0, 0)
+        dureeChoisie.wrappedValue = (heures == nil && minutes == nil) || total == 0 ? nil : Double(total)
+    }
+
+    /// Sélectionne tout le texte de la case qui vient de prendre le focus : on tape la nouvelle valeur sans effacer l'ancienne.
+    private func toutSelectionner() {
+        #if os(iOS)
+        DispatchQueue.main.async {
+            UIApplication.shared.sendAction(#selector(UIResponder.selectAll(_:)), to: nil, from: nil, for: nil)
+        }
+        #else
+        // Après la fin du clic : sinon le clic replace le curseur et annule la sélection.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            NSApp.sendAction(#selector(NSText.selectAll(_:)), to: nil, from: nil)
+        }
+        #endif
+    }
+
+    /// Une petite case blanche pour un nombre entier, comme celles des prix.
+    private func caseDuree(_ valeur: Binding<Int?>, unite: String) -> some View {
+        HStack(spacing: 3) {
+            TextField("", value: valeur, format: .number.grouping(.never))
+                .textFieldStyle(.plain)
+                .multilineTextAlignment(.trailing)
+                .padding(.horizontal, 8).padding(.vertical, 5)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 7))
+                .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.gray.opacity(0.35), lineWidth: 1))
+                .foregroundStyle(.black)
+                .frame(width: 52)
+                .focused($caseDureeActive, equals: unite)
+                #if os(iOS)
+                .keyboardType(.numberPad)
+                #endif
+            Text(unite).foregroundStyle(.secondary).font(.callout)
+        }
     }
 
     private func bulleHeure(_ valeur: Binding<Date?>, depart: Int) -> some View {
@@ -132,6 +176,7 @@ struct EtapeEditView: View {
             }
         }
         .onAppear { if etape.titre.isEmpty { titreActif = true } }
+        .onChange(of: caseDureeActive) { _, active in if active != nil { toutSelectionner() } }
     }
 
     /// En tête de la fiche : l'ampoule des idées, le nom de l'étape au centre (on le modifie en cliquant dessus), puis fermer.
@@ -263,13 +308,20 @@ struct EtapeEditView: View {
                         Text("Nuit du \(jour.formatted(.dateTime.day().month(.wide))) au \(lendemain.formatted(.dateTime.day().month(.wide)))")
                             .font(.footnote).foregroundStyle(.secondary)
                     }
-                    LabeledContent("Durée") {
-                        Picker("Durée", selection: dureeChoisie) {
-                            Text("Non précisée").tag(Double?.none)
-                            ForEach(durees, id: \.self) { Text(CategorieEtape.texteDuree($0)).tag(Double?.some($0)) }
+                    // Durée à la minute près : des heures et des minutes (au-delà de 59 min, elles passent en heures).
+                    HStack(spacing: 10) {
+                        Text("Durée").lineLimit(1).fixedSize()
+                        Spacer(minLength: 4)
+                        caseDuree(heuresDuree, unite: "h")
+                        caseDuree(minutesDuree, unite: "min")
+                        if etape.duree != nil {
+                            Button { dureeChoisie.wrappedValue = nil } label: {
+                                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Effacer la durée")
+                            .help("Effacer la durée")
                         }
-                        .labelsHidden()
-                        .fixedSize()
                     }
                     if etape.jour != nil { Toggle("Horaire", isOn: horaireActive) }
                     if etape.jour != nil, horaireActive.wrappedValue {

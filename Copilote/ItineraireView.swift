@@ -348,7 +348,7 @@ struct ItineraireView: View {
                 Text(voyage.descriptifLocal(t, depuis: depart, vers: arrivee))
                 if t.mode.aUnItineraire, let a = depart.coordonnee, let b = arrivee.coordonnee {
                     Spacer()
-                    ResumeItineraire(a: a, b: b, mode: t.mode)
+                    ResumeItineraire(a: a, b: b, mode: t.mode, dureeModifiee: t.dureeModifiee)
                 }
             }
             .font(.subheadline)
