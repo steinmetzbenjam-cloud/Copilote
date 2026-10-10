@@ -434,6 +434,8 @@ struct DureeDuTrajet: View {
         HStack(spacing: 3) {
             TextField("", value: valeur, format: .number.grouping(.never))
                 .textFieldStyle(.plain)
+                // Sans libellé : dans un formulaire Mac, la place du libellé vide étirait la case en hauteur.
+                .labelsHidden()
                 .multilineTextAlignment(.trailing)
                 .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 7))

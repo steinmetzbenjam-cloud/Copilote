@@ -13,10 +13,18 @@ struct CarteDuVoyage: View {
     var margeGauche: CGFloat = 0
     /// Étape dont le détail est ouvert : la carte zoome sur son lieu et grossit son repère.
     var etapeFocus: Etape? = nil
+    /// Reçoit un point d'intérêt de la carte (restaurant, musée, plage…) choisi pour devenir une étape ; nil : points non sélectionnables.
+    var onLieu: ((LieuCarte) -> Void)? = nil
     var onEtape: (Etape) -> Void
 
     @State private var position: MapCameraPosition = .automatic
     @State private var regionPays: MKCoordinateRegion?
+    /// Point d'intérêt de la carte touché : une petite fiche propose d'en faire une étape.
+    @State private var lieuChoisi: LieuCarte?
+    #if os(iOS)
+    /// iPhone, iPad : le point d'intérêt sélectionné par Plans lui-même.
+    @State private var pointSelectionne: MapFeature?
+    #endif
 
     /// Une couleur par jour, modernes et bien distinctes : indigo, corail, émeraude, ambre, violet, cyan, rose, ardoise.
     static let couleurs: [Color] = [
@@ -218,125 +226,196 @@ struct CarteDuVoyage: View {
         GeometryReader { geo in
             // Lu ici pour que la carte soit redessinée dès qu'un itinéraire arrive (le contenu de la carte n'est pas observé seul).
             let _ = Itineraires.shared.trajets.count
-            Map(position: $position) {
-                ForEach(voyage.etapesSansJour.filter { $0.coordonnee != nil }) { etape in
-                    Annotation(etape.titre, coordinate: etape.coordonnee!) {
-                        Button { onEtape(etape) } label: {
-                            Image(systemName: etape.categorie.symbole)
-                                .font(.caption2).foregroundStyle(.white)
-                                .frame(width: 24, height: 24)
-                                .background(.gray, in: Circle())
-                                .overlay(Circle().stroke(.white, lineWidth: 2))
-                                .scaleEffect(estEtapeFocus(etape) ? 1.4 : 1)
-                        }
-                        .buttonStyle(.plain)
+            MapReader { proxy in
+                carte(proxy)
+                    .mapControls {
+                        MapCompass()
+                        MapScaleView()
                     }
-                }
-                ForEach(joursDessines, id: \.jour) { index, jour in
-                    let focus = estJourFocus(jour)
-                    let attenue = jourFocus != nil && !focus
-                    ForEach(voyage.infos(du: jour)?.lieux ?? []) { lieu in
-                        Annotation(lieu.nom, coordinate: lieu.coordonnee) {
-                            Image(systemName: lieu.estPays ? "flag.fill" : "scope")
-                                .font(.caption)
-                                .foregroundStyle(Self.couleur(du: index))
-                                .padding(5)
-                                .background(.background, in: Circle())
-                                .overlay(Circle().stroke(Self.couleur(du: index), lineWidth: 1.5))
-                                .opacity(attenue ? 0.35 : 1)
+                    .overlay(alignment: .bottom) {
+                        if let lieu = lieuChoisi, let onLieu {
+                            ficheLieu(lieu, onLieu: onLieu)
+                                // Dans la partie de la carte que le panneau de gauche ne recouvre pas.
+                                .padding(.leading, margeGauche)
+                                .padding(14)
+                                .transition(.move(edge: .bottom).combined(with: .opacity))
                         }
                     }
-                    let etapes = voyage.etapes(du: jour).filter { $0.coordonnee != nil }
-                    ForEach(hebergementsAffiches(pour: jour)) { h in
-                        Annotation(h.titre, coordinate: h.coordonnee!) {
-                            Button { onEtape(h) } label: {
-                                Image(systemName: "bed.double.fill")
-                                    .font(.caption2).foregroundStyle(.white)
-                                    .frame(width: 26, height: 26)
-                                    .background(voyage.couleurNuit(apres: h.jour ?? jour), in: RoundedRectangle(cornerRadius: 7))
-                                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white, lineWidth: 2))
-                                    .opacity(attenue && !precedeLeFocus(h) && !estEtapeFocus(h) ? 0.4 : 1)
-                                    .scaleEffect(estEtapeFocus(h) ? 1.4 : 1)
-                            }
-                            .buttonStyle(.plain)
+                    .animation(.snappy, value: lieuChoisi?.id)
+                    .task(id: clesItineraires) {
+                        for p in paires where p.mode.aUnItineraire {
+                            await Itineraires.shared.charger(p.a, p.b, p.mode)
+                        }
+                        for p in extremites where p.mode.aUnItineraire {
+                            await Itineraires.shared.charger(p.a, p.b, p.mode)
                         }
                     }
-                    let traits = segments(du: jour)
-                    ForEach(traits) { s in
-                        MapPolyline(coordinates: s.points)
-                            .stroke((s.couleur ?? Self.couleur(du: index)).opacity(attenue ? 0.2 : (s.couleur == nil ? 0.65 : 0.9)),
-                                    style: StrokeStyle(lineWidth: focus && jourFocus != nil ? 4 : 3, lineCap: .round, dash: s.tirets))
+                    .task(id: signature(geo.size)) {
+                        await recadrer(taille: geo.size)
                     }
-                    ForEach(traits.filter(\.avion)) { s in
-                        if let milieu = s.milieuAvion {
-                            Annotation("", coordinate: milieu.coordonnee, anchor: .center) {
-                                Image(systemName: "airplane")
-                                    .font(.system(size: s.grandAvion ? 32 : 17, weight: .semibold))
-                                    .foregroundStyle(Self.couleur(du: index))
-                                    .rotationEffect(.radians(milieu.angle))
-                                    .shadow(color: .white, radius: 2)
-                                    .opacity(attenue ? 0.35 : 1)
-                                    .allowsHitTesting(false)
-                            }
-                        }
-                    }
-                    ForEach(Array(etapes.enumerated()), id: \.element.id) { rang, etape in
-                        Annotation(etape.titre, coordinate: etape.coordonnee!) {
-                            Button { onEtape(etape) } label: {
-                                let taille: CGFloat = focus && jourFocus != nil ? 30 : 26
-                                Group {
-                                    if etape.categorie == .repas {
-                                        // Un repas : une assiette ronde avec le numéro au milieu, une fourchette et un couteau de chaque côté.
-                                        PionRepas(numero: rang + 1, couleur: Self.couleur(du: index), taille: taille)
-                                    } else if etape.categorie == .hebergement {
-                                        // Un hébergement parmi les étapes du jour : le lit, comme pour les nuits, avec son numéro.
-                                        Image(systemName: "bed.double.fill")
-                                            .font(.system(size: taille * 0.42)).foregroundStyle(.white)
-                                            .frame(width: taille, height: taille)
-                                            .background(Self.couleur(du: index), in: RoundedRectangle(cornerRadius: 7))
-                                            .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white, lineWidth: 2))
-                                            .overlay(alignment: .topTrailing) {
-                                                Text("\(rang + 1)")
-                                                    .font(.system(size: 10, weight: .bold)).foregroundStyle(Self.couleur(du: index))
-                                                    .frame(minWidth: 15, minHeight: 15)
-                                                    .background(.white, in: Circle())
-                                                    .overlay(Circle().stroke(Self.couleur(du: index), lineWidth: 1.5))
-                                                    .offset(x: 6, y: -6)
-                                            }
-                                    } else {
-                                        Text("\(rang + 1)")
-                                            .font(.caption.bold())
-                                            .foregroundStyle(.white)
-                                            .frame(width: taille, height: taille)
-                                            .background(Self.couleur(du: index), in: Circle())
-                                            .overlay(Circle().stroke(.white, lineWidth: 2))
-                                    }
-                                }
-                                    .opacity(attenue && !estEtapeFocus(etape) ? 0.4 : 1)
-                                    .scaleEffect(estEtapeFocus(etape) ? 1.4 : 1)
-                                    .shadow(color: .black.opacity(estEtapeFocus(etape) ? 0.35 : 0), radius: 4, y: 2)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-            .mapControls {
-                MapCompass()
-                MapScaleView()
-            }
-            .task(id: clesItineraires) {
-                for p in paires where p.mode.aUnItineraire {
-                    await Itineraires.shared.charger(p.a, p.b, p.mode)
-                }
-                for p in extremites where p.mode.aUnItineraire {
-                    await Itineraires.shared.charger(p.a, p.b, p.mode)
-                }
-            }
-            .task(id: signature(geo.size)) {
-                await recadrer(taille: geo.size)
             }
         }
+    }
+
+    @ViewBuilder private func carte(_ proxy: MapProxy) -> some View {
+        #if os(iOS)
+        Map(position: $position, selection: $pointSelectionne) { contenu }
+            .mapFeatureSelectionDisabled { _ in onLieu == nil }
+            .onChange(of: pointSelectionne) { _, f in lieuChoisi = f.map(LieuCarte.init(feature:)) }
+        #else
+        // Sur Mac, Plans ne laisse pas choisir ses points d'intérêt : on cherche le plus proche de l'endroit cliqué.
+        Map(position: $position) { contenu }
+            .onTapGesture { point in
+                guard onLieu != nil, let c = proxy.convert(point, from: .local) else { return }
+                let voisin = proxy.convert(CGPoint(x: point.x + 24, y: point.y), from: .local)
+                let rayon = voisin.map { CLLocation(latitude: c.latitude, longitude: c.longitude)
+                    .distance(from: CLLocation(latitude: $0.latitude, longitude: $0.longitude)) } ?? 50
+                Task { lieuChoisi = await LieuCarte.plusProche(de: c, rayon: max(rayon, 25)) }
+            }
+        #endif
+    }
+
+    @MapContentBuilder private var contenu: some MapContent {
+        ForEach(voyage.etapesSansJour.filter { $0.coordonnee != nil }) { etape in
+            Annotation(etape.titre, coordinate: etape.coordonnee!) {
+                Button { onEtape(etape) } label: {
+                    Image(systemName: etape.categorie.symbole)
+                        .font(.caption2).foregroundStyle(.white)
+                        .frame(width: 24, height: 24)
+                        .background(.gray, in: Circle())
+                        .overlay(Circle().stroke(.white, lineWidth: 2))
+                        .scaleEffect(estEtapeFocus(etape) ? 1.4 : 1)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        ForEach(joursDessines, id: \.jour) { index, jour in
+            let focus = estJourFocus(jour)
+            let attenue = jourFocus != nil && !focus
+            ForEach(voyage.infos(du: jour)?.lieux ?? []) { lieu in
+                Annotation(lieu.nom, coordinate: lieu.coordonnee) {
+                    Image(systemName: lieu.estPays ? "flag.fill" : "scope")
+                        .font(.caption)
+                        .foregroundStyle(Self.couleur(du: index))
+                        .padding(5)
+                        .background(.background, in: Circle())
+                        .overlay(Circle().stroke(Self.couleur(du: index), lineWidth: 1.5))
+                        .opacity(attenue ? 0.35 : 1)
+                }
+            }
+            let etapes = voyage.etapes(du: jour).filter { $0.coordonnee != nil }
+            ForEach(hebergementsAffiches(pour: jour)) { h in
+                Annotation(h.titre, coordinate: h.coordonnee!) {
+                    Button { onEtape(h) } label: {
+                        Image(systemName: "bed.double.fill")
+                            .font(.caption2).foregroundStyle(.white)
+                            .frame(width: 26, height: 26)
+                            .background(voyage.couleurNuit(apres: h.jour ?? jour), in: RoundedRectangle(cornerRadius: 7))
+                            .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white, lineWidth: 2))
+                            .opacity(attenue && !precedeLeFocus(h) && !estEtapeFocus(h) ? 0.4 : 1)
+                            .scaleEffect(estEtapeFocus(h) ? 1.4 : 1)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            let traits = segments(du: jour)
+            ForEach(traits) { s in
+                MapPolyline(coordinates: s.points)
+                    .stroke((s.couleur ?? Self.couleur(du: index)).opacity(attenue ? 0.2 : (s.couleur == nil ? 0.65 : 0.9)),
+                            style: StrokeStyle(lineWidth: focus && jourFocus != nil ? 4 : 3, lineCap: .round, dash: s.tirets))
+            }
+            ForEach(traits.filter(\.avion)) { s in
+                if let milieu = s.milieuAvion {
+                    Annotation("", coordinate: milieu.coordonnee, anchor: .center) {
+                        Image(systemName: "airplane")
+                            .font(.system(size: s.grandAvion ? 32 : 17, weight: .semibold))
+                            .foregroundStyle(Self.couleur(du: index))
+                            .rotationEffect(.radians(milieu.angle))
+                            .shadow(color: .white, radius: 2)
+                            .opacity(attenue ? 0.35 : 1)
+                            .allowsHitTesting(false)
+                    }
+                }
+            }
+            ForEach(Array(etapes.enumerated()), id: \.element.id) { rang, etape in
+                Annotation(etape.titre, coordinate: etape.coordonnee!) {
+                    Button { onEtape(etape) } label: {
+                        let taille: CGFloat = focus && jourFocus != nil ? 30 : 26
+                        Group {
+                            if etape.categorie == .repas {
+                                // Un repas : une assiette ronde avec le numéro au milieu, une fourchette et un couteau de chaque côté.
+                                PionRepas(numero: rang + 1, couleur: Self.couleur(du: index), taille: taille)
+                            } else if etape.categorie == .hebergement {
+                                // Un hébergement parmi les étapes du jour : le lit, comme pour les nuits, avec son numéro.
+                                Image(systemName: "bed.double.fill")
+                                    .font(.system(size: taille * 0.42)).foregroundStyle(.white)
+                                    .frame(width: taille, height: taille)
+                                    .background(Self.couleur(du: index), in: RoundedRectangle(cornerRadius: 7))
+                                    .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white, lineWidth: 2))
+                                    .overlay(alignment: .topTrailing) {
+                                        Text("\(rang + 1)")
+                                            .font(.system(size: 10, weight: .bold)).foregroundStyle(Self.couleur(du: index))
+                                            .frame(minWidth: 15, minHeight: 15)
+                                            .background(.white, in: Circle())
+                                            .overlay(Circle().stroke(Self.couleur(du: index), lineWidth: 1.5))
+                                            .offset(x: 6, y: -6)
+                                    }
+                            } else {
+                                Text("\(rang + 1)")
+                                    .font(.caption.bold())
+                                    .foregroundStyle(.white)
+                                    .frame(width: taille, height: taille)
+                                    .background(Self.couleur(du: index), in: Circle())
+                                    .overlay(Circle().stroke(.white, lineWidth: 2))
+                            }
+                        }
+                            .opacity(attenue && !estEtapeFocus(etape) ? 0.4 : 1)
+                            .scaleEffect(estEtapeFocus(etape) ? 1.4 : 1)
+                            .shadow(color: .black.opacity(estEtapeFocus(etape) ? 0.35 : 0), radius: 4, y: 2)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+
+    // MARK: Point d'intérêt
+
+    private func ficheLieu(_ lieu: LieuCarte, onLieu: @escaping (LieuCarte) -> Void) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: lieu.categorie.symbole)
+                .font(.system(size: 16, weight: .semibold)).foregroundStyle(.white)
+                .frame(width: 36, height: 36)
+                .background(Circle().fill(Color.accentColor))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(lieu.nom).font(.headline).lineLimit(2)
+                Text(lieu.categorie.libelle)
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button("Créer une étape", systemImage: "plus.circle.fill") {
+                onLieu(lieu)
+                fermerFiche()
+            }
+            .buttonStyle(.borderedProminent)
+            Button { fermerFiche() } label: {
+                Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.secondary)
+                    .frame(width: 28, height: 28).background(Circle().fill(Color.secondary.opacity(0.18)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Fermer")
+        }
+        .padding(12)
+        .frame(maxWidth: 460)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(.regularMaterial))
+        .shadow(color: .black.opacity(0.2), radius: 8, y: 3)
+    }
+
+    private func fermerFiche() {
+        lieuChoisi = nil
+        #if os(iOS)
+        pointSelectionne = nil
+        #endif
     }
 
     // MARK: Cadrage
@@ -395,6 +474,48 @@ struct CarteDuVoyage: View {
         let b = MKMapPoint(CLLocationCoordinate2D(latitude: region.center.latitude - region.span.latitudeDelta / 2,
                                                   longitude: region.center.longitude + region.span.longitudeDelta / 2))
         return MKMapRect(x: min(a.x, b.x), y: min(a.y, b.y), width: abs(a.x - b.x), height: abs(a.y - b.y))
+    }
+}
+
+/// Un point d'intérêt de la carte (restaurant, musée, plage…) qui peut devenir une étape.
+struct LieuCarte: Identifiable {
+    let id = UUID()
+    var nom: String
+    var coordonnee: CLLocationCoordinate2D
+    var categorie: CategorieEtape
+    /// Adresse et site, quand Plans les donne.
+    var adresse: String?
+    var site: String?
+    #if os(iOS)
+    var feature: MapFeature?
+
+    init(feature f: MapFeature) {
+        nom = f.title ?? "Lieu"
+        coordonnee = f.coordinate
+        categorie = CategorieEtape(pointDInteret: f.pointOfInterestCategory)
+        feature = f
+    }
+    #endif
+
+    init(item: MKMapItem) {
+        nom = item.name ?? "Lieu"
+        coordonnee = item.placemark.coordinate
+        categorie = CategorieEtape(pointDInteret: item.pointOfInterestCategory)
+        let morceaux = [item.placemark.thoroughfare, item.placemark.locality].compactMap { $0 }
+        adresse = morceaux.isEmpty ? nil : morceaux.joined(separator: ", ")
+        site = item.url?.absoluteString
+    }
+
+    /// Le point d'intérêt le plus proche d'un endroit cliqué, dans un rayon en mètres.
+    static func plusProche(de c: CLLocationCoordinate2D, rayon: CLLocationDistance) async -> LieuCarte? {
+        let requete = MKLocalPointsOfInterestRequest(center: c, radius: rayon)
+        guard let reponse = try? await MKLocalSearch(request: requete).start() else { return nil }
+        let ici = CLLocation(latitude: c.latitude, longitude: c.longitude)
+        let proche = reponse.mapItems.min {
+            ici.distance(from: CLLocation(latitude: $0.placemark.coordinate.latitude, longitude: $0.placemark.coordinate.longitude))
+                < ici.distance(from: CLLocation(latitude: $1.placemark.coordinate.latitude, longitude: $1.placemark.coordinate.longitude))
+        }
+        return proche.map(LieuCarte.init(item:))
     }
 }
 

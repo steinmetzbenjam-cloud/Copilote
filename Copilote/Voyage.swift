@@ -23,6 +23,9 @@ final class Voyage {
     /// Monnaie locale (code ISO, ex. CRC) et ce que vaut 1 € dans cette monnaie.
     var deviseLocale: String?
     var tauxChange: Double?
+    /// Troisième monnaie, choisie à la main (ex. USD), et ce que vaut 1 € dans cette monnaie.
+    var deviseTierce: String?
+    var tauxTierce: Double?
     /// Fuseau dans lequel tous les horaires du voyage sont lus (identifiant, ex. « Europe/Paris »), quel que soit le fuseau de l'appareil.
     var fuseauReferenceId: String?
     var transportAllerJSON: String?

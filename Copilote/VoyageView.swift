@@ -233,7 +233,9 @@ struct VoyageView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .frame(maxWidth: iconesSeules ? 330 : 600)
+                // Taille réelle du sélecteur : bridé par un cadre plus étroit, ses segments des bords (Itinéraire, Infos)
+                // débordaient et ne recevaient plus les clics.
+                .fixedSize()
             }
             }
         }

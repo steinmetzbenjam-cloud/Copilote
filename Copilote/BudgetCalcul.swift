@@ -74,7 +74,7 @@ struct ElementBudget: Identifiable {
 
 struct BudgetCalcule {
     var elements: [ElementBudget] = []
-    /// Prix saisis en monnaie locale sans taux de change : ils ne sont pas comptés.
+    /// Prix saisis dans une autre monnaie que l'euro sans taux de change : ils ne sont pas comptés.
     var tauxManquants = 0
     /// Étapes avec un prix mais sans jour : elles ne sont pas comptées.
     var etapesSansJour = 0
@@ -91,14 +91,13 @@ extension Voyage {
         guard let premier = jours.first, let dernier = jours.last else { return resultat }
         let cal = Calendar.current
 
-        func euros(_ prix: Double?, _ local: Bool) -> Double? {
+        func euros(_ prix: Double?, _ monnaie: MonnaiePrix) -> Double? {
             guard let prix else { return nil }
-            if !local { return prix }
-            if let converti = versEuros(prix) { return converti }
+            if let converti = versEuros(prix, depuis: monnaie) { return converti }
             resultat.tauxManquants += 1
             return nil
         }
-        func prix(_ a: (Double?, Bool), _ e: (Double?, Bool), _ n: (Double?, Bool)) -> [Tarif: Double] {
+        func prix(_ a: (Double?, MonnaiePrix), _ e: (Double?, MonnaiePrix), _ n: (Double?, MonnaiePrix)) -> [Tarif: Double] {
             var r: [Tarif: Double] = [:]
             if let v = euros(a.0, a.1) { r[.adulte] = v }
             if let v = euros(e.0, e.1) { r[.etudiant] = v }
@@ -107,8 +106,7 @@ extension Voyage {
         }
         func ajouter(_ transport: Transport?, titre: String, jour: Date) {
             guard let t = transport else { return }
-            let p = prix((t.prixAdulte, t.prixAdulteLocal ?? false), (t.prixEtudiant, t.prixEtudiantLocal ?? false),
-                         (t.prixEnfant, t.prixEnfantLocal ?? false))
+            let p = prix((t.prixAdulte, t.monnaieAdulte), (t.prixEtudiant, t.monnaieEtudiant), (t.prixEnfant, t.monnaieEnfant))
             if !p.isEmpty {
                 resultat.elements.append(ElementBudget(titre: "\(t.mode.libelleCourt) · \(titre)", jour: jour, poste: .transport, prix: p))
             }
@@ -126,8 +124,8 @@ extension Voyage {
                 continue
             }
             if etape.aUnBudget {
-                let p = prix((etape.prixAdulte, etape.prixAdulteLocal), (etape.prixEtudiant, etape.prixEtudiantLocal),
-                             (etape.prixEnfant, etape.prixEnfantLocal))
+                let p = prix((etape.prixAdulte, etape.monnaieAdulte), (etape.prixEtudiant, etape.monnaieEtudiant),
+                             (etape.prixEnfant, etape.monnaieEnfant))
                 if !p.isEmpty { resultat.elements.append(ElementBudget(titre: titre, jour: jour, poste: etape.categorie, prix: p)) }
             } else {
                 resultat.etapesSansPrix += 1
@@ -141,11 +139,9 @@ extension Voyage {
         return resultat
     }
 
-    /// Montant d'une dépense déclarée, en euros. Les autres monnaies que l'euro et la monnaie locale du voyage ne sont pas converties.
+    /// Montant d'une dépense déclarée, en euros. Les monnaies autres que l'euro, la locale et la troisième du voyage ne sont pas converties.
     func eurosDeDepense(_ depense: Depense) -> Double? {
-        if depense.devise == "EUR" { return depense.montant }
-        if depense.devise == deviseLocale { return versEuros(depense.montant) }
-        return nil
+        versEuros(depense.montant, code: depense.devise)
     }
 
     /// Ce que des voyageurs ont déjà réglé : ce qu'ils ont payé, plus les remboursements qu'ils ont faits,

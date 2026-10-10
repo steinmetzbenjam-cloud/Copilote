@@ -89,6 +89,10 @@ struct Transport: Codable, Equatable {
     var prixAdulteLocal: Bool?
     var prixEtudiantLocal: Bool?
     var prixEnfantLocal: Bool?
+    /// Prix saisi dans la troisième monnaie du voyage (prioritaire sur `…Local`).
+    var prixAdulteTierce: Bool?
+    var prixEtudiantTierce: Bool?
+    var prixEnfantTierce: Bool?
     /// Itinéraire en transports en commun cherché avec Google, gardé avec le transport (absent des anciens transports).
     var itineraireCommun: ItineraireCommun?
     /// Durée du trajet corrigée à la main après le calcul, en minutes. Le tracé calculé reste sur la carte ;

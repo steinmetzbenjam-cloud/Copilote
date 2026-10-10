@@ -154,8 +154,11 @@ struct BudgetView: View {
         return CadreInfos(titre: titreTotal(), symbole: "eurosign.circle.fill", couleur: .green) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(eur(total)).font(.system(size: 38, weight: .bold, design: .rounded))
-                if let local = voyage.deviseLocale, let converti = voyage.versLocal(total), voyage.aUneMonnaieLocale {
-                    Text("≈ \(Monnaies.formater(converti, local))").foregroundStyle(.secondary)
+                // Le total converti dans la monnaie locale et dans la troisième monnaie.
+                ForEach([MonnaiePrix.locale, .tierce], id: \.self) { m in
+                    if let code = voyage.code(m), let converti = voyage.depuisEuros(total, vers: m) {
+                        Text("≈ \(Monnaies.formater(converti, code))").foregroundStyle(.secondary)
+                    }
                 }
                 if membres.count > 1 {
                     Text("\(membres.count) personnes · en moyenne \(eur(total / Double(membres.count))) chacune")
@@ -327,11 +330,11 @@ struct BudgetView: View {
             notes.append("\(calcul.etapesSansJour) étape\(calcul.etapesSansJour > 1 ? "s" : "") avec un prix mais encore « à placer » : elles ne sont pas comptées.")
         }
         if calcul.tauxManquants > 0 {
-            notes.append("Des prix sont saisis en monnaie locale sans taux de change : renseigne le taux dans l'onglet Infos.")
+            notes.append("Des prix sont saisis dans une autre monnaie que l'euro sans taux de change : renseigne le taux dans l'onglet Infos.")
         }
         let ignorees = voyage.regle(par: Set(voyage.membres.map(\.uid))).ignorees
         if ignorees > 0 {
-            notes.append("\(ignorees) dépense\(ignorees > 1 ? "s" : "") dans une autre monnaie que l'euro ou la monnaie locale ne sont pas prises en compte dans « Déjà réglé ».")
+            notes.append("\(ignorees) dépense\(ignorees > 1 ? "s" : "") dans une monnaie que le voyage ne convertit pas (ni euro, ni monnaie locale, ni troisième monnaie) ne sont pas prises en compte dans « Déjà réglé ».")
         }
         if !voyage.membres.isEmpty, voyage.membres.allSatisfy({ $0.age == nil && $0.tarifBrut == nil }) {
             notes.append("Aucun âge renseigné : tout le monde est compté au tarif adulte.")

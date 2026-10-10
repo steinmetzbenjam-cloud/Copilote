@@ -162,7 +162,7 @@ enum Codec {
             r["debut"] = v.debut; r["fin"] = v.fin; r["notes"] = v.notes
             r["pays"] = v.pays; r["creeLe"] = v.creeLe
             r["transportAller"] = v.transportAllerJSON; r["transportRetour"] = v.transportRetourJSON
-            r["deviseLocale"] = v.deviseLocale; r["tauxChange"] = v.tauxChange; r["fuseauRef"] = v.fuseauReferenceId
+            r["deviseLocale"] = v.deviseLocale; r["tauxChange"] = v.tauxChange; r["deviseTierce"] = v.deviseTierce; r["tauxTierce"] = v.tauxTierce; r["fuseauRef"] = v.fuseauReferenceId
             return r
         case let j as JourVoyage:
             let r = base(.jour, j.uid, zone, systeme)
@@ -206,6 +206,8 @@ enum Codec {
             r["prixAdulte"] = e.prixAdulte; r["prixEnfant"] = e.prixEnfant; r["prixEtudiant"] = e.prixEtudiant
             r["prixAdulteLocal"] = e.prixAdulteLocal ? 1 : 0; r["prixEnfantLocal"] = e.prixEnfantLocal ? 1 : 0
             r["prixEtudiantLocal"] = e.prixEtudiantLocal ? 1 : 0
+            r["prixAdulteTierce"] = e.prixAdulteTierce ? 1 : 0; r["prixEnfantTierce"] = e.prixEnfantTierce ? 1 : 0
+            r["prixEtudiantTierce"] = e.prixEtudiantTierce ? 1 : 0
             return r
         case let x as Reservation:
             let r = base(.reservation, x.uid, zone, systeme)
@@ -310,7 +312,7 @@ enum Codec {
             v.debut = date("debut") ?? v.debut; v.fin = date("fin") ?? v.fin; v.notes = texte("notes")
             v.pays = r["pays"] as? [String] ?? []; v.creeLe = date("creeLe") ?? v.creeLe
             v.transportAllerJSON = r["transportAller"] as? String; v.transportRetourJSON = r["transportRetour"] as? String
-            v.deviseLocale = r["deviseLocale"] as? String; v.tauxChange = nombre("tauxChange"); v.fuseauReferenceId = r["fuseauRef"] as? String
+            v.deviseLocale = r["deviseLocale"] as? String; v.tauxChange = nombre("tauxChange"); v.deviseTierce = r["deviseTierce"] as? String; v.tauxTierce = nombre("tauxTierce"); v.fuseauReferenceId = r["fuseauRef"] as? String
             let proprietaire = r.recordID.zoneID.ownerName
             v.zoneProprietaire = proprietaire == CKCurrentUserDefaultName ? "" : proprietaire
             return v
@@ -367,6 +369,8 @@ enum Codec {
             e.prixAdulte = nombre("prixAdulte"); e.prixEnfant = nombre("prixEnfant"); e.prixEtudiant = nombre("prixEtudiant")
             e.prixAdulteLocal = (entier("prixAdulteLocal") ?? 0) == 1; e.prixEnfantLocal = (entier("prixEnfantLocal") ?? 0) == 1
             e.prixEtudiantLocal = (entier("prixEtudiantLocal") ?? 0) == 1
+            e.prixAdulteTierce = (entier("prixAdulteTierce") ?? 0) == 1; e.prixEnfantTierce = (entier("prixEnfantTierce") ?? 0) == 1
+            e.prixEtudiantTierce = (entier("prixEtudiantTierce") ?? 0) == 1
             return e
 
         case .reservation:

@@ -17,7 +17,8 @@ struct DepenseEditView: View {
     private var membres: [Membre] { voyage.membres.sorted { $0.creeLe < $1.creeLe } }
 
     private var devisesProposees: [String] {
-        var liste = voyage.pays.compactMap { Locale(identifier: "und_\($0)").currency?.identifier }
+        // Les monnaies du voyage (euro, locale, troisième) d'abord, puis celles des pays et quelques courantes.
+        var liste = voyage.codesMonnaies + voyage.pays.compactMap { Locale(identifier: "und_\($0)").currency?.identifier }
         liste += ["EUR", "USD", "GBP", "CHF"]
         var vues = Set<String>()
         return liste.filter { vues.insert($0).inserted }

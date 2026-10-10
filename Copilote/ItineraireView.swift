@@ -1,5 +1,6 @@
 import SwiftUI
 import SwiftData
+import MapKit
 
 /// Le planning : une carte par jour, avec sa date, ses lieux de référence et ses étapes.
 struct ItineraireView: View {
@@ -28,7 +29,9 @@ struct ItineraireView: View {
     /// Hauteur du contenu de « Étapes à placer » (iPad), pour que son défilement ne couvre pas la carte.
     @State private var hauteurEtapesAPlacer: CGFloat = .infinity
     /// « Étapes à placer » replié : seul son titre reste visible. Retenu d'une ouverture à l'autre.
-    @AppStorage("etapesAPlacerRepliees") private var etapesAPlacerRepliees = false
+    /// Fenêtre « Étapes à placer » ouverte : ouverte au lancement de l'app, puis gardée telle quelle d'un onglet à l'autre.
+    @State private var etapesAPlacerOuvertes = ItineraireView.etapesAPlacerOuvertesSession
+    private static var etapesAPlacerOuvertesSession = true
     /// Déplacement qui effacerait des transports : en attente de confirmation.
     @State private var deplacementEnAttente: DeplacementEnAttente?
 
@@ -61,14 +64,15 @@ struct ItineraireView: View {
                         .frame(width: Self.largeurPanneau)
                         .scrollIndicators(.hidden)
                         .overlay { cadreEtape.padding(12) }
-                    // À droite, sous le bouton : la discussion puis les étapes à placer. Seuls les cadres captent le toucher.
+                    // À droite : le bouton des messages, la discussion puis les étapes à placer. Seuls les cadres captent le toucher.
                     VStack(alignment: .trailing, spacing: 0) {
+                        boutonsRonds.padding(.top, 12).padding(.trailing, 12)
                         if discussionOuverte {
                             CommentairesView(voyage: voyage, enCadre: true, ouverte: $discussionOuverte)
                                 .frame(width: 320, height: min(440, max(260, geo.size.height * 0.55)))
                                 .padding(12)
                         }
-                        if !voyage.etapesSansJour.isEmpty {
+                        if etapesAPlacerOuvertes {
                             // Le défilement se limite à la hauteur du contenu : en dessous, le doigt agit sur la carte.
                             ScrollView {
                                 etapesAPlacer.padding(12)
@@ -145,7 +149,71 @@ struct ItineraireView: View {
 
     private static let largeurPanneau: CGFloat = 404
 
-    // MARK: Messages non lus
+    // MARK: Messages
+
+    /// Les deux ronds, côte à côte : les étapes à placer, puis les messages.
+    private var boutonsRonds: some View {
+        HStack(spacing: 10) {
+            boutonEtapesAPlacer
+            boutonMessages
+        }
+    }
+
+    /// Ouvre ou ferme la fenêtre des étapes à placer ; une pastille rouge donne le nombre d'étapes qui attendent.
+    private var boutonEtapesAPlacer: some View {
+        let nombre = voyage.etapesSansJour.count
+        return Button {
+            withAnimation(.snappy) { etapesAPlacerOuvertes.toggle() }
+            Self.etapesAPlacerOuvertesSession = etapesAPlacerOuvertes
+        } label: {
+            Image(systemName: etapesAPlacerOuvertes ? "xmark" : "tray.full.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 46, height: 46)
+                .background(Circle().fill(Color.accentColor))
+                .overlay(Circle().stroke(.white, lineWidth: 2))
+                .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                .overlay(alignment: .topTrailing) {
+                    if nombre > 0 {
+                        Text("\(nombre)")
+                            .font(.system(size: 11, weight: .bold)).monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 5)
+                            .frame(minWidth: 20, minHeight: 20)
+                            .background(Capsule().fill(.red))
+                            .overlay(Capsule().stroke(Color.white, lineWidth: 2))
+                            .offset(x: 5, y: -4)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(etapesAPlacerOuvertes ? "Fermer les étapes à placer" : "Étapes à placer : \(nombre)")
+        .help(etapesAPlacerOuvertes ? "Fermer les étapes à placer" : "Étapes à placer")
+    }
+
+    /// Un rond bien visible à côté des étapes à placer : il ouvre ou ferme les messages entre voyageurs.
+    private var boutonMessages: some View {
+        Button { withAnimation(.snappy) { discussionOuverte.toggle() } } label: {
+            Image(systemName: discussionOuverte ? "xmark" : "bubble.left.and.bubble.right.fill")
+                .font(.system(size: 18, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 46, height: 46)
+                .background(Circle().fill(Color.accentColor))
+                .overlay(Circle().stroke(.white, lineWidth: 2))
+                .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
+                // Point rouge : un message d'un autre voyageur n'a pas encore été lu.
+                .overlay(alignment: .topTrailing) {
+                    if messagesNonLus {
+                        Circle().fill(.red).frame(width: 13, height: 13)
+                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                            .offset(x: 2, y: -2)
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(discussionOuverte ? "Fermer les messages" : (messagesNonLus ? "Messages, nouveaux messages" : "Messages"))
+        .help(discussionOuverte ? "Fermer les messages" : "Messages entre voyageurs")
+    }
 
     private var cleDiscussionVue: String { "discussionVue-\(voyage.uid)" }
 
@@ -171,7 +239,7 @@ struct ItineraireView: View {
 
     private func fondDeCarte(margeGauche: CGFloat) -> some View {
         CarteDuVoyage(voyage: voyage, jourFocus: jourSelectionne, masquerAutresJours: false, margeGauche: margeGauche,
-                      etapeFocus: etapeEnEdition) { etape in
+                      etapeFocus: etapeEnEdition, onLieu: voyage.lectureSeule ? nil : { creerEtape(depuis: $0) }) { etape in
             ouvrir(etape)
         }
     }
@@ -206,8 +274,11 @@ struct ItineraireView: View {
     /// Les jours, les uns au-dessus des autres.
     private func listeDesJours(avecEtapesAPlacer: Bool) -> some View {
         LazyVStack(spacing: 12) {
-            // iPhone : les étapes sans jour passent au-dessus du jour 1.
-            if avecEtapesAPlacer && !voyage.etapesSansJour.isEmpty { etapesAPlacer }
+            // iPhone : le bouton des messages, puis les étapes sans jour, au-dessus du jour 1.
+            if avecEtapesAPlacer {
+                HStack { Spacer(); boutonsRonds }
+            }
+            if avecEtapesAPlacer && etapesAPlacerOuvertes { etapesAPlacer }
             ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
                 carte(numero: index + 1, jour: jour)
                 nuit(apres: jour)
@@ -227,47 +298,49 @@ struct ItineraireView: View {
     /// Étapes préparées sans jour : on les glisse sur la carte d'un jour pour les placer.
     private var etapesAPlacer: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Le titre replie ou déroule le cadre ; replié, il montre combien d'étapes attendent.
-            Button { withAnimation(.snappy) { etapesAPlacerRepliees.toggle() } } label: {
-                HStack {
-                    Label("Étapes à placer", systemImage: "tray.full").font(.headline)
-                    if etapesAPlacerRepliees {
-                        Text("\(voyage.etapesSansJour.count)")
-                            .font(.caption.bold()).foregroundStyle(.white)
-                            .padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(Capsule().fill(.tint))
+            Label("Étapes à placer", systemImage: "tray.full").font(.headline)
+            Text("Glisse une étape sur un jour.").font(.footnote).foregroundStyle(.secondary)
+            Divider()
+            ForEach(voyage.etapesSansJour) { etape in
+                ligne(etape)
+                    .draggable(Self.prefixe + etape.uid) {
+                        Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
+                            .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                     }
-                    Spacer()
-                    Image(systemName: "chevron.down")
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(.secondary)
-                        .rotationEffect(.degrees(etapesAPlacerRepliees ? -90 : 0))
-                        .frame(width: 28, height: 28)
-                        .background(Circle().fill(Color.secondary.opacity(0.15)))
-                }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            .accessibilityLabel(etapesAPlacerRepliees ? "Déplier les étapes à placer" : "Replier les étapes à placer")
-            .help(etapesAPlacerRepliees ? "Déplier" : "Replier")
-            if !etapesAPlacerRepliees {
-                Text("Glisse une étape sur un jour.").font(.footnote).foregroundStyle(.secondary)
-                Divider()
-                ForEach(voyage.etapesSansJour) { etape in
-                    ligne(etape)
-                        .draggable(Self.prefixe + etape.uid) {
-                            Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
-                                .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                        }
-                }
-                Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouterSansJour() }
-                    .disabled(voyage.lectureSeule)
-                    .buttonStyle(.borderless)
-            }
+            Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouterSansJour() }
+                .disabled(voyage.lectureSeule)
+                .buttonStyle(.borderless)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .modifier(FondDeCarte())
+    }
+
+    /// Un point d'intérêt touché sur la carte devient une étape à placer (nom, position, catégorie, adresse), et sa fiche s'ouvre.
+    private func creerEtape(depuis lieu: LieuCarte) {
+        let etape = Etape(titre: lieu.nom, jour: nil, categorie: lieu.categorie)
+        etape.lieu = lieu.adresse.map { "\(lieu.nom), \($0)" } ?? lieu.nom
+        etape.latitude = lieu.coordonnee.latitude
+        etape.longitude = lieu.coordonnee.longitude
+        etape.siteWeb = lieu.site
+        etape.ordre = (voyage.etapesSansJour.map(\.ordre).max() ?? -1) + 1
+        etape.voyage = voyage
+        contexte.insert(etape)
+        withAnimation(.snappy) { etapesAPlacerOuvertes = true }
+        Self.etapesAPlacerOuvertesSession = true
+        ouvrir(etape)
+        // iPhone, iPad : l'adresse complète, quand Plans la donne pour ce point (iOS 18).
+        #if os(iOS)
+        if #available(iOS 18.0, *), let feature = lieu.feature {
+            Task {
+                guard let item = try? await MKMapItemRequest(feature: feature).mapItem else { return }
+                let complet = LieuCarte(item: item)
+                if let adresse = complet.adresse, etape.lieu == lieu.nom { etape.lieu = "\(lieu.nom), \(adresse)" }
+                if etape.siteWeb == nil { etape.siteWeb = complet.site }
+            }
+        }
+        #endif
     }
 
     private func ajouterSansJour() {

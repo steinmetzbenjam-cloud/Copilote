@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import CoreLocation
+import MapKit
 
 enum CategorieEtape: String, Codable, CaseIterable, Identifiable {
     case visite, musee, nature, repas, transport, hebergement, activite, autre
@@ -43,6 +44,20 @@ extension CategorieEtape {
     }
 }
 
+extension CategorieEtape {
+    /// La catégorie qui correspond à un point d'intérêt de Plans (restaurant, musée, parc, hôtel…).
+    init(pointDInteret c: MKPointOfInterestCategory?) {
+        switch c {
+        case .restaurant?, .cafe?, .bakery?, .brewery?, .winery?, .foodMarket?: self = .repas
+        case .museum?: self = .musee
+        case .park?, .nationalPark?, .beach?: self = .nature
+        case .hotel?, .campground?: self = .hebergement
+        case .amusementPark?, .aquarium?, .zoo?, .stadium?, .theater?, .movieTheater?, .nightlife?, .marina?, .fitnessCenter?: self = .activite
+        default: self = .visite
+        }
+    }
+}
+
 @Model
 final class Etape {
     var titre: String
@@ -80,6 +95,10 @@ final class Etape {
     var prixAdulteLocal: Bool = false
     var prixEnfantLocal: Bool = false
     var prixEtudiantLocal: Bool = false
+    /// Prix saisi dans la troisième monnaie du voyage (prioritaire sur `…Local`).
+    var prixAdulteTierce: Bool = false
+    var prixEnfantTierce: Bool = false
+    var prixEtudiantTierce: Bool = false
     var creeLe: Date
     var uid: String = ""
     /// Transport vers l'étape suivante, en JSON (voir Transport).

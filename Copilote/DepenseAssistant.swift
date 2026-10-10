@@ -45,7 +45,7 @@ struct DepenseAssistantView: View {
 
     private func nombre(_ texte: String) -> Double { Double(texte.replacingOccurrences(of: ",", with: ".")) ?? 0 }
     private var montant: Double { nombre(montantTexte) }
-    private var devises: [String] { ["EUR"] + [voyage.deviseLocale].compactMap { $0 }.filter { !$0.isEmpty && $0 != "EUR" } }
+    private var devises: [String] { voyage.codesMonnaies }
     private var sommePrecise: Double { choisies.reduce(0) { $0 + nombre(montantsUnite[$1.id] ?? "") } }
     private var ecart: Double { ((montant - sommePrecise) * 100).rounded() / 100 }
 
@@ -273,7 +273,7 @@ struct DepenseAssistantView: View {
                         ForEach(devises, id: \.self) { Text($0 == "EUR" ? "Euros (€)" : Monnaies.libelle($0)).tag($0) }
                     }
                     .pickerStyle(.segmented)
-                    if devise != "EUR", let euros = voyage.versEuros(montant), montant > 0 {
+                    if devise != "EUR", let euros = voyage.versEuros(montant, code: devise), montant > 0 {
                         Text("≈ \(Monnaies.formater(euros, "EUR"))").font(.footnote).foregroundStyle(.secondary)
                     }
                 }

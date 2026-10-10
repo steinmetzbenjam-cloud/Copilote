@@ -120,6 +120,8 @@ struct EtapeEditView: View {
         HStack(spacing: 3) {
             TextField("", value: valeur, format: .number.grouping(.never))
                 .textFieldStyle(.plain)
+                // Sans libellé : dans un formulaire Mac, la place du libellé vide étirait la case en hauteur.
+                .labelsHidden()
                 .multilineTextAlignment(.trailing)
                 .padding(.horizontal, 8).padding(.vertical, 5)
                 .background(Color.white, in: RoundedRectangle(cornerRadius: 7))
@@ -338,9 +340,9 @@ struct EtapeEditView: View {
                 }
                 CadreSection("Budget", symbole: "eurosign.circle", couleur: .green) {
                     LignesPrix(voyage: etape.voyage,
-                               adulte: $etape.prixAdulte, adulteLocal: $etape.prixAdulteLocal,
-                               etudiant: $etape.prixEtudiant, etudiantLocal: $etape.prixEtudiantLocal,
-                               enfant: $etape.prixEnfant, enfantLocal: $etape.prixEnfantLocal)
+                               adulte: $etape.prixAdulte, adulteMonnaie: $etape.monnaieAdulte,
+                               etudiant: $etape.prixEtudiant, etudiantMonnaie: $etape.monnaieEtudiant,
+                               enfant: $etape.prixEnfant, enfantMonnaie: $etape.monnaieEnfant)
                     piedBudget(etape.voyage).font(.footnote).foregroundStyle(.secondary)
                 }
                 CadreSection("Lieu", symbole: "mappin.and.ellipse", couleur: .orange) {
@@ -520,7 +522,9 @@ private struct TailleDePage: ViewModifier {
 }
 
 
-/// Bulle d'heure : vide tant qu'on n'a rien choisi. Un toucher ouvre le choix de l'heure ; rien n'est enregistré avant « OK ».
+/// Bulle d'heure : vide tant qu'on n'a rien choisi.
+/// iPhone, iPad : un toucher ouvre une roue, rien n'est enregistré avant « OK ».
+/// Mac : un clic met l'heure proposée dans un champ où l'on tape heures et minutes au clavier (pas d'horloge à aiguilles).
 struct BulleHeure: View {
     @Binding var valeur: Date?
     let jour: Date
@@ -528,14 +532,25 @@ struct BulleHeure: View {
     @State private var ouvert = false
     @State private var brouillon = Date()
 
+    private var heureProposee: Date {
+        Calendar.current.date(bySettingHour: heureDeDepart, minute: 0, second: 0, of: jour) ?? jour
+    }
+
     var body: some View {
         if let date = valeur {
             DatePicker("", selection: Binding(get: { date }, set: { valeur = $0 }), displayedComponents: .hourAndMinute)
                 .labelsHidden()
+                #if os(macOS)
+                .datePickerStyle(.field)
+                #endif
         } else {
             Button {
-                brouillon = Calendar.current.date(bySettingHour: heureDeDepart, minute: 0, second: 0, of: jour) ?? jour
+                #if os(macOS)
+                valeur = heureProposee
+                #else
+                brouillon = heureProposee
                 ouvert = true
+                #endif
             } label: {
                 Text("--:--")
                     .monospacedDigit().foregroundStyle(.secondary)
@@ -543,21 +558,19 @@ struct BulleHeure: View {
                     .background(.quaternary, in: RoundedRectangle(cornerRadius: 8))
             }
             .buttonStyle(.plain)
+            #if os(iOS)
             .popover(isPresented: $ouvert) {
                 VStack(spacing: 8) {
                     DatePicker("", selection: $brouillon, displayedComponents: .hourAndMinute)
                         .labelsHidden()
-                        #if os(iOS)
                         .datePickerStyle(.wheel)
-                        #else
-                        .datePickerStyle(.graphical)
-                        #endif
                     Button("OK") { valeur = brouillon; ouvert = false }
                         .buttonStyle(.borderedProminent)
                 }
                 .padding()
                 .presentationCompactAdaptation(.popover)
             }
+            #endif
         }
     }
 }
