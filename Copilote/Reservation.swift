@@ -96,7 +96,7 @@ final class Document {
     var membreUID: String?
     var typeBrut: String?
     var expireLe: Date?
-    /// Texte libre : pour un plan de métro, sa source, son auteur et sa licence.
+    /// Texte libre joint au document.
     var notes: String?
 
     init(nom: String, extensionFichier: String, donnees: Data) {

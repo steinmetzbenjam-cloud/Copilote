@@ -3,7 +3,7 @@ import SwiftData
 import UniformTypeIdentifiers
 
 enum TypeDocument: String, CaseIterable, Identifiable {
-    case passeport, identite, visa, assurance, billet, vaccin, permis, planMetro, autre
+    case passeport, identite, visa, assurance, billet, vaccin, permis, autre
 
     var id: String { rawValue }
 
@@ -16,7 +16,6 @@ enum TypeDocument: String, CaseIterable, Identifiable {
         case .billet: "Billet"
         case .vaccin: "Carnet de vaccination"
         case .permis: "Permis de conduire"
-        case .planMetro: "Plan de métro"
         case .autre: "Autre"
         }
     }
@@ -30,7 +29,6 @@ enum TypeDocument: String, CaseIterable, Identifiable {
         case .billet: "ticket.fill"
         case .vaccin: "syringe.fill"
         case .permis: "car.fill"
-        case .planMetro: "map.fill"
         case .autre: "doc.fill"
         }
     }

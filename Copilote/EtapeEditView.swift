@@ -202,6 +202,14 @@ struct EtapeEditView: View {
             .buttonStyle(.plain)
             .accessibilityLabel("Idées de lieux à visiter")
             .help("Idées de lieux à visiter")
+            // La catégorie, juste à gauche du nom.
+            Image(systemName: etape.categorie.symbole)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 32, height: 32)
+                .background(Circle().fill(Color.purple))
+                .accessibilityLabel(etape.categorie.libelle)
+                .help(etape.categorie.libelle)
             TextField(etape.categorie == .hebergement ? "Nom de l'hébergement" : "Nom de l'étape", text: $etape.titre)
                 .textFieldStyle(.plain)
                 .font(.title2.bold())
@@ -213,8 +221,8 @@ struct EtapeEditView: View {
                 // Un léger fond quand on écrit : on voit que le titre se modifie.
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(titreActif ? 0.12 : 0)))
                 .help("Cliquer pour renommer")
-            // Dupliquer : une icône discrète, à côté de la fermeture.
-            if !(etape.voyage?.lectureSeule ?? true) {
+            // Dupliquer : une icône discrète, à côté de la fermeture (pas en voyage : le programme est fixé).
+            if !(etape.voyage?.lectureSeule ?? true), !enVoyage {
                 Button { dupliquer() } label: {
                     Image(systemName: copieFaite ? "checkmark" : "plus.square.on.square")
                         .font(.system(size: 14, weight: .medium))
@@ -312,17 +320,8 @@ struct EtapeEditView: View {
     /// En voyage, la catégorie, le jour et les horaires sont simplement rappelés, sans être modifiables.
     private var enVoyage: Bool { etape.voyage?.mode == .voyage }
 
-    @ViewBuilder private var sectionCategorie: some View {
-        if enVoyage {
-            // Sans cadre ni titre : juste l'icône et le type.
-            Label(etape.categorie.libelle, systemImage: etape.categorie.symbole)
-                .font(.headline)
-                .foregroundStyle(.purple)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 4)
-        } else {
-            CadreSection("Catégorie", symbole: "square.grid.2x2", couleur: .purple) { tuilesCategories }
-        }
+    private var sectionCategorie: some View {
+        CadreSection("Catégorie", symbole: "square.grid.2x2", couleur: .purple) { tuilesCategories }
     }
 
     private func texteDuree(_ minutes: Double) -> String {
@@ -363,51 +362,14 @@ struct EtapeEditView: View {
     @ViewBuilder private var sectionCategorieEtMoment: some View {
         if enVoyage {
             HStack(alignment: .center, spacing: 12) {
-                VStack(alignment: .leading, spacing: 10) {
-                    sectionCategorie
-                    sectionJourHoraire
-                }
-                if let coord = etape.coordonnee {
-                    Button { yAller(coord) } label: {
-                        VStack(spacing: 4) {
-                            Image(systemName: modeDeTransport?.symbole ?? "arrow.triangle.turn.up.right.diamond.fill")
-                                .font(.system(size: 20, weight: .semibold)).foregroundStyle(.white)
-                                .frame(width: 50, height: 50)
-                                .background(Circle().fill(Color.accentColor))
-                                .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
-                            Text("Y aller").font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("Itinéraire jusqu'à l'étape dans Plans")
-                    .help("Ouvre Plans avec l'itinéraire depuis ta position actuelle")
-                }
+                // La catégorie est dans la barre de titre, à gauche du nom.
+                sectionJourHoraire
+                BoutonYAller(etape: etape)
             }
         } else {
             sectionCategorie
             sectionJourHoraire
         }
-    }
-
-    /// Le transport prévu pour arriver à l'étape, s'il y en a un.
-    private var modeDeTransport: ModeTransport? {
-        guard let voyage = etape.voyage else { return nil }
-        return transportPourArriver(voyage)?.transport?.mode
-    }
-
-    /// Ouvre Plans : de la position actuelle jusqu'à l'étape, avec le mode de transport prévu pour y arriver.
-    private func yAller(_ coord: CLLocationCoordinate2D) {
-        let cible = MKMapItem(placemark: MKPlacemark(coordinate: coord))
-        cible.name = etape.titre.isEmpty ? nil : etape.titre
-        let mode: String
-        switch modeDeTransport {
-        case .pied: mode = MKLaunchOptionsDirectionsModeWalking
-        case .velo: mode = MKLaunchOptionsDirectionsModeCycling
-        case .commun: mode = MKLaunchOptionsDirectionsModeTransit
-        case .voiture: mode = MKLaunchOptionsDirectionsModeDriving
-        default: mode = MKLaunchOptionsDirectionsModeDefault
-        }
-        MKMapItem.openMaps(with: [MKMapItem.forCurrentLocation(), cible], launchOptions: [MKLaunchOptionsDirectionsModeKey: mode])
     }
 
     @ViewBuilder private var sectionJourHoraire: some View {
@@ -737,5 +699,50 @@ struct BulleHeure: View {
             }
             #endif
         }
+    }
+}
+
+/// Ouvre Plans avec l'itinéraire depuis la position actuelle jusqu'à l'étape, avec le transport prévu pour y arriver.
+struct BoutonYAller: View {
+    let etape: Etape
+    var taille: CGFloat = 50
+
+    /// Le transport prévu pour arriver à l'étape : celui de l'étape précédente, ou l'aller pour la toute première.
+    private var modeDeTransport: ModeTransport? {
+        guard let voyage = etape.voyage else { return nil }
+        if let depart = voyage.precedente(de: etape) { return depart.transport?.mode }
+        return voyage.elementsDuVoyage.first === etape ? voyage.transportAller?.mode : nil
+    }
+
+    var body: some View {
+        if let coord = etape.coordonnee {
+            Button { yAller(coord) } label: {
+                VStack(spacing: 4) {
+                    Image(systemName: modeDeTransport?.symbole ?? "arrow.triangle.turn.up.right.diamond.fill")
+                        .font(.system(size: taille * 0.4, weight: .semibold)).foregroundStyle(.white)
+                        .frame(width: taille, height: taille)
+                        .background(Circle().fill(Color.accentColor))
+                        .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
+                    Text("Y aller").font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor)
+                }
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Itinéraire jusqu'à l'étape dans Plans")
+            .help("Ouvre Plans avec l'itinéraire depuis ta position actuelle")
+        }
+    }
+
+    private func yAller(_ coord: CLLocationCoordinate2D) {
+        let cible = MKMapItem(placemark: MKPlacemark(coordinate: coord))
+        cible.name = etape.titre.isEmpty ? nil : etape.titre
+        let mode: String
+        switch modeDeTransport {
+        case .pied: mode = MKLaunchOptionsDirectionsModeWalking
+        case .velo: mode = MKLaunchOptionsDirectionsModeCycling
+        case .commun: mode = MKLaunchOptionsDirectionsModeTransit
+        case .voiture: mode = MKLaunchOptionsDirectionsModeDriving
+        default: mode = MKLaunchOptionsDirectionsModeDefault
+        }
+        MKMapItem.openMaps(with: [MKMapItem.forCurrentLocation(), cible], launchOptions: [MKLaunchOptionsDirectionsModeKey: mode])
     }
 }

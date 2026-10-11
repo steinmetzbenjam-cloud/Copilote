@@ -17,6 +17,8 @@ struct ApercuView: View {
     @State private var autorisationRefusee = false
     @State private var fichiers: (pdf: URL, image: URL)?
     @State private var enPreparation = false
+    /// Étape touchée dans le programme du jour : son détail s'ouvre.
+    @State private var etapeOuverte: Etape?
 
     init(voyage: Voyage) { self.voyage = voyage }
 
@@ -28,7 +30,6 @@ struct ApercuView: View {
                 if voyage.mode == .souvenir { cadreResume }
                 if voyage.mode != .souvenir { cadreProgramme }
                 if voyage.mode == .voyage { cadreMeteo }
-                CadrePlansMetro(voyage: voyage)
                 cadreRappels
                 cadreSynchro
             }
@@ -37,6 +38,9 @@ struct ApercuView: View {
             .frame(maxWidth: .infinity)
         }
         .background(FondDePage.couleur)
+        .sheet(item: $etapeOuverte) { etape in
+            EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
+        }
         .task {
             guard voyage.mode == .voyage else { return }
             lieu = await voyage.lieuMeteo()
@@ -112,10 +116,7 @@ struct ApercuView: View {
                 Spacer()
                 if estProchaine { Text("Prochaine").font(.caption2.bold()).foregroundStyle(.orange) }
                 if let h = etape.heure { Text(h.formatted(date: .omitted, time: .shortened)).monospacedDigit().foregroundStyle(.secondary) }
-                if let c = etape.coordonnee, estProchaine {
-                    Button("Itinéraire", systemImage: "arrow.triangle.turn.up.right.circle.fill") { ouvrirPlans(c, nom: etape.titre) }
-                        .labelStyle(.iconOnly).font(.title2).buttonStyle(.plain).foregroundStyle(.tint)
-                }
+                if estProchaine { BoutonYAller(etape: etape, taille: 40) }
             }
             if let t = etape.transport {
                 Label(t.descriptif, systemImage: t.mode.symbole).font(.footnote).foregroundStyle(.secondary).padding(.leading, 44)
@@ -123,12 +124,10 @@ struct ApercuView: View {
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(estProchaine ? Color.orange.opacity(0.14) : .clear))
-    }
-
-    private func ouvrirPlans(_ c: CLLocationCoordinate2D, nom: String) {
-        let item = MKMapItem(placemark: MKPlacemark(coordinate: c))
-        item.name = nom
-        item.openInMaps(launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeDefault])
+        // Toucher la ligne ouvre le détail de l'étape (le bouton « Y aller » garde son propre geste).
+        .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .onTapGesture { etapeOuverte = etape }
+        .accessibilityAddTraits(.isButton)
     }
 
     // MARK: Météo

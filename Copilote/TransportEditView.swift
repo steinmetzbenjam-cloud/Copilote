@@ -20,7 +20,6 @@ struct TransportEditView: View {
     let enregistrer: (Transport?) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var transport: Transport
-    @State private var planOuvert = false
     @State private var rechercheEnCours = false
     @State private var erreurRecherche: String?
 
@@ -261,11 +260,6 @@ struct TransportEditView: View {
     }
 
     @ViewBuilder private var rechercheCommun: some View {
-        if let voyage = voyageDuTransport {
-            Button("Plan du métro", systemImage: "map") { planOuvert = true }
-                .buttonStyle(.borderless)
-                .sheet(isPresented: $planOuvert) { PlanMetroView(voyage: voyage) }
-        }
         Button { Task { await chercherCommun() } } label: {
             Label(rechercheEnCours ? "Recherche…" : (transport.itineraireCommun == nil ? "Chercher l'itinéraire" : "Relancer la recherche"),
                   systemImage: "magnifyingglass")
