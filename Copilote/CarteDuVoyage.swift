@@ -24,6 +24,10 @@ struct CarteDuVoyage: View {
     @State private var lieuChoisi: LieuCarte?
     /// Fond de carte choisi (plan, satellite, mixte), retenu d'une ouverture à l'autre et commun aux deux cartes.
     @AppStorage("fondDeCarte") private var fond = FondCarte.plan
+    /// Fond « Transports » : la zone affichée et les stations qu'on y a trouvées.
+    @State private var regionVisible: MKCoordinateRegion?
+    @State private var stations: [StationCarte] = []
+    @Environment(\.openURL) private var ouvrirURL
     #if os(iOS)
     /// iPhone, iPad : le point d'intérêt sélectionné par Plans lui-même.
     @State private var pointSelectionne: MapFeature?
@@ -238,9 +242,16 @@ struct CarteDuVoyage: View {
                     }
                     // Le choix du fond de carte, en haut à gauche de la partie visible de la carte.
                     .overlay(alignment: .topLeading) {
-                        choixDuFond
-                            .padding(.leading, margeGauche)
-                            .padding(12)
+                        VStack(spacing: 10) {
+                            choixDuFond
+                            if fond == .transports { boutonPlansTransports }
+                        }
+                        .padding(.leading, margeGauche)
+                        .padding(12)
+                    }
+                    .onMapCameraChange(frequency: .onEnd) { regionVisible = $0.region }
+                    .task(id: CleStations(fond: fond, region: regionVisible)) {
+                        await chercherStations()
                     }
                     .overlay(alignment: .bottom) {
                         if let lieu = lieuChoisi, let onLieu {
@@ -286,6 +297,17 @@ struct CarteDuVoyage: View {
     }
 
     @MapContentBuilder private var contenu: some MapContent {
+        if fond == .transports {
+            ForEach(stations) { station in
+                Annotation(station.nom, coordinate: station.coordonnee) {
+                    Image(systemName: station.symbole)
+                        .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        .frame(width: 22, height: 22)
+                        .background(Color(rouge: 0x00, vert: 0x7A, bleu: 0xC2), in: RoundedRectangle(cornerRadius: 6))
+                        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.white, lineWidth: 1.5))
+                }
+            }
+        }
         ForEach(voyage.etapesSansJour.filter { $0.coordonnee != nil }) { etape in
             Annotation(etape.titre, coordinate: etape.coordonnee!) {
                 Button { onEtape(etape) } label: {
@@ -412,7 +434,68 @@ struct CarteDuVoyage: View {
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("Fond de carte : \(fond.libelle)")
-        .help("Fond de carte : plan, satellite ou mixte")
+        .help("Fond de carte : plan, transports, satellite ou mixte")
+    }
+
+    // MARK: Transports
+
+    /// Change quand il faut chercher de nouvelles stations : fond choisi ou zone (arrondie) affichée.
+    private struct CleStations: Equatable {
+        var fond: FondCarte
+        var lat = 0, lon = 0, etendue = 0
+        init(fond: FondCarte, region: MKCoordinateRegion?) {
+            self.fond = fond
+            guard let r = region else { return }
+            lat = Int(r.center.latitude * 200); lon = Int(r.center.longitude * 200)
+            etendue = Int(r.span.latitudeDelta * 200)
+        }
+    }
+
+    /// Plans ne montre ses stations que de très près : on les cherche dans la zone affichée pour les dessiner à toute échelle de ville.
+    private func chercherStations() async {
+        guard fond == .transports, let region = regionVisible else { stations = []; return }
+        // Au-delà d'une grande ville, il y en aurait trop pour que la carte reste lisible.
+        guard region.span.latitudeDelta < 0.6 else { stations = []; return }
+        try? await Task.sleep(for: .milliseconds(300))
+        guard !Task.isCancelled else { return }
+        var trouvees: [String: StationCarte] = [:]
+        for mot in ["station de métro", "gare", "station de tramway", "RER", "subway station", "train station", "bus station"] {
+            let requete = MKLocalSearch.Request()
+            requete.naturalLanguageQuery = mot
+            requete.region = region
+            requete.resultTypes = .pointOfInterest
+            requete.pointOfInterestFilter = MKPointOfInterestFilter(including: [.publicTransport])
+            guard let reponse = try? await MKLocalSearch(request: requete).start() else { continue }
+            guard !Task.isCancelled else { return }
+            for item in reponse.mapItems {
+                let c = item.placemark.coordinate
+                guard abs(c.latitude - region.center.latitude) <= region.span.latitudeDelta,
+                      abs(c.longitude - region.center.longitude) <= region.span.longitudeDelta else { continue }
+                let nom = item.name ?? mot
+                let cle = "\(nom)|\(Int(c.latitude * 2000))|\(Int(c.longitude * 2000))"
+                trouvees[cle] = StationCarte(nom: nom, coordonnee: c)
+            }
+            stations = Array(trouvees.values)
+        }
+    }
+
+    /// Les lignes de métro, de tram et de bus : seule l'app Plans sait les dessiner, on l'ouvre sur la même zone.
+    private var boutonPlansTransports: some View {
+        Button {
+            guard let r = regionVisible else { return }
+            let lien = "https://maps.apple.com/?ll=\(r.center.latitude),\(r.center.longitude)&spn=\(r.span.latitudeDelta),\(r.span.longitudeDelta)&t=r"
+            if let url = URL(string: lien) { ouvrirURL(url) }
+        } label: {
+            Image(systemName: "point.topleft.down.to.point.bottomright.curvepath.fill")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(.regularMaterial))
+                .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Voir les lignes dans Plans")
+        .help("Voir les lignes de transport dans Plans")
     }
 
     // MARK: Point d'intérêt
@@ -515,12 +598,13 @@ struct CarteDuVoyage: View {
 
 /// Les fonds de carte proposés par Plans.
 enum FondCarte: String, CaseIterable, Identifiable {
-    case plan, satellite, mixte, relief
+    case plan, transports, satellite, mixte, relief
     var id: String { rawValue }
 
     var libelle: String {
         switch self {
         case .plan: "Plan"
+        case .transports: "Transports"
         case .satellite: "Satellite"
         case .mixte: "Satellite avec noms"
         case .relief: "Plan en relief"
@@ -530,6 +614,7 @@ enum FondCarte: String, CaseIterable, Identifiable {
     var symbole: String {
         switch self {
         case .plan: "map"
+        case .transports: "tram.fill"
         case .satellite: "globe.europe.africa.fill"
         case .mixte: "square.2.layers.3d"
         case .relief: "mountain.2"
@@ -539,10 +624,27 @@ enum FondCarte: String, CaseIterable, Identifiable {
     var style: MapStyle {
         switch self {
         case .plan: .standard
+        // Le plan, avec seulement les gares, stations de métro, de tram et de bus (et les aéroports) : on les repère d'un coup d'œil.
+        case .transports: .standard(emphasis: .muted, pointsOfInterest: .including([.publicTransport, .airport]))
         case .satellite: .imagery(elevation: .realistic)
         case .mixte: .hybrid(elevation: .realistic)
         case .relief: .standard(elevation: .realistic, emphasis: .muted)
         }
+    }
+}
+
+/// Une gare ou une station (métro, tram, bus) trouvée dans la zone affichée.
+struct StationCarte: Identifiable {
+    var nom: String
+    var coordonnee: CLLocationCoordinate2D
+    var id: String { "\(nom)|\(coordonnee.latitude)|\(coordonnee.longitude)" }
+
+    var symbole: String {
+        let n = nom.lowercased()
+        if n.contains("gare") || n.contains("station") && n.contains("train") || n.contains("rer") { return "train.side.front.car" }
+        if n.contains("tram") { return "lightrail.fill" }
+        if n.contains("bus") || n.contains("arrêt") { return "bus.fill" }
+        return "tram.fill"
     }
 }
 

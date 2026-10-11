@@ -28,7 +28,9 @@ struct ContentView: View {
     @State private var importEnAttente: Sauvegarde.Fichier?
     @State private var messageSauvegarde: String?
     /// La liste des voyages se referme quand on en choisit un, pour laisser toute la place au voyage.
-    @State private var colonnes: NavigationSplitViewVisibility = .automatic
+    /// Au lancement, si un voyage va être rouvert, le volet est déjà refermé : on arrive directement sur le voyage.
+    @State private var colonnes: NavigationSplitViewVisibility =
+        (UserDefaults.standard.string(forKey: ContentView.cleDernierVoyage)?.isEmpty == false) ? .detailOnly : .automatic
 
     var body: some View {
         NavigationSplitView(columnVisibility: $colonnes) {
@@ -147,8 +149,9 @@ struct ContentView: View {
             UserDefaults.standard.set(voyage.uid, forKey: Self.cleDernierVoyage)
             // Les horaires du voyage sont lus dans son fuseau de référence, avant d'afficher quoi que ce soit.
             Horloge.ouvrir(voyage)
+            let auLancement = voyageOuvert == nil
             voyageOuvert = voyage
-            withAnimation { colonnes = .detailOnly }
+            if auLancement { colonnes = .detailOnly } else { withAnimation { colonnes = .detailOnly } }
         }
         .sheet(isPresented: $nouveauVoyageOuvert) {
             NouveauVoyageView { voyage in
@@ -250,3 +253,4 @@ struct ContentView: View {
 #Preview {
     ContentView().modelContainer(for: [Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self, Commentaire.self, AvisEtape.self, Famille.self, Sondage.self, VoteSondage.self], inMemory: true)
 }
+

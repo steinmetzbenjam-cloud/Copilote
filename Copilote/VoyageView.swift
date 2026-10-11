@@ -55,11 +55,52 @@ struct VoyageView: View {
     /// Sur iPhone, des icônes : cinq noms ne tiendraient pas dans la barre.
     private var iconesSeules: Bool {
         #if os(iOS)
-        tailleHorizontale == .compact || largeur < 1180
+        // Les vues en toutes lettres tant que le nom du voyage garde une taille lisible à côté.
+        tailleHorizontale == .compact || placeTitre(largeurVues: largeurVuesTexte) < Self.titreMinimum
         #else
         // Huit vues, le titre, le compte à rebours, les voyageurs et la discussion : sous cette largeur, les vues passent en icônes
         // pour que le bouton des messages, tout à droite, ne soit pas repoussé hors de la barre.
         largeur < 1500
+        #endif
+    }
+
+    #if os(iOS)
+    /// Largeur des vues écrites en toutes lettres, mesurée dans la barre (estimée avant la première mesure).
+    @State private var largeurVuesTexte: CGFloat = 820
+    /// Ce que la barre prend en plus du nom et des vues : bouton du volet, bouton de mode, boutons de droite, marges.
+    private static let reserveBarre: CGFloat = 430
+    private static let titreMaximum: CGFloat = 260
+    /// En dessous, le nom serait illisible : les vues passent en icônes pour lui laisser de la place.
+    private static let titreMinimum: CGFloat = 130
+
+    private func placeTitre(largeurVues: CGFloat) -> CGFloat {
+        largeur - Self.reserveBarre - largeurVues
+    }
+
+    /// Le nom rétrécit pour que les vues ne touchent pas les boutons de droite.
+    private var largeurTitre: CGFloat {
+        let vues = iconesSeules ? CGFloat(onglets.count) * 52 : largeurVuesTexte
+        return min(Self.titreMaximum, max(Self.titreMinimum, placeTitre(largeurVues: vues)))
+    }
+    #else
+    private var largeurTitre: CGFloat { iconesSeules ? 140 : 260 }
+    #endif
+
+    /// Sur iPad, le mode, le nom du voyage et les vues se suivent tous à gauche de la barre :
+    /// au centre (« principal »), les vues passaient devant le nom, repoussé tout à droite.
+    private var placementGauche: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .navigation
+        #endif
+    }
+
+    private var placementVues: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .principal
         #endif
     }
 
@@ -110,11 +151,11 @@ struct VoyageView: View {
                     }
     }
 
-    private func rond(_ o: Onglet, actif: Bool) -> some View {
+    private func rond(_ o: Onglet, actif: Bool, taille: CGFloat = 40) -> some View {
         Image(systemName: o.symbole)
-            .font(.system(size: 19, weight: .semibold))
+            .font(.system(size: taille * 0.47, weight: .semibold))
             .foregroundStyle(actif ? Color.white : Color.accentColor)
-            .frame(width: 40, height: 40)
+            .frame(width: taille, height: taille)
             .background(Circle().fill(actif ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.regularMaterial)))
             .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
     }
@@ -128,17 +169,18 @@ struct VoyageView: View {
     }
 
     private var rangeeVues: some View {
-        HStack(spacing: 10) {
+        // Des ronds plus petits et plus serrés : toutes les vues tiennent sur la largeur d'un iPhone.
+        HStack(spacing: 4) {
             ForEach(onglets) { o in
                 Button {
                     onglet = o
                     vuesDepliees = false
-                } label: { rond(o, actif: o == onglet) }
+                } label: { rond(o, actif: o == onglet, taille: 35) }
                 .buttonStyle(.plain)
                 .accessibilityLabel(o.rawValue)
             }
         }
-        .padding(.leading, 12).padding(.top, 4)
+        .padding(.horizontal, 8).padding(.top, 4)
         .transition(.move(edge: .top).combined(with: .opacity))
     }
 
@@ -208,8 +250,8 @@ struct VoyageView: View {
             if iPhone {
                 barreIPhone
             } else {
-            // De gauche à droite : le mode, puis le nom du voyage.
-            ToolbarItem(placement: .navigation) {
+            // De gauche à droite : le mode, puis le nom du voyage, puis les vues.
+            ToolbarItem(placement: placementGauche) {
                 HStack(spacing: 10) {
                     boutonMode
                     // Le titre reste à gauche de la barre ; il rétrécit plutôt que de pousser les autres boutons.
@@ -217,7 +259,7 @@ struct VoyageView: View {
                         .font(PoliceVoyage.police(pour: voyage.pays, taille: iconesSeules ? 17 : 21))
                         .lineLimit(1)
                         .minimumScaleFactor(0.55)
-                        .frame(maxWidth: iconesSeules ? 140 : 260, alignment: .leading)
+                        .frame(maxWidth: largeurTitre, alignment: .leading)
                     #if os(macOS)
                     // Le compte à rebours, juste à droite du nom du voyage.
                     Text(voyage.compteARebours)
@@ -229,8 +271,12 @@ struct VoyageView: View {
                         .help("Compte à rebours du voyage")
                     #endif
                 }
+                #if os(iOS)
+                // À gauche, à côté des vues, la barre écrasait le titre jusqu'à le faire disparaître : il garde sa taille.
+                .fixedSize()
+                #endif
             }
-            ToolbarItem(placement: .principal) {
+            ToolbarItem(placement: placementVues) {
                 Picker("Section", selection: $onglet) {
                     ForEach(onglets) { onglet in
                         if iconesSeules {
@@ -244,6 +290,9 @@ struct VoyageView: View {
                 // Taille réelle du sélecteur : bridé par un cadre plus étroit, ses segments des bords (Itinéraire, Infos)
                 // débordaient et ne recevaient plus les clics.
                 .fixedSize()
+                #if os(iOS)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { if !iconesSeules { largeurVuesTexte = $0 } }
+                #endif
             }
             }
         }

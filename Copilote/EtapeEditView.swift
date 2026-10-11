@@ -309,11 +309,112 @@ struct EtapeEditView: View {
         }
     }
 
-    private var sectionCategorie: some View {
-        CadreSection("Catégorie", symbole: "square.grid.2x2", couleur: .purple) { tuilesCategories }
+    /// En voyage, la catégorie, le jour et les horaires sont simplement rappelés, sans être modifiables.
+    private var enVoyage: Bool { etape.voyage?.mode == .voyage }
+
+    @ViewBuilder private var sectionCategorie: some View {
+        if enVoyage {
+            // Sans cadre ni titre : juste l'icône et le type.
+            Label(etape.categorie.libelle, systemImage: etape.categorie.symbole)
+                .font(.headline)
+                .foregroundStyle(.purple)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 4)
+        } else {
+            CadreSection("Catégorie", symbole: "square.grid.2x2", couleur: .purple) { tuilesCategories }
+        }
     }
 
-    private var sectionJourHoraire: some View {
+    private func texteDuree(_ minutes: Double) -> String {
+        let m = Int(minutes.rounded())
+        return m >= 60 ? "\(m / 60) h \(String(format: "%02d", m % 60))" : "\(m) min"
+    }
+
+    /// En voyage : la date, les horaires et la durée, en simple lecture, sans cadre ni titre.
+    private var sectionJourHoraireLecture: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let jour = etape.jour {
+                if etape.categorie == .hebergement, etape.apresJour {
+                    let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
+                    Label("Nuit du \(jour.formatted(.dateTime.day().month(.wide))) au \(lendemain.formatted(.dateTime.day().month(.wide)))",
+                          systemImage: "moon.stars")
+                } else {
+                    let date = jour.formatted(.dateTime.weekday(.wide).day().month(.wide))
+                    Label(date.prefix(1).uppercased() + date.dropFirst(), systemImage: "calendar")
+                }
+                if etape.heure != nil || etape.heureFin != nil {
+                    Label([etape.heure, etape.heureFin].map { $0?.formatted(date: .omitted, time: .shortened) ?? "--:--" }.joined(separator: " → "),
+                          systemImage: "clock")
+                        .monospacedDigit()
+                }
+            } else {
+                Label("Pas encore de jour", systemImage: "calendar").foregroundStyle(.secondary)
+            }
+            if let duree = etape.duree {
+                Label(texteDuree(duree), systemImage: "hourglass")
+            }
+        }
+        .font(.subheadline)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 4)
+    }
+
+    /// La catégorie puis le moment ; en voyage, avec à droite le bouton qui guide jusqu'à l'étape.
+    @ViewBuilder private var sectionCategorieEtMoment: some View {
+        if enVoyage {
+            HStack(alignment: .center, spacing: 12) {
+                VStack(alignment: .leading, spacing: 10) {
+                    sectionCategorie
+                    sectionJourHoraire
+                }
+                if let coord = etape.coordonnee {
+                    Button { yAller(coord) } label: {
+                        VStack(spacing: 4) {
+                            Image(systemName: modeDeTransport?.symbole ?? "arrow.triangle.turn.up.right.diamond.fill")
+                                .font(.system(size: 20, weight: .semibold)).foregroundStyle(.white)
+                                .frame(width: 50, height: 50)
+                                .background(Circle().fill(Color.accentColor))
+                                .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
+                            Text("Y aller").font(.caption.weight(.semibold)).foregroundStyle(Color.accentColor)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Itinéraire jusqu'à l'étape dans Plans")
+                    .help("Ouvre Plans avec l'itinéraire depuis ta position actuelle")
+                }
+            }
+        } else {
+            sectionCategorie
+            sectionJourHoraire
+        }
+    }
+
+    /// Le transport prévu pour arriver à l'étape, s'il y en a un.
+    private var modeDeTransport: ModeTransport? {
+        guard let voyage = etape.voyage else { return nil }
+        return transportPourArriver(voyage)?.transport?.mode
+    }
+
+    /// Ouvre Plans : de la position actuelle jusqu'à l'étape, avec le mode de transport prévu pour y arriver.
+    private func yAller(_ coord: CLLocationCoordinate2D) {
+        let cible = MKMapItem(placemark: MKPlacemark(coordinate: coord))
+        cible.name = etape.titre.isEmpty ? nil : etape.titre
+        let mode: String
+        switch modeDeTransport {
+        case .pied: mode = MKLaunchOptionsDirectionsModeWalking
+        case .velo: mode = MKLaunchOptionsDirectionsModeCycling
+        case .commun: mode = MKLaunchOptionsDirectionsModeTransit
+        case .voiture: mode = MKLaunchOptionsDirectionsModeDriving
+        default: mode = MKLaunchOptionsDirectionsModeDefault
+        }
+        MKMapItem.openMaps(with: [MKMapItem.forCurrentLocation(), cible], launchOptions: [MKLaunchOptionsDirectionsModeKey: mode])
+    }
+
+    @ViewBuilder private var sectionJourHoraire: some View {
+        if enVoyage { sectionJourHoraireLecture } else { sectionJourHoraireEdition }
+    }
+
+    private var sectionJourHoraireEdition: some View {
         CadreSection("Jour et horaire", symbole: "calendar", couleur: .blue) {
             LabeledContent("Jour") {
                 Picker("Jour", selection: jourChoisi) {
@@ -387,11 +488,11 @@ struct EtapeEditView: View {
                     if etape.aDesInfosDeLieu { infosDuLieu }
                     sectionAvis
                     sectionBudget
-                    sectionCategorie
-                    sectionJourHoraire
+                    sectionCategorieEtMoment
                 } else {
-                    sectionCategorie
-                    sectionJourHoraire
+                    sectionCategorieEtMoment
+                    // En voyage, les infos du lieu (horaires d'ouverture, contact…) passent avant les avis.
+                    if enVoyage, etape.aDesInfosDeLieu { infosDuLieu }
                     sectionAvis
                     sectionBudget
                 }
@@ -438,7 +539,7 @@ struct EtapeEditView: View {
                         .sheet(isPresented: $transportOuvert) { existant.vue }
                     }
                 }
-                if !depuisVote, etape.aDesInfosDeLieu { infosDuLieu }
+                if !depuisVote, !enVoyage, etape.aDesInfosDeLieu { infosDuLieu }
                 CadreSection("Notes", symbole: "note.text", couleur: .yellow) {
                     TextEditor(text: $etape.notes)
                         .scrollContentBackground(.hidden)

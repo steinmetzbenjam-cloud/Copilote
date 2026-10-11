@@ -68,7 +68,10 @@ struct ItineraireView: View {
                         .overlay { cadreEtape.padding(12) }
                     // À droite : le bouton des messages, la discussion puis les étapes à placer. Seuls les cadres captent le toucher.
                     VStack(alignment: .trailing, spacing: 0) {
-                        boutonsRonds.padding(.top, 12).padding(.trailing, 12)
+                        // Sur Mac, les ronds en haut à droite de la carte (sur iPhone et iPad, ils sont dans la barre du haut).
+                        #if os(macOS)
+                        boutonsRonds.padding(.top, 6).padding(.trailing, 10)
+                        #endif
                         if discussionOuverte {
                             CommentairesView(voyage: voyage, enCadre: true, ouverte: $discussionOuverte)
                                 .frame(width: 320, height: min(440, max(260, geo.size.height * 0.55)))
@@ -112,7 +115,16 @@ struct ItineraireView: View {
             Text(d.perdus.count == 1 ? "Ce déplacement efface le transport prévu après « \(d.perdus[0].titre) »." : "Ce déplacement efface \(d.perdus.count) transports prévus entre des étapes.")
         }
         .toolbar {
-            // Les voyageurs (toucher les ronds ouvre mon profil), puis le bouton de discussion à leur droite.
+            // Sur Mac : les voyageurs (toucher les ronds ouvre mon profil), puis le bouton de discussion à leur droite.
+            // Sur iPhone et iPad, la barre reste dégagée : les messages s'ouvrent avec le rond de la carte.
+            #if os(iOS)
+            // Sur iPhone et iPad : les ronds dans la barre du haut, au niveau du changement de vue.
+            if #available(iOS 26.0, *) {
+                ToolbarItem(placement: .topBarTrailing) { boutonsRonds }.sharedBackgroundVisibility(.hidden)
+            } else {
+                ToolbarItem(placement: .topBarTrailing) { boutonsRonds }
+            }
+            #else
             ToolbarItem(placement: .primaryAction) {
                 HStack(spacing: 12) {
                     GroupeAvatars(voyage: voyage, onMoi: { profilOuvert = true }, onAutre: { membreAffiche = $0 })
@@ -135,6 +147,7 @@ struct ItineraireView: View {
                     }
                 }
             }
+            #endif
         }
         .onAppear { chargerDiscussionVue() }
         .onChange(of: discussionOuverte) { marquerDiscussionVue() }
@@ -163,9 +176,18 @@ struct ItineraireView: View {
 
     // MARK: Messages
 
-    /// Les deux ronds, côte à côte : les étapes à placer, puis les messages.
+    /// Taille des ronds : sur iPhone et iPad ils sont dans la barre du haut, à côté du changement de vue, donc un peu plus petits.
+    private var tailleRond: CGFloat {
+        #if os(iOS)
+        38
+        #else
+        46
+        #endif
+    }
+
+    /// Les ronds, côte à côte : les votes en cours, les étapes à placer, puis les messages.
     private var boutonsRonds: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             // Un vote en cours : raccourci vers la fenêtre des votes.
             if !voyage.votesOuverts.isEmpty { boutonVotes }
             boutonEtapesAPlacer
@@ -178,9 +200,9 @@ struct ItineraireView: View {
         let enAttente = voyage.votesEnAttenteDeMoi.count
         return Button { votesOuverts = true } label: {
             Image(systemName: "hand.thumbsup.fill")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: tailleRond * 0.4, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 46, height: 46)
+                .frame(width: tailleRond, height: tailleRond)
                 .background(Circle().fill(Color.purple))
                 .overlay(Circle().stroke(.white, lineWidth: 2))
                 .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
@@ -210,9 +232,9 @@ struct ItineraireView: View {
             Self.etapesAPlacerOuvertesSession = etapesAPlacerOuvertes
         } label: {
             Image(systemName: etapesAPlacerOuvertes ? "xmark" : "tray.full.fill")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: tailleRond * 0.4, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 46, height: 46)
+                .frame(width: tailleRond, height: tailleRond)
                 .background(Circle().fill(Color.accentColor))
                 .overlay(Circle().stroke(.white, lineWidth: 2))
                 .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
@@ -238,9 +260,9 @@ struct ItineraireView: View {
     private var boutonMessages: some View {
         Button { withAnimation(.snappy) { discussionOuverte.toggle() } } label: {
             Image(systemName: discussionOuverte ? "xmark" : "bubble.left.and.bubble.right.fill")
-                .font(.system(size: 18, weight: .semibold))
+                .font(.system(size: tailleRond * 0.4, weight: .semibold))
                 .foregroundStyle(.white)
-                .frame(width: 46, height: 46)
+                .frame(width: tailleRond, height: tailleRond)
                 .background(Circle().fill(Color.accentColor))
                 .overlay(Circle().stroke(.white, lineWidth: 2))
                 .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
@@ -317,10 +339,7 @@ struct ItineraireView: View {
     /// Les jours, les uns au-dessus des autres.
     private func listeDesJours(avecEtapesAPlacer: Bool) -> some View {
         LazyVStack(spacing: 12) {
-            // iPhone : le bouton des messages, puis les étapes sans jour, au-dessus du jour 1.
-            if avecEtapesAPlacer {
-                HStack { Spacer(); boutonsRonds }
-            }
+            // iPhone : les étapes sans jour, au-dessus du jour 1 (les ronds sont dans la barre du haut).
             if avecEtapesAPlacer && etapesAPlacerOuvertes { etapesAPlacer }
             ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
                 carte(numero: index + 1, jour: jour)
