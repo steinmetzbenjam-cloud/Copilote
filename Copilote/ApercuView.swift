@@ -116,7 +116,8 @@ struct ApercuView: View {
                 Spacer()
                 if estProchaine { Text("Prochaine").font(.caption2.bold()).foregroundStyle(.orange) }
                 if let h = etape.heure { Text(h.formatted(date: .omitted, time: .shortened)).monospacedDigit().foregroundStyle(.secondary) }
-                if estProchaine { BoutonYAller(etape: etape, taille: 40) }
+                // Sur chaque étape placée sur la carte : l'itinéraire dans Plans depuis la position actuelle.
+                BoutonYAller(etape: etape, taille: 40)
             }
             if let t = etape.transport {
                 Label(t.descriptif, systemImage: t.mode.symbole).font(.footnote).foregroundStyle(.secondary).padding(.leading, 44)
