@@ -303,6 +303,7 @@ struct GroupeView: View {
                 ForEach(Partie.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.segmented)
+            .frame(maxWidth: 500)
             .padding(.horizontal, 16).padding(.vertical, 8)
             switch partie {
             case .voyageurs: voyageurs

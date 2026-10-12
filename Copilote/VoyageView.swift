@@ -110,9 +110,10 @@ struct VoyageView: View {
                                 .background(Circle().fill(voyage.mode.couleur))
                                 .shadow(color: voyage.mode.couleur.opacity(0.45), radius: 3, y: 1)
                             if !iPhone {
+                                // Le nom en couleur du texte : lisible sur la barre claire comme sombre (le rond porte la couleur du mode).
                                 Text(voyage.mode.nom)
                                     .font(.subheadline.weight(.semibold))
-                                    .foregroundStyle(voyage.mode.couleur)
+                                    .foregroundStyle(.secondary)
                                     .fixedSize()
                             }
                         }
@@ -153,7 +154,7 @@ struct VoyageView: View {
                 Button { ouvrir(e) } label: {
                     VStack(spacing: 1) {
                         Image(systemName: e.symbole).font(.system(size: 15, weight: .semibold))
-                        Text(e.rawValue).font(.system(size: 10, weight: .semibold)).lineLimit(1).fixedSize()
+                        Text(e.rawValue).font(.caption2.weight(.semibold)).lineLimit(1).fixedSize()
                     }
                     .foregroundStyle(actif ? Color.accentColor : Color.primary.opacity(0.75))
                     .frame(minWidth: 62)
@@ -177,7 +178,7 @@ struct VoyageView: View {
                 Button { ouvrir(e) } label: {
                     VStack(spacing: 3) {
                         Image(systemName: e.symbole).font(.system(size: 20, weight: .semibold)).frame(height: 24)
-                        Text(e.rawValue).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                        Text(e.rawValue).font(.caption2.weight(.semibold)).lineLimit(1).minimumScaleFactor(0.8)
                     }
                     .foregroundStyle(actif ? Color.accentColor : Color.secondary)
                     .frame(maxWidth: .infinity)

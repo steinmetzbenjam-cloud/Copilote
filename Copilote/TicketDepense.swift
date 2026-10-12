@@ -91,10 +91,10 @@ struct TicketDepense: View {
             HStack(spacing: 8) {
                 Image(systemName: depense.estRemboursement ? "arrow.left.arrow.right" : depense.categorie.symbole).font(.system(size: 13, weight: .bold))
                 Text((depense.estRemboursement ? "Remboursement" : depense.categorie.libelle).uppercased())
-                    .font(.system(size: 12, weight: .bold, design: .monospaced)).lineLimit(1)
+                    .font(.system(.caption, design: .monospaced, weight: .bold)).lineLimit(1)
                 Spacer(minLength: 4)
                 Text(depense.date.formatted(.dateTime.day().month(.twoDigits).year(.twoDigits)))
-                    .font(.system(size: 12, weight: .semibold, design: .monospaced))
+                    .font(.system(.caption, design: .monospaced, weight: .semibold))
             }
             .foregroundStyle(.white)
             .padding(.horizontal, 14).padding(.vertical, 9)
@@ -116,9 +116,9 @@ struct TicketDepense: View {
                 if let etape { ligne("ÉTAPE") { Text(etape).lineLimit(1) } }
                 Pointilles()
                 HStack(alignment: .firstTextBaseline) {
-                    Text("TOTAL").font(.system(size: 12, weight: .bold, design: .monospaced)).foregroundStyle(.secondary)
+                    Text("TOTAL").font(.system(.caption, design: .monospaced, weight: .bold)).foregroundStyle(.secondary)
                     Spacer()
-                    Text(total).font(.system(size: 19, weight: .heavy, design: .monospaced)).foregroundStyle(couleur).minimumScaleFactor(0.7).lineLimit(1)
+                    Text(total).font(.system(.title3, design: .monospaced, weight: .heavy)).foregroundStyle(couleur).minimumScaleFactor(0.7).lineLimit(1)
                 }
                 if let enEuros { Text("≈ \(enEuros)").font(mono).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .trailing) }
                 Spacer(minLength: 0)
@@ -134,7 +134,7 @@ struct TicketDepense: View {
 
     private func ligne<V: View>(_ titre: String, @ViewBuilder _ valeur: () -> V) -> some View {
         HStack(spacing: 8) {
-            Text(titre).font(.system(size: 11, weight: .semibold, design: .monospaced)).foregroundStyle(.secondary)
+            Text(titre).font(.system(.caption2, design: .monospaced, weight: .semibold)).foregroundStyle(.secondary)
             Spacer(minLength: 4)
             valeur().font(mono).foregroundStyle(.primary)
         }

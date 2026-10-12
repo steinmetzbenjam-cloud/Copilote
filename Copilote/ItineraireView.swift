@@ -420,7 +420,44 @@ struct ItineraireView: View {
     }
 
     /// Bande entre deux jours : les hébergements de la nuit, ou un bouton pour en ajouter un.
-    private func nuit(apres jour: Date) -> some View {
+    @ViewBuilder private func nuit(apres jour: Date) -> some View {
+        if voyage.hebergements(apres: jour).isEmpty && voyage.transportDeNuit(apres: jour) == nil {
+            nuitVide(apres: jour)
+        } else {
+            nuitRemplie(apres: jour)
+        }
+    }
+
+    /// Une nuit sans hébergement ni transport : une simple ligne d'ajout, de la couleur du jour, qui accepte aussi une étape lâchée dessus.
+    private func nuitVide(apres jour: Date) -> some View {
+        let vise = nuitVisee.map { cal.isDate($0, inSameDayAs: jour) } ?? false
+        let couleurJour = CarteDuVoyage.couleur(du: voyage.jours.firstIndex { cal.isDate($0, inSameDayAs: jour) } ?? 0)
+        return Button { ajouterHebergement(apres: jour) } label: {
+            Label("Nuit : ajouter un hébergement ou un transport", systemImage: "moon.zzz")
+                .font(.footnote)
+                .foregroundStyle(couleurJour.opacity(0.85))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16).padding(.vertical, 6)
+                // Un fond discret mais plein : la carte, dessous, ne transparaît pas à travers le texte.
+                .background {
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(.regularMaterial)
+                    RoundedRectangle(cornerRadius: 10, style: .continuous).fill(couleurJour.opacity(vise ? 0.25 : 0.06))
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(voyage.lectureSeule)
+        .dropDestination(for: String.self) { elements, _ in
+            guard !voyage.lectureSeule else { return false }
+            defer { nuitVisee = nil }
+            guard let etape = etapeGlissee(elements) else { return false }
+            return demanderNuit(etape, apres: jour)
+        } isTargeted: { visee in
+            if visee { nuitVisee = jour } else if let actuel = nuitVisee, cal.isDate(actuel, inSameDayAs: jour) { nuitVisee = nil }
+        }
+    }
+
+    private func nuitRemplie(apres jour: Date) -> some View {
         let hebergements = voyage.hebergements(apres: jour)
         let vise = nuitVisee.map { cal.isDate($0, inSameDayAs: jour) } ?? false
         let couleurNuit = voyage.couleurNuit(apres: jour)
@@ -712,6 +749,7 @@ struct ItineraireView: View {
         }
         .buttonStyle(.plain)
         .help("Notes du jour")
+        .accessibilityLabel(notesSontOuvertes(jour) ? "Fermer les notes du jour" : "Notes du jour")
         .contextMenu { actionsDuJour(jour, infos: infos) }
     }
 
@@ -948,6 +986,15 @@ struct FondDeCarte: ViewModifier {
 }
 
 enum FondDePage {
+    /// Fond d'une case de saisie : blanc en mode clair, gris foncé en mode sombre.
+    static var saisie: Color {
+        #if os(iOS)
+        Color(.secondarySystemGroupedBackground)
+        #else
+        Color(nsColor: .textBackgroundColor)
+        #endif
+    }
+
     static var couleur: Color {
         #if os(iOS)
         Color(.systemGroupedBackground)

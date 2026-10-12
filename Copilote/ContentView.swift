@@ -87,6 +87,8 @@ struct ContentView: View {
                         Button("Importer une sauvegarde…", systemImage: "square.and.arrow.down") { importOuvert = true }
                     } label: {
                         Label("Sauvegarde", systemImage: "externaldrive")
+                            // Même apparence que « Réglages » juste au-dessus (un menu se colorait de la teinte de l'app).
+                            .foregroundStyle(.primary)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
                     }

@@ -41,6 +41,10 @@ struct ReservationsView: View {
 
             DocumentsSection(voyage: voyage, reservation: nil, titre: "Documents du voyage", couleur: .teal)
         }
+        // Sur grand écran, la liste garde la largeur des autres onglets (760 points) au lieu de s'étaler d'un bord à l'autre.
+        .frame(maxWidth: 760)
+        .frame(maxWidth: .infinity)
+        .background(FondDePage.couleur)
         .confirmerSuppression($aSupprimer, titre: { "Supprimer « \($0.titre.isEmpty ? $0.type.libelle : $0.titre) » ?" }) { contexte.delete($0) }
         .sheet(item: $enEdition, onDismiss: nettoyer) { r in
             ReservationEditView(reservation: r, voyage: voyage) { contexte.delete(r) }

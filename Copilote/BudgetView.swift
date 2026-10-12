@@ -153,7 +153,7 @@ struct BudgetView: View {
         let reste = total - regle.euros
         return CadreInfos(titre: titreTotal(), symbole: "eurosign.circle.fill", couleur: .green) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(eur(total)).font(.system(size: 38, weight: .bold, design: .rounded))
+                Text(eur(total)).font(.system(.largeTitle, design: .rounded, weight: .bold))
                 // Le total converti dans la monnaie locale et dans la troisième monnaie.
                 ForEach([MonnaiePrix.locale, .tierce], id: \.self) { m in
                     if let code = voyage.code(m), let converti = voyage.depuisEuros(total, vers: m) {
