@@ -98,6 +98,14 @@ struct Transport: Codable, Equatable {
     /// Durée du trajet corrigée à la main après le calcul, en minutes. Le tracé calculé reste sur la carte ;
     /// un nouveau calcul l'efface.
     var dureeModifiee: Double?
+    /// Itinéraire en voiture, à pied ou à vélo calculé avec Google Maps : il remplace celui de Plans sur la carte et pour la durée.
+    var itineraireGoogle: ItineraireGoogle?
+
+    /// L'itinéraire Google, s'il a été calculé pour ce mode et entre ces deux lieux (il ne vaut plus si une étape a bougé).
+    func itineraireGoogle(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> ItineraireGoogle? {
+        guard let g = itineraireGoogle, g.mode == mode, g.relie(a, b) else { return nil }
+        return g
+    }
 
     var departCoordonnee: CLLocationCoordinate2D? {
         guard let departLatitude, let departLongitude else { return nil }
@@ -140,6 +148,30 @@ extension Voyage {
     /// Les étapes et hébergements placés sur un jour, dans l'ordre du voyage.
     var elementsDuVoyage: [Etape] {
         jours.flatMap { etapes(du: $0) + hebergements(apres: $0) }
+    }
+}
+
+/// Un itinéraire calculé avec l'API Routes de Google, gardé avec le transport (il s'affiche hors ligne et chez tous les voyageurs).
+struct ItineraireGoogle: Codable, Equatable {
+    var mode: ModeTransport
+    var secondes: Int
+    var metres: Int
+    /// Polyligne encodée de Google.
+    var trace: String
+    var departLatitude: Double
+    var departLongitude: Double
+    var arriveeLatitude: Double
+    var arriveeLongitude: Double
+    var calculeLe: Date
+
+    var points: [CLLocationCoordinate2D] { PolylineGoogle.decoder(trace) }
+
+    var trajet: Trajet { Trajet(points: points, distance: Double(metres), duree: Double(secondes)) }
+
+    /// Vrai si l'itinéraire a été calculé entre ces deux lieux (à une cinquantaine de mètres près).
+    func relie(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> Bool {
+        abs(a.latitude - departLatitude) < 0.0005 && abs(a.longitude - departLongitude) < 0.0005
+            && abs(b.latitude - arriveeLatitude) < 0.0005 && abs(b.longitude - arriveeLongitude) < 0.0005
     }
 }
 

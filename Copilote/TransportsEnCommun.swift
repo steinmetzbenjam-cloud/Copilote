@@ -114,7 +114,7 @@ enum PolylineGoogle {
 /// Plans ne calcule pas ces itinéraires : il ne donne que la durée.
 enum RoutesGoogle {
     enum Erreur: LocalizedError {
-        case pasDeCle, refuse(String), aucunItineraire(String), illisible
+        case pasDeCle, refuse(String), aucunItineraire(String), illisible, trajetIntrouvable(ModeTransport)
 
         var errorDescription: String? {
             switch self {
@@ -122,6 +122,7 @@ enum RoutesGoogle {
             case .refuse(let message): "Google a refusé la recherche : \(message)"
             case .aucunItineraire(let detail): "Google n'a trouvé aucun itinéraire en transports en commun entre ces deux lieux. Détail : \(detail)"
             case .illisible: "La réponse de Google n'a pas pu être lue."
+            case .trajetIntrouvable(let mode): "Google Maps n'a trouvé aucun itinéraire \(mode == .pied ? "à pied" : mode == .velo ? "à vélo" : "en voiture") entre ces deux lieux."
             }
         }
     }
@@ -241,6 +242,42 @@ enum RoutesGoogle {
         guard etapes.contains(where: { !$0.estMarche }) else { throw Erreur.aucunItineraire("itinéraire à pied seulement") }
         return ItineraireCommun(secondes: secondes(route["duration"]), metres: (route["distanceMeters"] as? NSNumber)?.intValue ?? 0,
                                 trace: trace, etapes: etapes, calculeLe: .now)
+    }
+}
+
+extension RoutesGoogle {
+    /// Itinéraire en voiture, à pied ou à vélo avec Google Maps (API Routes, la clé Google des Réglages).
+    static func itineraire(de a: CLLocationCoordinate2D, vers b: CLLocationCoordinate2D, mode: ModeTransport) async throws -> ItineraireGoogle {
+        guard let cle = Cles.lire(.google), !cle.isEmpty else { throw Erreur.pasDeCle }
+        func point(_ c: CLLocationCoordinate2D) -> [String: Any] { ["location": ["latLng": ["latitude": c.latitude, "longitude": c.longitude]]] }
+        let modeGoogle = switch mode {
+        case .pied: "WALK"
+        case .velo: "BICYCLE"
+        default: "DRIVE"
+        }
+        let corps: [String: Any] = ["origin": point(a), "destination": point(b), "travelMode": modeGoogle, "languageCode": "fr"]
+        var requete = URLRequest(url: URL(string: "https://routes.googleapis.com/directions/v2:computeRoutes")!)
+        requete.httpMethod = "POST"
+        requete.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        requete.setValue(cle, forHTTPHeaderField: "X-Goog-Api-Key")
+        requete.setValue("routes.duration,routes.distanceMeters,routes.polyline.encodedPolyline", forHTTPHeaderField: "X-Goog-FieldMask")
+        requete.httpBody = try JSONSerialization.data(withJSONObject: corps)
+        requete.timeoutInterval = 25
+
+        let (donnees, reponse) = try await URLSession.shared.data(for: requete)
+        let code = (reponse as? HTTPURLResponse)?.statusCode ?? 0
+        let json = (try? JSONSerialization.jsonObject(with: donnees)) as? [String: Any]
+        if code != 200 {
+            throw Erreur.refuse(((json?["error"] as? [String: Any])?["message"] as? String) ?? "erreur \(code)")
+        }
+        guard let route = (json?["routes"] as? [[String: Any]])?.first,
+              let trace = (route["polyline"] as? [String: Any])?["encodedPolyline"] as? String else {
+            throw Erreur.trajetIntrouvable(mode)
+        }
+        let secondes = Int((route["duration"] as? String).flatMap { Double($0.dropLast()) } ?? 0)
+        return ItineraireGoogle(mode: mode, secondes: secondes, metres: (route["distanceMeters"] as? NSNumber)?.intValue ?? 0, trace: trace,
+                                departLatitude: a.latitude, departLongitude: a.longitude,
+                                arriveeLatitude: b.latitude, arriveeLongitude: b.longitude, calculeLe: .now)
     }
 }
 

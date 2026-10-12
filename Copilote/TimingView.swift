@@ -95,6 +95,7 @@ struct TimingView: View {
         // Durée corrigée à la main après le calcul : elle remplace celle de l'itinéraire.
         if let m = t.dureeModifiee, m > 0 { return (m, false) }
         if let s = t.itineraireCommun?.secondes, s > 0 { return (Double(s) / 60, false) }
+        if let a = depart?.coordonnee, let b = arrivee?.coordonnee, let g = t.itineraireGoogle(a, b), g.secondes > 0 { return (Double(g.secondes) / 60, false) }
         if t.mode.aUnItineraire, let a = depart?.coordonnee, let b = arrivee?.coordonnee,
            let duree = itineraires.trajet(a, b, t.mode)?.duree { return (max(duree / 60, 5), false) }
         switch t.mode {
@@ -329,31 +330,30 @@ struct TimingView: View {
         VStack(spacing: 0) {
             // Sur iPhone, pas de barre : ni « À placer », ni les loupes, pour laisser toute la place à l'agenda.
             if !iPhone { barre }
-            ScrollViewReader { lecteur in
-                ScrollView(.vertical, showsIndicators: true) {
-                    // Les jours se suivent de haut en bas ; l'en-tête du jour reste collé en haut pendant qu'on le parcourt.
-                    LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
-                        ligneExtremite(.aller)
-                        ForEach(Array(voyage.jours.enumerated()), id: \.offset) { i, jour in
-                            Section {
-                                colonne(i, jour)
-                                    .overlay(alignment: .topLeading) {
-                                        Color.clear.frame(width: 1, height: 1).offset(y: premiereHeure(jour) * hauteurHeure).id("ancre-\(i)")
-                                    }
-                            } header: {
-                                entete(i, jour)
-                            }
+            // De retour sur le Timing : à l'endroit exact où on l'avait quitté ; la première fois, sur le jour d'aujourd'hui.
+            DefilementMemorise(cle: cleDefilement, siAucune: { lecteur in
+                let cal = Calendar.current
+                let i = voyage.jours.firstIndex { cal.isDateInToday($0) } ?? 0
+                DispatchQueue.main.async { lecteur.scrollTo("ancre-\(i)", anchor: .top) }
+            }) {
+                // Les jours se suivent de haut en bas ; l'en-tête du jour reste collé en haut pendant qu'on le parcourt.
+                LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
+                    ligneExtremite(.aller)
+                    ForEach(Array(voyage.jours.enumerated()), id: \.offset) { i, jour in
+                        Section {
+                            colonne(i, jour)
+                                .overlay(alignment: .topLeading) {
+                                    Color.clear.frame(width: 1, height: 1).offset(y: premiereHeure(jour) * hauteurHeure).id("ancre-\(i)")
+                                }
+                        } header: {
+                            entete(i, jour)
                         }
-                        ligneExtremite(.retour)
                     }
-                }
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { largeurDisponible = $0 }
-                .onAppear {
-                    let cal = Calendar.current
-                    let i = voyage.jours.firstIndex { cal.isDateInToday($0) } ?? 0
-                    DispatchQueue.main.async { lecteur.scrollTo("ancre-\(i)", anchor: .top) }
+                    ligneExtremite(.retour)
                 }
             }
+            .id(cleDefilement)
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { largeurDisponible = $0 }
         }
         .background(FondDePage.couleur)
         .task(id: clesItineraires) {
@@ -426,6 +426,8 @@ struct TimingView: View {
         .padding(.vertical, 8)
         .background(FondDePage.couleur)
     }
+
+    private var cleDefilement: String { "timing-\(voyage.uid)" }
 
     private func dureeTexte(_ minutes: Double) -> String {
         let m = Int(minutes.rounded())

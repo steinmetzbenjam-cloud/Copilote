@@ -339,7 +339,7 @@ struct TransportEditView: View {
     /// Distance et durée de l'itinéraire le plus court, si les deux étapes sont localisées.
     @ViewBuilder private var infoItineraire: some View {
         if let (a, b) = coordonnees {
-            LigneItineraire(a: a, b: b, mode: transport.mode, dureeModifiee: $transport.dureeModifiee)
+            LigneItineraire(a: a, b: b, mode: transport.mode, dureeModifiee: $transport.dureeModifiee, google: $transport.itineraireGoogle)
         } else {
             Text("Place les deux étapes sur la carte (lieu) pour voir l'itinéraire.")
                 .font(.footnote).foregroundStyle(.secondary)
@@ -355,12 +355,22 @@ struct LigneItineraire: View {
     let b: CLLocationCoordinate2D
     let mode: ModeTransport
     @Binding var dureeModifiee: Double?
+    /// Itinéraire calculé avec Google Maps, enregistré avec le transport.
+    @Binding var google: ItineraireGoogle?
     @State private var itineraires = Itineraires.shared
     @State private var recalcul = false
+    @State private var calculGoogle = false
+    @State private var erreurGoogle: String?
+
+    /// L'itinéraire Google, s'il correspond encore aux deux étapes et au mode.
+    private var googleValide: ItineraireGoogle? {
+        guard let g = google, g.mode == mode, g.relie(a, b) else { return nil }
+        return g
+    }
 
     var body: some View {
-        let trajet = itineraires.trajet(a, b, mode)
-        LabeledContent("Itinéraire le plus court") {
+        let trajet = googleValide?.trajet ?? itineraires.trajet(a, b, mode)
+        LabeledContent(googleValide != nil ? "Itinéraire Google Maps" : "Itinéraire le plus court (Plans)") {
             Text(trajet?.resume ?? "Calcul…").foregroundStyle(.secondary)
         }
         .task(id: Itineraires.cle(a, b, mode)) { await itineraires.charger(a, b, mode) }
@@ -368,16 +378,46 @@ struct LigneItineraire: View {
             DureeDuTrajet(calculee: duree / 60, modifiee: $dureeModifiee)
         }
         // Un nouveau calcul repart de zéro : la durée corrigée à la main est effacée.
-        Button(recalcul ? "Calcul…" : "Recalculer l'itinéraire", systemImage: "arrow.triangle.2.circlepath") {
-            recalcul = true
-            dureeModifiee = nil
-            Task {
-                await itineraires.recalculer(a, b, mode)
-                recalcul = false
+        HStack(spacing: 16) {
+            Button(recalcul ? "Calcul…" : "Recalculer l'itinéraire", systemImage: "arrow.triangle.2.circlepath") {
+                recalcul = true
+                dureeModifiee = nil
+                google = nil
+                erreurGoogle = nil
+                Task {
+                    await itineraires.recalculer(a, b, mode)
+                    recalcul = false
+                }
             }
+            .disabled(recalcul || calculGoogle)
+            Button(calculGoogle ? "Calcul…" : "Calculer avec Google Maps", systemImage: "g.circle") {
+                Task { await calculerAvecGoogle() }
+            }
+            .disabled(recalcul || calculGoogle)
         }
         .buttonStyle(.borderless)
-        .disabled(recalcul)
+        if let g = googleValide {
+            Text("Tracé de Google Maps enregistré avec le transport et affiché sur la carte. Calculé \(g.calculeLe.formatted(.relative(presentation: .named))). « Recalculer l'itinéraire » revient à Plans.")
+                .font(.footnote).foregroundStyle(.secondary)
+        } else if Cles.lire(.google) == nil {
+            Text("Google Maps utilise ta clé Google : ajoute-la dans les Réglages et active « Routes API » dans ton projet Google Cloud.")
+                .font(.footnote).foregroundStyle(.secondary)
+        }
+        if let erreurGoogle {
+            Text(erreurGoogle).font(.footnote).foregroundStyle(.red)
+        }
+    }
+
+    private func calculerAvecGoogle() async {
+        calculGoogle = true
+        erreurGoogle = nil
+        defer { calculGoogle = false }
+        do {
+            google = try await RoutesGoogle.itineraire(de: a, vers: b, mode: mode)
+            dureeModifiee = nil
+        } catch {
+            erreurGoogle = error.localizedDescription
+        }
     }
 }
 

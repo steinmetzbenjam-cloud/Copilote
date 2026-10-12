@@ -210,7 +210,7 @@ struct CarteDuVoyage: View {
         case .avion:
             return [Segment(id: id, points: Itineraires.arc(a, b), tirets: [7, 6], avion: true)]
         case .voiture, .pied, .velo:
-            let trajet = Itineraires.shared.trajet(a, b, mode!)
+            let trajet = transport?.itineraireGoogle(a, b)?.trajet ?? Itineraires.shared.trajet(a, b, mode!)
             return [Segment(id: id, points: trajet?.points ?? [a, b], tirets: mode == .voiture ? [] : [1, 6])]
         case .commun:
             // Itinéraire enregistré : un trait par tronçon, à la couleur de la ligne (marche en pointillés).

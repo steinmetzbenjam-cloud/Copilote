@@ -66,7 +66,8 @@ struct ItineraireView: View {
                 // iPad, Mac : la carte en fond, les jours empilés dans un panneau à gauche.
                 ZStack(alignment: .leading) {
                     fondDeCarte(margeGauche: Self.largeurPanneau)
-                    ScrollView { listeDesJours(avecEtapesAPlacer: false).padding(12) }
+                    DefilementMemorise(cle: cleDefilement(large: true)) { listeDesJours(avecEtapesAPlacer: false).padding(12) }
+                        .id(cleDefilement(large: true))
                         .frame(width: Self.largeurPanneau)
                         .scrollIndicators(.hidden)
                         .overlay { cadreEtape.padding(12) }
@@ -106,7 +107,8 @@ struct ItineraireView: View {
                 // iPhone : la carte en haut, les jours dessous.
                 VStack(spacing: 0) {
                     fondDeCarte(margeGauche: 0).frame(height: max(220, geo.size.height * 0.36))
-                    ScrollView { listeDesJours(avecEtapesAPlacer: true).padding(12) }
+                    DefilementMemorise(cle: cleDefilement(large: false)) { listeDesJours(avecEtapesAPlacer: true).padding(12) }
+                        .id(cleDefilement(large: false))
                         .background(FondDePage.couleur)
                         .overlay { cadreEtape.padding(8) }
                 }
@@ -479,7 +481,7 @@ struct ItineraireView: View {
                 Text(voyage.descriptifLocal(t, depuis: depart, vers: arrivee))
                 if t.mode.aUnItineraire, let a = depart.coordonnee, let b = arrivee.coordonnee {
                     Spacer()
-                    ResumeItineraire(a: a, b: b, mode: t.mode, dureeModifiee: t.dureeModifiee)
+                    ResumeItineraire(a: a, b: b, mode: t.mode, dureeModifiee: t.dureeModifiee, google: t.itineraireGoogle(a, b))
                 }
             }
             .font(.subheadline)
@@ -646,6 +648,9 @@ struct ItineraireView: View {
     }
 
     private static let espace = "itineraire"
+
+    /// Position de défilement des jours, retenue par voyage (une pour l'écran large, une pour l'iPhone : leurs mises en page diffèrent).
+    private func cleDefilement(large: Bool) -> String { "itineraire-\(voyage.uid)-\(large ? "large" : "etroit")" }
 
     private func notesSontOuvertes(_ jour: Date) -> Bool {
         notesOuvertes.map { cal.isDate($0, inSameDayAs: jour) } ?? false
