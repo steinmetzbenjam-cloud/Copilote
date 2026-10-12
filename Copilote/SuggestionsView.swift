@@ -120,6 +120,10 @@ struct SuggestionsView: View {
                 }
             }
         }
+        #if os(macOS)
+        // Sur Mac, une liste dans une feuille n'a pas de taille propre : sans cadre, la fenêtre s'ouvre réduite à sa barre.
+        .frame(minWidth: 460, idealWidth: 520, minHeight: 560, idealHeight: 680)
+        #endif
     }
 
     private func ligne(_ lieu: LieuPropose) -> some View {
