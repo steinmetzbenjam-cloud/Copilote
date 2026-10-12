@@ -42,6 +42,8 @@ struct EtapeEditView: View {
 
     @State private var horaireOuvert = false
     @State private var suppressionDemandee = false
+    /// Vrai si la fiche s'est ouverte sur une étape toute neuve (sans nom ni lieu) : « Annuler l'ajout » la retire sans question.
+    @State private var nouvelle: Bool?
 
     /// Sans jour, l'étape n'a pas non plus d'horaires.
     private var jourChoisi: Binding<Date?> {
@@ -185,7 +187,10 @@ struct EtapeEditView: View {
                 etape.longitude = lieu.coordonnee.longitude
             }
         }
-        .onAppear { if etape.titre.isEmpty { titreActif = true } }
+        .onAppear {
+            if etape.titre.isEmpty { titreActif = true }
+            if nouvelle == nil { nouvelle = etape.titre.isEmpty && etape.lieu.isEmpty && etape.coordonnee == nil }
+        }
         .onChange(of: caseDureeActive) { _, active in if active != nil { toutSelectionner() } }
     }
 
@@ -224,7 +229,7 @@ struct EtapeEditView: View {
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(titreActif ? 0.12 : 0)))
                 .help("Cliquer pour renommer")
             // Dupliquer : une icône discrète, à côté de la fermeture (pas en voyage : le programme est fixé).
-            if !(etape.voyage?.lectureSeule ?? true), !enVoyage {
+            if !(etape.voyage?.lectureSeule ?? true), !enVoyage, nouvelle != true {
                 Button { dupliquer() } label: {
                     Image(systemName: copieFaite ? "checkmark" : "plus.square.on.square")
                         .font(.system(size: 14, weight: .medium))
@@ -236,27 +241,21 @@ struct EtapeEditView: View {
                 .accessibilityLabel("Dupliquer l'étape")
                 .help(copieFaite ? "Copie créée" : "Dupliquer l'étape")
             }
-            if enCadre {
-                Button { fermer() } label: {
-                    // Grande croix bien contrastée : on la trouve tout de suite pour fermer le détail.
-                    Image(systemName: "xmark")
-                        .font(.system(size: 17, weight: .bold))
-                        .foregroundStyle(.primary)
-                        .frame(width: 38, height: 38)
-                        .background(Circle().fill(Color.secondary.opacity(0.22)))
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
-                .keyboardShortcut(.cancelAction)
-                .accessibilityLabel("Fermer")
-                .help("Fermer")
-            } else {
-                Button("OK") { fermer() }
-                    .fontWeight(.semibold)
-                    .buttonStyle(.borderless)
-                    .keyboardShortcut(.defaultAction)
-                    .frame(minWidth: 32)
+            // « OK » bien visible : tout est enregistré au fil de la saisie, il ne reste qu'à refermer la fiche.
+            Button { fermer() } label: {
+                Text("OK")
+                    .font(.body.weight(.semibold))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 16).padding(.vertical, 8)
+                    .background(Capsule().fill(Color.accentColor))
+                    .contentShape(Capsule())
             }
+            .buttonStyle(.plain)
+            .keyboardShortcut(.defaultAction)
+            .accessibilityLabel("OK, fermer la fiche")
+            .help("Fermer la fiche (tout est déjà enregistré)")
+            // Échap ferme aussi la fiche.
+            Button("") { fermer() }.keyboardShortcut(.cancelAction).hidden().frame(width: 0, height: 0)
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
     }
@@ -458,6 +457,58 @@ struct EtapeEditView: View {
         }
     }
 
+    /// Le lieu : la recherche d'abord (elle remplit le nom, l'adresse et les infos), la carte, les transports.
+    private var sectionLieu: some View {
+        CadreSection("Lieu", symbole: "mappin.and.ellipse", couleur: .orange) {
+            TextField("Lieu ou adresse", text: $etape.lieu, axis: .vertical)
+                .textFieldStyle(.plain)
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 8).fill(FondDePage.carte))
+            if etape.coordonnee == nil {
+                Button { rechercheOuverte = true } label: {
+                    Label("Chercher le lieu", systemImage: "magnifyingglass").frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(.orange)
+                .help("Cherche le lieu : son nom, son adresse et ses infos se remplissent")
+            }
+            if let coord = etape.coordonnee {
+                // Dans un cadre, la grande carte à côté montre déjà le lieu.
+                if !enCadre {
+                    Map(initialPosition: .region(MKCoordinateRegion(center: coord, latitudinalMeters: 800, longitudinalMeters: 800)),
+                        interactionModes: []) {
+                        Marker(etape.titre, systemImage: etape.categorie.symbole, coordinate: coord)
+                    }
+                    .id("\(coord.latitude),\(coord.longitude)")
+                    .frame(height: 160)
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                }
+                HStack {
+                    Button("Retirer de la carte", systemImage: "mappin.slash", role: .destructive) {
+                        etape.latitude = nil
+                        etape.longitude = nil
+                    }
+                    Spacer()
+                    Button("Changer de lieu", systemImage: "magnifyingglass") { rechercheOuverte = true }
+                }
+            }
+            // Aller-retour : revenir là d'où l'on vient (l'hôtel, par exemple), juste après cette étape.
+            if let depart = etape.departPourRetour, !(etape.voyage?.lectureSeule ?? true) {
+                Button("Revenir à « \(depart.titre.isEmpty ? "l'étape précédente" : depart.titre) »", systemImage: "arrow.uturn.backward") {
+                    guard let contexte = etape.modelContext, let retour = etape.ajouterRetour(dans: contexte) else { return }
+                    onDupliquer?(retour)
+                }
+                .help("Ajoute après cette étape un retour vers l'étape d'où l'on vient, avec le même mode de transport")
+            }
+            if let voyage = etape.voyage, let existant = transportPourArriver(voyage) {
+                Button(existant.transport == nil ? "Ajouter un transport" : "Modifier le transport", systemImage: "arrow.triangle.swap") {
+                    transportOuvert = true
+                }
+                .sheet(isPresented: $transportOuvert) { existant.vue }
+            }
+        }
+    }
+
     private var champs: some View {
         ScrollView {
             VStack(spacing: 14) {
@@ -467,58 +518,24 @@ struct EtapeEditView: View {
                     sectionAvis
                     sectionBudget
                     sectionCategorieEtMoment
-                } else {
+                } else if enVoyage {
+                    // En voyage : le moment (avec « Y aller »), les réservations, puis les infos du lieu avant les avis.
                     sectionCategorieEtMoment
                     sectionReservations
-                    // En voyage, les infos du lieu (horaires d'ouverture, contact…) passent avant les avis.
-                    if enVoyage, etape.aDesInfosDeLieu { infosDuLieu }
+                    if etape.aDesInfosDeLieu { infosDuLieu }
                     sectionAvis
                     sectionBudget
+                } else {
+                    // En préparation : d'abord où (la recherche remplit le reste), puis quand, puis le coût et les avis.
+                    sectionLieu
+                    if etape.aDesInfosDeLieu { infosDuLieu }
+                    sectionCategorieEtMoment
+                    sectionReservations
+                    sectionBudget
+                    sectionAvis
                 }
-                CadreSection("Lieu", symbole: "mappin.and.ellipse", couleur: .orange) {
-                    TextField("Lieu ou adresse", text: $etape.lieu, axis: .vertical)
-                        .textFieldStyle(.plain)
-                        .padding(.horizontal, 10).padding(.vertical, 7)
-                        .background(RoundedRectangle(cornerRadius: 8).fill(FondDePage.carte))
-                    if etape.coordonnee == nil {
-                        Button("Placer sur la carte", systemImage: "magnifyingglass") { rechercheOuverte = true }
-                    }
-                    if let coord = etape.coordonnee {
-                        // Dans un cadre, la grande carte à côté montre déjà le lieu.
-                        if !enCadre {
-                            Map(initialPosition: .region(MKCoordinateRegion(center: coord, latitudinalMeters: 800, longitudinalMeters: 800)),
-                                interactionModes: []) {
-                                Marker(etape.titre, systemImage: etape.categorie.symbole, coordinate: coord)
-                            }
-                            .id("\(coord.latitude),\(coord.longitude)")
-                            .frame(height: 160)
-                            .clipShape(RoundedRectangle(cornerRadius: 10))
-                        }
-                        HStack {
-                            Button("Retirer de la carte", systemImage: "mappin.slash", role: .destructive) {
-                                etape.latitude = nil
-                                etape.longitude = nil
-                            }
-                            Spacer()
-                            Button("Changer de lieu", systemImage: "magnifyingglass") { rechercheOuverte = true }
-                        }
-                    }
-                    // Aller-retour : revenir là d'où l'on vient (l'hôtel, par exemple), juste après cette étape.
-                    if let depart = etape.departPourRetour, !(etape.voyage?.lectureSeule ?? true) {
-                        Button("Revenir à « \(depart.titre.isEmpty ? "l'étape précédente" : depart.titre) »", systemImage: "arrow.uturn.backward") {
-                            guard let contexte = etape.modelContext, let retour = etape.ajouterRetour(dans: contexte) else { return }
-                            onDupliquer?(retour)
-                        }
-                        .help("Ajoute après cette étape un retour vers l'étape d'où l'on vient, avec le même mode de transport")
-                    }
-                    if let voyage = etape.voyage, let existant = transportPourArriver(voyage) {
-                        Button(existant.transport == nil ? "Ajouter un transport" : "Modifier le transport", systemImage: "arrow.triangle.swap") {
-                            transportOuvert = true
-                        }
-                        .sheet(isPresented: $transportOuvert) { existant.vue }
-                    }
-                }
-                if !depuisVote, !enVoyage, etape.aDesInfosDeLieu { infosDuLieu }
+                // En préparation, le lieu est déjà plus haut ; ailleurs, il vient ici.
+                if depuisVote || enVoyage { sectionLieu }
                 CadreSection("Notes", symbole: "note.text", couleur: .yellow) {
                     TextEditor(text: $etape.notes)
                         .scrollContentBackground(.hidden)
@@ -526,6 +543,16 @@ struct EtapeEditView: View {
                         .frame(minHeight: 80)
                         .background(RoundedRectangle(cornerRadius: 8).fill(FondDePage.carte))
                 }
+                if nouvelle == true {
+                    // Une étape toute neuve : on annule son ajout, sans question.
+                    Button("Annuler l'ajout", systemImage: "xmark") { onSupprimer(); fermer() }
+                        .font(.body.weight(.semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.secondary.opacity(0.18)))
+                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .buttonStyle(.plain)
+                } else {
                 Button(etape.categorie == .hebergement ? "Supprimer l'hébergement" : "Supprimer l'étape", systemImage: "trash", role: .destructive) {
                     // Une étape encore vide part sans question ; sinon on confirme.
                     if etape.titre.trimmingCharacters(in: .whitespaces).isEmpty && etape.lieu.isEmpty { onSupprimer(); fermer() }
@@ -544,6 +571,7 @@ struct EtapeEditView: View {
                 .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.red))
                 .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
                 .buttonStyle(.plain)
+                }
             }
             .buttonStyle(.borderless)
             .padding(14)
