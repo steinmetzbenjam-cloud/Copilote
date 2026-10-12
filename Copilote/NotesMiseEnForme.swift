@@ -446,7 +446,9 @@ struct EditeurNotes: View {
         VStack(alignment: .leading, spacing: 6) {
             if !lectureSeule { barre }
             ZStack(alignment: .topLeading) {
-                ZoneTexteNotes(controleur: controleur, texte: $texte, donnees: $donnees, lectureSeule: lectureSeule)
+                // Les valeurs sont lues ici, dans le corps de la vue : une note modifiée sur un autre appareil redessine la zone de texte.
+                ZoneTexteNotes(controleur: controleur, texte: $texte, donnees: $donnees, lectureSeule: lectureSeule,
+                               texteActuel: texte, donneesActuelles: donnees)
                 if texte.isEmpty {
                     Text(lectureSeule ? "Aucune note." : invite)
                         .foregroundStyle(.secondary.opacity(0.7))
@@ -569,6 +571,8 @@ private struct ZoneTexteNotes {
     @Binding var texte: String
     @Binding var donnees: Data?
     var lectureSeule: Bool
+    var texteActuel: String
+    var donneesActuelles: Data?
 
     final class Coordinateur: NSObject {
         var parent: ZoneTexteNotes
@@ -601,7 +605,23 @@ private struct ZoneTexteNotes {
         }
 
         @MainActor func doitRecharger() -> Bool {
-            parent.donnees != dernieres || (parent.donnees == nil && parent.texte != dernierTexte)
+            parent.donneesActuelles != dernieres || (parent.donneesActuelles == nil && parent.texteActuel != dernierTexte)
+        }
+
+        /// Recharge une note arrivée d'ailleurs en gardant le curseur à sa place, même pendant l'écriture.
+        @MainActor func recharger(_ vue: VueTexteSysteme) {
+            #if os(iOS)
+            let curseur = vue.selectedRange
+            charger(vue)
+            let longueur = vue.attributedText.length
+            vue.selectedRange = NSRange(location: min(curseur.location, longueur), length: min(curseur.length, max(longueur - curseur.location, 0)))
+            #else
+            let curseur = vue.selectedRange()
+            charger(vue)
+            let longueur = vue.textStorage?.length ?? 0
+            vue.setSelectedRange(NSRange(location: min(curseur.location, longueur), length: min(curseur.length, max(longueur - curseur.location, 0))))
+            #endif
+            parent.controleur.majEtat()
         }
     }
 
@@ -631,7 +651,7 @@ extension ZoneTexteNotes: UIViewRepresentable {
     func updateUIView(_ vue: UITextView, context: Context) {
         context.coordinator.parent = self
         vue.isEditable = !lectureSeule
-        if context.coordinator.doitRecharger() && !vue.isFirstResponder { context.coordinator.charger(vue) }
+        if context.coordinator.doitRecharger() { context.coordinator.recharger(vue) }
     }
 }
 
@@ -667,7 +687,7 @@ extension ZoneTexteNotes: NSViewRepresentable {
         context.coordinator.parent = self
         guard let vue = defilement.documentView as? NSTextView else { return }
         vue.isEditable = !lectureSeule
-        if context.coordinator.doitRecharger() && vue.window?.firstResponder !== vue { context.coordinator.charger(vue) }
+        if context.coordinator.doitRecharger() { context.coordinator.recharger(vue) }
     }
 }
 
