@@ -141,7 +141,7 @@ struct AvisEtapeSection: View {
             commentaire = monAvis?.commentaire ?? ""
         }
         if membres.isEmpty {
-            Text("Ajoute d'abord les participants du voyage (onglet Infos ou Dépenses).").font(.footnote).foregroundStyle(.secondary)
+            Text("Ajoute d'abord les participants du voyage (onglet Groupe).").font(.footnote).foregroundStyle(.secondary)
         }
     }
 

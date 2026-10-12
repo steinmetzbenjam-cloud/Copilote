@@ -96,7 +96,7 @@ struct CommentairesView: View {
                         .disabled(nouveauVoyageur.trimmingCharacters(in: .whitespaces).isEmpty)
                 }
             } footer: {
-                Text("Ajoute les participants du voyage (onglet Infos ou Dépenses) pour pouvoir échanger.")
+                Text("Ajoute les participants du voyage (onglet Groupe) pour pouvoir échanger.")
             }
         }
     }

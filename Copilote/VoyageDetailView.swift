@@ -19,15 +19,10 @@ struct VoyageDetailView: View {
                     SectionMonnaie(voyage: voyage)
                 }
                 .disabled(!voyage.estOrganisateur)
-                CadreInfos(titre: "Partage avec le groupe", symbole: "person.2.fill", couleur: .pink) {
-                    SectionPartage(voyage: voyage)
-                }
-                .disabled(!voyage.estOrganisateur)
-                CadreFamilles(voyage: voyage) { profilOuvert = true }
-                if !voyage.estOrganisateur {
-                    Label("Seul un organisateur modifie le voyage, ses familles et les rôles. Ton rôle : \(voyage.monRole.libelle).", systemImage: voyage.monRole.symbole)
-                        .font(.footnote).foregroundStyle(.secondary)
-                }
+                // Les voyageurs, leurs familles et le partage sont dans l'espace « Groupe ».
+                Label("Les voyageurs, les familles et le partage du voyage sont dans l'onglet Groupe.", systemImage: "person.3.fill")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 CadreInfos(titre: "Notes", symbole: "note.text", couleur: .brown) {
                     TextEditor(text: $voyage.notes)
                         .scrollContentBackground(.hidden)

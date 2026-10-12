@@ -58,7 +58,7 @@ struct BudgetView: View {
             VStack(spacing: 14) {
                 if voyage.membres.isEmpty {
                     CadreInfos(titre: "Budget", symbole: "eurosign.circle.fill", couleur: .green) {
-                        Text("Pour calculer le coût du voyage, ajoute les voyageurs (et leur âge) dans l'onglet Infos, rangés par famille.")
+                        Text("Pour calculer le coût du voyage, ajoute les voyageurs (et leur âge) dans l'onglet Groupe, rangés par famille.")
                             .foregroundStyle(.secondary)
                     }
                 } else {
@@ -94,7 +94,7 @@ struct BudgetView: View {
                 EmptyView()
             case .famille:
                 if voyage.familles.isEmpty {
-                    Text("Aucune famille : crée-les dans l'onglet Infos.").font(.footnote).foregroundStyle(.secondary)
+                    Text("Aucune famille : crée-les dans l'onglet Groupe.").font(.footnote).foregroundStyle(.secondary)
                 } else {
                     ScrollView(.horizontal, showsIndicators: false) {
                         HStack(alignment: .top, spacing: 16) {
@@ -284,7 +284,7 @@ struct BudgetView: View {
         case .personne:
             if let membre = voyage.membre(uid: personneEffective) {
                 CadreInfos(titre: "Tarif appliqué", symbole: "person.fill", couleur: .teal,
-                           pied: "Le tarif découle de l'âge (enfant jusqu'à \(Tarif.ageEnfantMax) ans) ou du choix fait dans la fiche du voyageur, dans l'onglet Infos.") {
+                           pied: "Le tarif découle de l'âge (enfant jusqu'à \(Tarif.ageEnfantMax) ans) ou du choix fait dans la fiche du voyageur, dans l'onglet Groupe.") {
                     LabeledContent("Tarif", value: membre.tarif.libelle)
                     if let age = membre.age { LabeledContent("Âge", value: "\(age) ans") }
                     if !membre.famille.isEmpty { LabeledContent("Famille", value: membre.famille) }

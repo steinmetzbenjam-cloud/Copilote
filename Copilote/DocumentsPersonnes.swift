@@ -90,7 +90,7 @@ struct DocumentsPersonnesView: View {
                 ForEach(voyage.membresTries) { cadre($0) }
                 if voyage.membres.isEmpty {
                     ContentUnavailableView("Aucun voyageur", systemImage: "person.text.rectangle",
-                                           description: Text("Ajoute les voyageurs dans l'onglet Infos pour leur associer des documents."))
+                                           description: Text("Ajoute les voyageurs dans la partie « Voyageurs » pour leur associer des documents."))
                 }
                 if let erreur { Text(erreur).font(.footnote).foregroundStyle(.red) }
                 Text("Les documents sont partagés avec les personnes invitées au voyage. N'y mets que ce que le groupe peut voir.")
@@ -286,12 +286,14 @@ struct DocumentEditView: View {
 }
 
 /// L'onglet « Groupe » : les votes et les documents de chacun.
+/// L'espace « Groupe » : les voyageurs et leurs familles (avec le partage du voyage), les votes, les documents de chacun.
 struct GroupeView: View {
     @Bindable var voyage: Voyage
-    @State private var partie = Partie.votes
+    @State private var partie = Partie.voyageurs
+    @State private var profilOuvert = false
 
     enum Partie: String, CaseIterable, Identifiable {
-        case votes = "Votes", documents = "Documents"
+        case voyageurs = "Voyageurs", votes = "Votes", documents = "Documents"
         var id: String { rawValue }
     }
 
@@ -303,10 +305,32 @@ struct GroupeView: View {
             .pickerStyle(.segmented)
             .padding(.horizontal, 16).padding(.vertical, 8)
             switch partie {
+            case .voyageurs: voyageurs
             case .votes: VotesView(voyage: voyage)
             case .documents: DocumentsPersonnesView(voyage: voyage)
             }
         }
         .background(FondDePage.couleur)
+        .sheet(isPresented: $profilOuvert) { ProfilEditView() }
+    }
+
+    /// Les familles et les voyageurs, puis le partage du voyage avec eux.
+    private var voyageurs: some View {
+        ScrollView {
+            VStack(spacing: 14) {
+                CadreFamilles(voyage: voyage) { profilOuvert = true }
+                if !voyage.estOrganisateur {
+                    Label("Seul un organisateur modifie le voyage, ses familles et les rôles. Ton rôle : \(voyage.monRole.libelle).", systemImage: voyage.monRole.symbole)
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                CadreInfos(titre: "Partage avec le groupe", symbole: "person.2.fill", couleur: .pink) {
+                    SectionPartage(voyage: voyage)
+                }
+                .disabled(!voyage.estOrganisateur)
+            }
+            .padding(12)
+            .frame(maxWidth: 760)
+            .frame(maxWidth: .infinity)
+        }
     }
 }

@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 import PhotosUI
 
-/// Cadre « Familles et voyageurs » de l'onglet Infos : les familles, leurs membres, leur âge,
+/// Cadre « Familles et voyageurs » de l'onglet Groupe : les familles, leurs membres, leur âge,
 /// et celles et ceux qui ont reçu une invitation dans l'app.
 struct CadreFamilles: View {
     @Bindable var voyage: Voyage

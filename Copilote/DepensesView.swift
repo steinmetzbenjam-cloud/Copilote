@@ -20,8 +20,12 @@ struct DepensesView: View {
         var id: String { rawValue }
     }
 
-    init(voyage: Voyage) {
+    /// Quand l'espace « Argent » choisit lui-même Dépenses ou Soldes (son propre sélecteur) : le sélecteur interne est masqué.
+    var soldesImposes: Bool?
+
+    init(voyage: Voyage, soldes: Bool? = nil) {
         self.voyage = voyage
+        self.soldesImposes = soldes
         _moi = State(initialValue: UserDefaults.standard.string(forKey: "moi-\(voyage.uid)") ?? "")
     }
 
@@ -47,19 +51,23 @@ struct DepensesView: View {
         uid == monCompte ? "\(voyage.nomDuCompte(uid)) (moi)" : voyage.nomDuCompte(uid)
     }
 
+    private var ongletAffiche: Onglet { soldesImposes.map { $0 ? .soldes : .depenses } ?? onglet }
+
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Vue", selection: $onglet) {
-                ForEach(Onglet.allCases) { Text($0.rawValue).tag($0) }
+            if soldesImposes == nil {
+                Picker("Vue", selection: $onglet) {
+                    ForEach(Onglet.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal).padding(.vertical, 8)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal).padding(.vertical, 8)
 
             ScrollView {
                 VStack(spacing: 10) {
                     if membres.count < 2 { voyageurs }
-                    switch onglet {
+                    switch ongletAffiche {
                     case .depenses: listeDepenses
                     case .soldes: vueSoldes
                     }
@@ -71,7 +79,7 @@ struct DepensesView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if onglet == .depenses && membres.count >= 2 && !voyage.lectureSeule { boutonAjouter }
+            if ongletAffiche == .depenses && membres.count >= 2 && !voyage.lectureSeule { boutonAjouter }
         }
         .confirmerSuppression($aSupprimer, titre: { "Supprimer « \($0.titre.isEmpty ? "cette dépense" : $0.titre) » ?" }) { contexte.delete($0) }
         .sheet(isPresented: $declaration) { DepenseAssistantView(voyage: voyage, moi: moi) }
@@ -98,7 +106,7 @@ struct DepensesView: View {
                 Button("Ajouter", action: ajouterVoyageur)
                     .disabled(nouveauVoyageur.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            Text("Écris simplement les prénoms de ceux qui participent aux dépenses et ne sont pas encore listés : il n'est pas nécessaire de les inviter. Il en faut au moins deux pour répartir. Ils rejoignent aussi la liste des voyageurs de l'onglet Infos.")
+            Text("Écris simplement les prénoms de ceux qui participent aux dépenses et ne sont pas encore listés : il n'est pas nécessaire de les inviter. Il en faut au moins deux pour répartir. Ils rejoignent aussi la liste des voyageurs de l'onglet Groupe.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
         .padding()

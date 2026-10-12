@@ -2,10 +2,13 @@ import SwiftUI
 
 struct VoyageView: View {
     @Bindable var voyage: Voyage
+    /// La vue affichée (Itinéraire, Timing, Budget…) ; l'espace qui la contient s'en déduit.
     @State private var onglet: Onglet
+    /// La dernière vue ouverte dans chaque espace : on y revient en rouvrant l'espace.
+    @State private var dernieres: [Espace: Onglet] = [:]
     @State private var modesOuverts = false
-    @State private var vuesDepliees = false
-    /// Largeur disponible : sur un petit écran (iPad mini), la barre passe en icônes pour que tout y tienne.
+    /// iPhone : les infos du voyage s'ouvrent en touchant son nom.
+    @State private var infosOuvertes = false
     @State private var largeur: CGFloat = 1400
     @Environment(\.horizontalSizeClass) private var tailleHorizontale
     @Environment(\.modelContext) private var contexte
@@ -15,14 +18,39 @@ struct VoyageView: View {
         _onglet = State(initialValue: .itineraire)
     }
 
+    /// Les vues de l'app, regroupées en espaces.
     enum Onglet: String, CaseIterable, Identifiable {
         case apercu = "Aperçu"
         case itineraire = "Itinéraire"
         case timing = "Timing"
         case carte = "Carte"
-        case reservations = "Réserv."
-        case depenses = "Dépenses"
+        case reservations = "Réservations"
         case budget = "Budget"
+        case depenses = "Dépenses"
+        case soldes = "Soldes"
+        case groupe = "Groupe"
+        case infos = "Infos"
+        var id: String { rawValue }
+
+        var espace: Espace {
+            switch self {
+            case .apercu: .apercu
+            case .itineraire, .timing, .carte: .programme
+            case .reservations: .reservations
+            case .budget, .depenses, .soldes: .argent
+            case .groupe: .groupe
+            case .infos: .infos
+            }
+        }
+    }
+
+    /// Les grands espaces du voyage, chacun nommé dans la barre : le programme jour par jour, les réservations,
+    /// l'argent (budget prévu, dépenses, soldes), le groupe (voyageurs, votes, documents) et les infos du voyage.
+    enum Espace: String, CaseIterable, Identifiable {
+        case apercu = "Aperçu"
+        case programme = "Programme"
+        case reservations = "Réservations"
+        case argent = "Argent"
         case groupe = "Groupe"
         case infos = "Infos"
         var id: String { rawValue }
@@ -30,78 +58,36 @@ struct VoyageView: View {
         var symbole: String {
             switch self {
             case .apercu: "gauge.with.dots.needle.67percent"
-            case .itineraire: "list.bullet.rectangle"
-            case .timing: "calendar.day.timeline.left"
-            case .carte: "map"
+            case .programme: "calendar"
             case .reservations: "ticket"
-            case .depenses: "eurosign.circle"
-            case .budget: "chart.pie"
-            case .groupe: "person.3.sequence"
+            case .argent: "eurosign.circle"
+            case .groupe: "person.3"
             case .infos: "info.circle"
             }
         }
+
+        /// Les vues de l'espace, dans l'ordre de son sélecteur.
+        var onglets: [Onglet] { Onglet.allCases.filter { $0.espace == self } }
     }
 
-    /// Les vues proposées : sur Mac, l'aperçu n'a pas d'onglet (le compte à rebours est dans la barre de titre) ;
-    /// sur iPhone et iPad, il n'apparaît pas en préparation.
-    private var onglets: [Onglet] {
-        #if os(macOS)
-        Onglet.allCases.filter { $0 != .apercu }
-        #else
-        Onglet.allCases.filter { $0 != .apercu || voyage.mode != .preparation }
-        #endif
+    /// Les espaces proposés : sur Mac, l'aperçu n'en est pas un (le compte à rebours est dans la barre de titre) ;
+    /// ailleurs, il n'apparaît pas en préparation. Sur iPhone, les infos s'ouvrent depuis le nom du voyage.
+    private var espaces: [Espace] {
+        Espace.allCases.filter { e in
+            #if os(macOS)
+            if e == .apercu { return false }
+            #else
+            if e == .apercu && voyage.mode == .preparation { return false }
+            #endif
+            if e == .infos && iPhone { return false }
+            return true
+        }
     }
 
-    /// Sur iPhone, des icônes : cinq noms ne tiendraient pas dans la barre.
-    private var iconesSeules: Bool {
-        #if os(iOS)
-        // Les vues en toutes lettres tant que le nom du voyage garde une taille lisible à côté.
-        tailleHorizontale == .compact || placeTitre(largeurVues: largeurVuesTexte) < Self.titreMinimum
-        #else
-        // Huit vues, le titre, le compte à rebours, les voyageurs et la discussion : sous cette largeur, les vues passent en icônes
-        // pour que le bouton des messages, tout à droite, ne soit pas repoussé hors de la barre.
-        largeur < 1500
-        #endif
-    }
+    private var espace: Espace { onglet.espace }
 
-    #if os(iOS)
-    /// Largeur des vues écrites en toutes lettres, mesurée dans la barre (estimée avant la première mesure).
-    @State private var largeurVuesTexte: CGFloat = 820
-    /// Ce que la barre prend en plus du nom et des vues : bouton du volet, bouton de mode, boutons de droite, marges.
-    private static let reserveBarre: CGFloat = 430
-    private static let titreMaximum: CGFloat = 260
-    /// En dessous, le nom serait illisible : les vues passent en icônes pour lui laisser de la place.
-    private static let titreMinimum: CGFloat = 130
-
-    private func placeTitre(largeurVues: CGFloat) -> CGFloat {
-        largeur - Self.reserveBarre - largeurVues
-    }
-
-    /// Le nom rétrécit pour que les vues ne touchent pas les boutons de droite.
-    private var largeurTitre: CGFloat {
-        let vues = iconesSeules ? CGFloat(onglets.count) * 52 : largeurVuesTexte
-        return min(Self.titreMaximum, max(Self.titreMinimum, placeTitre(largeurVues: vues)))
-    }
-    #else
-    private var largeurTitre: CGFloat { iconesSeules ? 140 : 260 }
-    #endif
-
-    /// Sur iPad, le mode, le nom du voyage et les vues se suivent tous à gauche de la barre :
-    /// au centre (« principal »), les vues passaient devant le nom, repoussé tout à droite.
-    private var placementGauche: ToolbarItemPlacement {
-        #if os(iOS)
-        .topBarLeading
-        #else
-        .navigation
-        #endif
-    }
-
-    private var placementVues: ToolbarItemPlacement {
-        #if os(iOS)
-        .topBarLeading
-        #else
-        .principal
-        #endif
+    private func ouvrir(_ e: Espace) {
+        onglet = dernieres[e] ?? e.onglets[0]
     }
 
     private var iPhone: Bool {
@@ -114,18 +100,26 @@ struct VoyageView: View {
 
     @ViewBuilder private var boutonMode: some View {
                     // Un simple bouton : il ouvre ensuite la liste des trois modes.
-                    // Un rond coloré (une couleur par mode) pour qu'il se voie bien.
+                    // Un rond coloré (une couleur par mode) ; sur grand écran, le nom du mode à côté pour qu'on sache à quoi il sert.
                     Button { modesOuverts.toggle() } label: {
-                        Image(systemName: voyage.mode.symbole)
-                            .font(.system(size: iPhone ? 19 : 15, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .frame(width: iPhone ? 40 : 30, height: iPhone ? 40 : 30)
-                            .background(Circle().fill(voyage.mode.couleur))
-                            .shadow(color: voyage.mode.couleur.opacity(0.45), radius: 3, y: 1)
+                        HStack(spacing: 6) {
+                            Image(systemName: voyage.mode.symbole)
+                                .font(.system(size: iPhone ? 19 : 15, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(width: iPhone ? 40 : 30, height: iPhone ? 40 : 30)
+                                .background(Circle().fill(voyage.mode.couleur))
+                                .shadow(color: voyage.mode.couleur.opacity(0.45), radius: 3, y: 1)
+                            if !iPhone {
+                                Text(voyage.mode.nom)
+                                    .font(.subheadline.weight(.semibold))
+                                    .foregroundStyle(voyage.mode.couleur)
+                                    .fixedSize()
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel("Mode : \(voyage.mode.nom)")
-                    .help("Mode : \(voyage.mode.nom)")
+                    .help("Mode du voyage : \(voyage.mode.nom)")
                     .popover(isPresented: $modesOuverts) {
                         VStack(alignment: .leading, spacing: 2) {
                             ForEach(ModeVoyage.allCases) { mode in
@@ -151,150 +145,227 @@ struct VoyageView: View {
                     }
     }
 
-    private func rond(_ o: Onglet, actif: Bool, taille: CGFloat = 40) -> some View {
-        Image(systemName: o.symbole)
-            .font(.system(size: taille * 0.47, weight: .semibold))
-            .foregroundStyle(actif ? Color.white : Color.accentColor)
-            .frame(width: taille, height: taille)
-            .background(Circle().fill(actif ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.regularMaterial)))
-            .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
-    }
-
-    /// iPhone : dans la barre, un seul rond fixe (la vue en cours). Un appui déplie les autres vues juste sous la barre,
-    /// car faire changer la taille de la barre elle-même la fait disparaître.
-    private var selecteurIPhone: some View {
-        Button { vuesDepliees.toggle() } label: { rond(onglet, actif: true) }
-            .buttonStyle(.plain)
-            .accessibilityLabel(onglet.rawValue)
-    }
-
-    private var rangeeVues: some View {
-        // Des ronds plus petits et plus serrés : toutes les vues tiennent sur la largeur d'un iPhone.
-        HStack(spacing: 4) {
-            ForEach(onglets) { o in
-                Button {
-                    onglet = o
-                    vuesDepliees = false
-                } label: { rond(o, actif: o == onglet, taille: 35) }
+    /// iPad et Mac : les espaces dans la barre, chacun avec son icône et son nom.
+    private var barreEspaces: some View {
+        HStack(spacing: 2) {
+            ForEach(espaces) { e in
+                let actif = e == espace
+                Button { ouvrir(e) } label: {
+                    VStack(spacing: 1) {
+                        Image(systemName: e.symbole).font(.system(size: 15, weight: .semibold))
+                        Text(e.rawValue).font(.system(size: 10, weight: .semibold)).lineLimit(1).fixedSize()
+                    }
+                    .foregroundStyle(actif ? Color.accentColor : Color.primary.opacity(0.75))
+                    .frame(minWidth: 62)
+                    .padding(.horizontal, 4).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.accentColor.opacity(actif ? 0.16 : 0)))
+                    .contentShape(Capsule())
+                }
                 .buttonStyle(.plain)
-                .accessibilityLabel(o.rawValue)
+                .accessibilityLabel(e.rawValue)
+                .accessibilityAddTraits(actif ? .isSelected : [])
             }
         }
-        .padding(.horizontal, 8).padding(.top, 4)
-        .transition(.move(edge: .top).combined(with: .opacity))
+        .fixedSize()
     }
 
-    /// iPhone : le mode puis la vue en cours, toujours à gauche (après le retour), sans cadre autour.
-    @ToolbarContentBuilder private var barreIPhone: some ToolbarContent {
-        #if os(iOS)
-        if #available(iOS 26.0, *) {
-            ToolbarItem(placement: .topBarLeading) { boutonMode }.sharedBackgroundVisibility(.hidden)
-            ToolbarItem(placement: .topBarLeading) { selecteurIPhone }.sharedBackgroundVisibility(.hidden)
-        } else {
-            ToolbarItem(placement: .topBarLeading) { boutonMode }
-            ToolbarItem(placement: .topBarLeading) { selecteurIPhone }
+    /// iPhone : les espaces en bas de l'écran, comme une barre d'onglets.
+    private var barreOngletsIPhone: some View {
+        HStack(spacing: 0) {
+            ForEach(espaces) { e in
+                let actif = e == espace
+                Button { ouvrir(e) } label: {
+                    VStack(spacing: 3) {
+                        Image(systemName: e.symbole).font(.system(size: 20, weight: .semibold)).frame(height: 24)
+                        Text(e.rawValue).font(.system(size: 10, weight: .semibold)).lineLimit(1).minimumScaleFactor(0.8)
+                    }
+                    .foregroundStyle(actif ? Color.accentColor : Color.secondary)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 7).padding(.bottom, 4)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(e.rawValue)
+                .accessibilityAddTraits(actif ? .isSelected : [])
+            }
         }
-        #else
-        ToolbarItem(placement: .navigation) { boutonMode }
-        #endif
+        .background(.bar)
+        .overlay(alignment: .top) { Divider() }
+    }
+
+    /// Dans un espace à plusieurs vues (Programme, Argent) : un sélecteur en haut du contenu.
+    @ViewBuilder private func selecteurVues(_ e: Espace) -> some View {
+        if e.onglets.count > 1 {
+            Picker("Vue", selection: Binding(get: { onglet }, set: { onglet = $0 })) {
+                ForEach(e.onglets) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            // Un fond flouté : lisible même posé sur la carte.
+            .padding(4)
+            .background(.regularMaterial, in: Capsule())
+            .padding(.vertical, 6)
+            .frame(maxWidth: .infinity)
+        }
+    }
+
+    @ViewBuilder private func vue(_ o: Onglet) -> some View {
+        switch o {
+        case .apercu: ApercuView(voyage: voyage)
+        case .itineraire: ItineraireView(voyage: voyage)
+        case .timing: TimingView(voyage: voyage)
+        case .carte: CarteView(voyage: voyage)
+        case .reservations: ReservationsView(voyage: voyage)
+        case .budget: BudgetView(voyage: voyage)
+        case .depenses: DepensesView(voyage: voyage, soldes: false)
+        case .soldes: DepensesView(voyage: voyage, soldes: true)
+        case .groupe: GroupeView(voyage: voyage)
+        case .infos: VoyageDetailView(voyage: voyage)
+        }
+    }
+
+    /// Le contenu d'un espace : sa vue en cours, avec le sélecteur de ses vues au-dessus.
+    private func contenu(_ e: Espace) -> some View {
+        let o = e == espace ? onglet : (dernieres[e] ?? e.onglets[0])
+        return vue(o)
+            .id(o)
+            .safeAreaInset(edge: .top, spacing: 0) { selecteurVues(e) }
+    }
+
+    /// Le nom du voyage. Sur iPhone, il ouvre les infos du voyage (dates, pays, monnaies…).
+    private var titre: some View {
+        let texte = Text(voyage.titre)
+            .font(PoliceVoyage.police(pour: voyage.pays, taille: iPhone ? 17 : 21))
+            .lineLimit(1)
+            .minimumScaleFactor(0.55)
+        return Group {
+            if iPhone {
+                Button { infosOuvertes = true } label: {
+                    HStack(spacing: 4) {
+                        texte.foregroundStyle(.primary)
+                        Image(systemName: "info.circle").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .accessibilityHint("Ouvre les infos du voyage")
+            } else {
+                texte.frame(maxWidth: largeur < 1000 ? 150 : 260, alignment: .leading)
+            }
+        }
+    }
+
+    @ViewBuilder private var principal: some View {
+            if iPhone {
+                // iPhone : une barre d'onglets en bas, chaque espace nommé. Dessinée ici plutôt que celle du système :
+                // dans celle-ci, les boutons propres à chaque vue (étapes à placer, messages) ne remontaient plus dans la barre du haut.
+                contenu(espace)
+                    .safeAreaInset(edge: .bottom, spacing: 0) { barreOngletsIPhone }
+            } else {
+                contenu(espace)
+            }
     }
 
     var body: some View {
-        Group {
-            switch onglet {
-            case .apercu: ApercuView(voyage: voyage)
-            case .itineraire: ItineraireView(voyage: voyage)
-            case .timing: TimingView(voyage: voyage)
-            case .carte: CarteView(voyage: voyage)
-            case .reservations: ReservationsView(voyage: voyage)
-            case .depenses: DepensesView(voyage: voyage)
-            case .budget: BudgetView(voyage: voyage)
-            case .groupe: GroupeView(voyage: voyage)
-            case .infos: VoyageDetailView(voyage: voyage)
-            }
-        }
-        .overlay(alignment: .topLeading) {
-            if iPhone && vuesDepliees { rangeeVues }
-        }
+        principal
         .overlay(alignment: .bottom) {
             if !Reseau.shared.enLigne {
                 Label("Hors ligne : tes modifications sont gardées sur l'appareil", systemImage: "wifi.slash")
                     .font(.footnote.weight(.semibold)).foregroundStyle(.white)
                     .padding(.horizontal, 14).padding(.vertical, 8)
                     .background(Capsule().fill(Color.orange))
-                    .shadow(radius: 3, y: 1).padding(.bottom, 10)
+                    .shadow(radius: 3, y: 1).padding(.bottom, iPhone ? 60 : 10)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .allowsHitTesting(false)
             }
         }
         .animation(.snappy, value: Reseau.shared.enLigne)
-        .animation(.snappy, value: vuesDepliees)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { largeur = $0 }
-        // Le titre est affiché par la barre d'outils, à côté des ronds : on vide celui du système pour ne pas le doubler.
+        .onChange(of: onglet) { _, o in dernieres[o.espace] = o }
+        // Le titre est affiché par la barre d'outils, à côté du mode : on vide celui du système pour ne pas le doubler.
         .navigationTitle("")
         #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
         #endif
+        .sheet(isPresented: $infosOuvertes) {
+            NavigationStack {
+                VoyageDetailView(voyage: voyage)
+                    .navigationTitle("Infos du voyage")
+                    #if os(iOS)
+                    .navigationBarTitleDisplayMode(.inline)
+                    #endif
+                    .toolbar { ToolbarItem(placement: .confirmationAction) { Button("OK") { infosOuvertes = false } } }
+            }
+        }
         // Le fuseau de chaque pays visité : il règle l'heure locale de tous les jours.
         .task(id: voyage.pays) {
             for code in voyage.pays { await FuseauxHoraires.shared.chargerPays(code) }
         }
-        // L'aperçu disparaît en préparation : on revient alors à l'itinéraire.
-        .onChange(of: voyage.mode) { _, _ in if !onglets.contains(onglet) { onglet = .itineraire } }
+        // L'aperçu disparaît en préparation (et les infos passent sous le nom sur iPhone) : on revient alors au programme.
+        .onChange(of: voyage.mode) { _, _ in if !espaces.contains(espace) { onglet = .itineraire } }
+        .onChange(of: iPhone) { _, _ in if !espaces.contains(espace) { onglet = .itineraire } }
         .onAppear {
-            if !onglets.contains(onglet) { onglet = .itineraire }
+            if !espaces.contains(espace) { onglet = .itineraire }
             Profil.partage.reconnaitre(dans: voyage)
             Profil.partage.publier(dans: contexte)
         }
-        .toolbar {
+        .toolbar { barre }
+    }
+
+    @ToolbarContentBuilder private var barre: some ToolbarContent {
+            #if os(iOS)
             if iPhone {
-                barreIPhone
+                if #available(iOS 26.0, *) {
+                    ToolbarItem(placement: .topBarLeading) { boutonMode }.sharedBackgroundVisibility(.hidden)
+                } else {
+                    ToolbarItem(placement: .topBarLeading) { boutonMode }
+                }
+                ToolbarItem(placement: .principal) { titre }
             } else {
-            // De gauche à droite : le mode, puis le nom du voyage, puis les vues.
-            ToolbarItem(placement: placementGauche) {
-                HStack(spacing: 10) {
-                    boutonMode
-                    // Le titre reste à gauche de la barre ; il rétrécit plutôt que de pousser les autres boutons.
-                    Text(voyage.titre)
-                        .font(PoliceVoyage.police(pour: voyage.pays, taille: iconesSeules ? 17 : 21))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.55)
-                        .frame(maxWidth: largeurTitre, alignment: .leading)
-                    #if os(macOS)
-                    // Le compte à rebours, juste à droite du nom du voyage.
-                    Text(voyage.compteARebours)
-                        .font(.system(size: 12, weight: .bold, design: .rounded)).monospacedDigit()
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 9).padding(.vertical, 3)
-                        .background(Capsule().fill(voyage.mode.couleur))
-                        .fixedSize()
-                        .help("Compte à rebours du voyage")
+                barreGrandEcran
+            }
+            #else
+            barreGrandEcran
+            #endif
+    }
+
+    @ToolbarContentBuilder private var barreGrandEcran: some ToolbarContent {
+                // De gauche à droite : le mode, le nom du voyage (et son compte à rebours sur Mac), puis les espaces.
+                ToolbarItem(placement: placementGauche) {
+                    HStack(spacing: 10) {
+                        boutonMode
+                        titre
+                        #if os(macOS)
+                        Text(voyage.compteARebours)
+                            .font(.system(size: 12, weight: .bold, design: .rounded)).monospacedDigit()
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 9).padding(.vertical, 3)
+                            .background(Capsule().fill(voyage.mode.couleur))
+                            .fixedSize()
+                            .help("Compte à rebours du voyage")
+                        #endif
+                    }
+                    #if os(iOS)
+                    .fixedSize()
                     #endif
                 }
-                #if os(iOS)
-                // À gauche, à côté des vues, la barre écrasait le titre jusqu'à le faire disparaître : il garde sa taille.
-                .fixedSize()
-                #endif
-            }
-            ToolbarItem(placement: placementVues) {
-                Picker("Section", selection: $onglet) {
-                    ForEach(onglets) { onglet in
-                        if iconesSeules {
-                            Image(systemName: onglet.symbole).accessibilityLabel(onglet.rawValue).tag(onglet)
-                        } else {
-                            Text(onglet.rawValue).tag(onglet)
-                        }
-                    }
-                }
-                .pickerStyle(.segmented)
-                // Taille réelle du sélecteur : bridé par un cadre plus étroit, ses segments des bords (Itinéraire, Infos)
-                // débordaient et ne recevaient plus les clics.
-                .fixedSize()
-                #if os(iOS)
-                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { if !iconesSeules { largeurVuesTexte = $0 } }
-                #endif
-            }
-            }
-        }
+                ToolbarItem(placement: placementVues) { barreEspaces }
+    }
+
+    /// Sur iPad, le mode, le nom du voyage et les espaces se suivent tous à gauche de la barre.
+    private var placementGauche: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .navigation
+        #endif
+    }
+
+    private var placementVues: ToolbarItemPlacement {
+        #if os(iOS)
+        .topBarLeading
+        #else
+        .principal
+        #endif
     }
 }

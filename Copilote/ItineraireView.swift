@@ -247,11 +247,12 @@ struct ItineraireView: View {
             withAnimation(.snappy) { etapesAPlacerOuvertes.toggle() }
             Self.etapesAPlacerOuvertesSession = etapesAPlacerOuvertes
         } label: {
-            Image(systemName: etapesAPlacerOuvertes ? "xmark" : "tray.full.fill")
+            // Toujours le bac : ouvert, le rond s'inverse (fond blanc) au lieu de devenir une croix qu'on prendrait pour « fermer le voyage ».
+            Image(systemName: "tray.full.fill")
                 .font(.system(size: tailleRond * 0.4, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(etapesAPlacerOuvertes ? Color.accentColor : .white)
                 .frame(width: tailleRond, height: tailleRond)
-                .background(Circle().fill(Color.accentColor))
+                .background(Circle().fill(etapesAPlacerOuvertes ? Color.white : Color.accentColor))
                 .overlay(Circle().stroke(.white, lineWidth: 2))
                 .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
                 .overlay(alignment: .topTrailing) {
@@ -275,11 +276,11 @@ struct ItineraireView: View {
     /// Un rond bien visible à côté des étapes à placer : il ouvre ou ferme les messages entre voyageurs.
     private var boutonMessages: some View {
         Button { withAnimation(.snappy) { discussionOuverte.toggle() } } label: {
-            Image(systemName: discussionOuverte ? "xmark" : "bubble.left.and.bubble.right.fill")
+            Image(systemName: "bubble.left.and.bubble.right.fill")
                 .font(.system(size: tailleRond * 0.4, weight: .semibold))
-                .foregroundStyle(.white)
+                .foregroundStyle(discussionOuverte ? Color.accentColor : .white)
                 .frame(width: tailleRond, height: tailleRond)
-                .background(Circle().fill(Color.accentColor))
+                .background(Circle().fill(discussionOuverte ? Color.white : Color.accentColor))
                 .overlay(Circle().stroke(.white, lineWidth: 2))
                 .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
                 // Point rouge : un message d'un autre voyageur n'a pas encore été lu.

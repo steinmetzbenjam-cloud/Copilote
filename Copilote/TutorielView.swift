@@ -40,7 +40,7 @@ struct TutorielView: View {
                       ("eurosign.circle", "Les Dépenses suivent ce que chacun a payé et qui doit combien."),
                       ("dollarsign.arrow.circlepath", "Dans Infos, choisis la monnaie locale (et une troisième au besoin) : les montants sont convertis.")]),
         Page(symbole: "person.3.sequence", couleur: .purple, titre: "À plusieurs",
-             points: [("square.and.arrow.up", "Partage le voyage depuis Infos pour inviter les autres voyageurs."),
+             points: [("square.and.arrow.up", "Partage le voyage depuis l'onglet Groupe pour inviter les autres voyageurs."),
                       ("bubble.left.and.bubble.right.fill", "Discute avec le groupe grâce au rond des messages sur la carte."),
                       ("hand.thumbsup.fill", "Lance un vote pour départager deux étapes ou deux logements : chaque famille a une voix."),
                       ("crown.fill", "Les rôles (organisateur, voyageur, lecteur) règlent qui peut modifier quoi.")]),

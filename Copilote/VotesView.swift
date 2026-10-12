@@ -30,7 +30,7 @@ struct VotesView: View {
                 .buttonStyle(.borderedProminent)
                 .disabled(voyage.lectureSeule || voyage.membres.isEmpty)
                 if voyage.membres.isEmpty {
-                    Text("Ajoute d'abord les voyageurs dans l'onglet Infos : chaque famille aura une voix.")
+                    Text("Ajoute d'abord les voyageurs dans la partie « Voyageurs » : chaque famille aura une voix.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
 
