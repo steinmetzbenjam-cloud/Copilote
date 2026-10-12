@@ -51,7 +51,8 @@ struct JourEditView: View {
                 }
 
                 Section("Notes") {
-                    TextEditor(text: $jour.notes).frame(minHeight: 80)
+                    EditeurNotes(texte: $jour.notes, donnees: $jour.notesMiseEnForme, lectureSeule: jour.voyage?.lectureSeule ?? false)
+                        .frame(minHeight: 180)
                 }
             }
             .formStyle(.grouped)

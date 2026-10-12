@@ -55,6 +55,7 @@ enum Sauvegarde {
             if let document = modele as? Document { champs["donnees"] = .fichier(document.donnees) }
             if let membre = modele as? Membre, let photo = membre.avatar { champs["avatar"] = .fichier(photo) }
             if let famille = modele as? Famille, let photo = famille.avatar { champs["avatar"] = .fichier(photo) }
+            if let jour = modele as? JourVoyage, let notes = jour.notesMiseEnForme { champs["notesMiseEnForme"] = .fichier(notes) }
             return Objet(type: type.rawValue, uid: uid, champs: champs)
         }
 

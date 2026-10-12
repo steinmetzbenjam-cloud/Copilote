@@ -36,6 +36,10 @@ struct ItineraireView: View {
     private static var etapesAPlacerOuvertesSession = true
     /// Déplacement qui effacerait des transports : en attente de confirmation.
     @State private var deplacementEnAttente: DeplacementEnAttente?
+    /// Jour dont les notes sont ouvertes dans un cadre à droite de sa carte (sous son en-tête sur iPhone).
+    @State private var notesOuvertes: Date?
+    /// Haut de la carte du jour aux notes ouvertes, pour y aligner le cadre.
+    @State private var hautNotes: CGFloat = 0
 
     private struct DeplacementEnAttente: Identifiable {
         let id = UUID()
@@ -66,6 +70,14 @@ struct ItineraireView: View {
                         .frame(width: Self.largeurPanneau)
                         .scrollIndicators(.hidden)
                         .overlay { cadreEtape.padding(12) }
+                    // Les notes du jour : un post-it à droite de sa carte.
+                    if let jour = notesOuvertes, let numero = voyage.jours.firstIndex(where: { cal.isDate($0, inSameDayAs: jour) }) {
+                        cadreNotes(jour, numero: numero + 1)
+                            .frame(width: 380)
+                            .padding(.leading, Self.largeurPanneau + 4)
+                            .padding(.top, min(max(hautNotes, 12), max(geo.size.height - 470, 12)))
+                            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    }
                     // À droite : le bouton des messages, la discussion puis les étapes à placer. Seuls les cadres captent le toucher.
                     VStack(alignment: .trailing, spacing: 0) {
                         // Sur Mac, les ronds en haut à droite de la carte (sur iPhone et iPad, ils sont dans la barre du haut).
@@ -100,6 +112,8 @@ struct ItineraireView: View {
                 }
             }
         }
+        .coordinateSpace(.named(Self.espace))
+        .onPreferenceChange(HautCarteNotes.self) { hautNotes = $0 }
         .onGeometryChange(for: Bool.self) { $0.size.width >= 700 } action: { ecranLarge = $0 }
         // Déposer une étape en dehors d'une carte de jour : elle n'a plus de jour.
         .dropDestination(for: String.self) { elements, _ in
@@ -552,6 +566,8 @@ struct ItineraireView: View {
             }
             .buttonStyle(.plain)
 
+            if !ecranLarge, notesSontOuvertes(jour) { cadreNotes(jour, numero: numero) }
+
             Divider()
 
             // Transport prévu après l'hôtel de la veille : il ouvre la journée.
@@ -582,7 +598,12 @@ struct ItineraireView: View {
         .overlay(alignment: .leading) {
             Capsule().fill(couleur).frame(width: 5).padding(.vertical, 16).padding(.leading, 5)
         }
-        .overlay(alignment: .topTrailing) { menuDuJour(jour, infos: infos) }
+        .overlay(alignment: .topTrailing) { boutonNotes(jour, infos: infos) }
+        .background {
+            if notesSontOuvertes(jour) {
+                GeometryReader { g in Color.clear.preference(key: HautCarteNotes.self, value: g.frame(in: .named(Self.espace)).minY) }
+            }
+        }
         .overlay {
             if estSelectionne(jour) {
                 RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(couleur, lineWidth: 2.5)
@@ -624,17 +645,69 @@ struct ItineraireView: View {
             }
     }
 
-    /// Menu de la carte : modifier le jour, ou remettre ses étapes dans l'ordre des heures.
-    private func menuDuJour(_ jour: Date, infos: JourVoyage?) -> some View {
-        Menu {
-            Button("Modifier le jour", systemImage: "pencil") { jourEnEdition = infos ?? creerInfos(jour) }
-            Button("Trier par heure", systemImage: "clock") { trierParHeure(jour) }
-                .disabled(voyage.etapes(du: jour).count < 2)
+    private static let espace = "itineraire"
+
+    private func notesSontOuvertes(_ jour: Date) -> Bool {
+        notesOuvertes.map { cal.isDate($0, inSameDayAs: jour) } ?? false
+    }
+
+    /// Le post-it de la carte : ouvre ou ferme les notes du jour. Un appui long propose de modifier le jour ou de trier ses étapes.
+    private func boutonNotes(_ jour: Date, infos: JourVoyage?) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { notesOuvertes = notesSontOuvertes(jour) ? nil : jour }
         } label: {
-            Image(systemName: "ellipsis.circle").font(.title3).foregroundStyle(.secondary).padding(12)
+            IconePostIt(ecrit: !(infos?.notes ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, ouvert: notesSontOuvertes(jour))
+                .frame(width: 26, height: 26)
+                .padding(12)
+                .contentShape(Rectangle())
         }
-        .menuStyle(.borderlessButton)
-        .fixedSize()
+        .buttonStyle(.plain)
+        .help("Notes du jour")
+        .contextMenu { actionsDuJour(jour, infos: infos) }
+    }
+
+    @ViewBuilder private func actionsDuJour(_ jour: Date, infos: JourVoyage?) -> some View {
+        Button("Modifier le jour", systemImage: "pencil") { jourEnEdition = infos ?? creerInfos(jour) }
+        Button("Trier par heure", systemImage: "clock") { trierParHeure(jour) }
+            .disabled(voyage.etapes(du: jour).count < 2)
+    }
+
+    /// Les notes du jour, sur un post-it qu'on peut écrire directement.
+    private func cadreNotes(_ jour: Date, numero: Int) -> some View {
+        let infos = voyage.infos(du: jour)
+        let texte = Binding<String>(
+            get: { voyage.infos(du: jour)?.notes ?? "" },
+            set: { nouveau in
+                if let infos = voyage.infos(du: jour) { infos.notes = nouveau } else if !nouveau.isEmpty { creerInfos(jour).notes = nouveau }
+            })
+        let miseEnForme = Binding<Data?>(
+            get: { voyage.infos(du: jour)?.notesMiseEnForme },
+            set: { nouveau in
+                if let infos = voyage.infos(du: jour) { infos.notesMiseEnForme = nouveau } else if nouveau != nil { creerInfos(jour).notesMiseEnForme = nouveau }
+            })
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Label("Notes · Jour \(numero)", systemImage: "note.text").font(.subheadline.bold())
+                Spacer()
+                Menu { actionsDuJour(jour, infos: infos) } label: { Image(systemName: "ellipsis") }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                Button { withAnimation(.easeInOut(duration: 0.2)) { notesOuvertes = nil } } label: {
+                    Image(systemName: "xmark").font(.subheadline.bold())
+                }
+                .buttonStyle(.plain)
+            }
+            .foregroundStyle(Color.black.opacity(0.7))
+            EditeurNotes(texte: texte, donnees: miseEnForme, lectureSeule: voyage.lectureSeule, invite: "Écris ici tes notes pour ce jour…")
+                .id(jour)
+                .frame(minHeight: 220, maxHeight: ecranLarge ? 380 : 300)
+        }
+        .padding(14)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(LinearGradient(colors: [IconePostIt.jaune, IconePostIt.jaune.opacity(0.88)], startPoint: .top, endPoint: .bottom))
+                .shadow(color: .black.opacity(0.22), radius: 8, y: 4)
+        )
+        .environment(\.colorScheme, .light)
     }
 
     private func recevoir(_ elements: [String], jour: Date, avant cible: Etape?) -> Bool {
@@ -840,5 +913,53 @@ enum FondDePage {
         #else
         Color(nsColor: .controlBackgroundColor)
         #endif
+    }
+}
+
+/// Haut de la carte du jour aux notes ouvertes, dans le repère de l'Itinéraire.
+private struct HautCarteNotes: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// Un petit post-it jaune au coin replié ; des lignes y sont écrites quand le jour a des notes.
+struct IconePostIt: View {
+    var ecrit: Bool
+    var ouvert = false
+    static let jaune = Color(red: 1.0, green: 0.86, blue: 0.35)
+
+    var body: some View {
+        GeometryReader { g in
+            let w = g.size.width, pli = w * 0.28
+            ZStack(alignment: .topLeading) {
+                Path { p in
+                    p.move(to: .zero)
+                    p.addLine(to: CGPoint(x: w, y: 0))
+                    p.addLine(to: CGPoint(x: w, y: w - pli))
+                    p.addLine(to: CGPoint(x: w - pli, y: w))
+                    p.addLine(to: CGPoint(x: 0, y: w))
+                    p.closeSubpath()
+                }
+                .fill(Self.jaune.opacity(ecrit || ouvert ? 1 : 0.55))
+                .shadow(color: .black.opacity(0.25), radius: 1.5, y: 1)
+                Path { p in
+                    p.move(to: CGPoint(x: w, y: w - pli))
+                    p.addLine(to: CGPoint(x: w - pli, y: w - pli))
+                    p.addLine(to: CGPoint(x: w - pli, y: w))
+                    p.closeSubpath()
+                }
+                .fill(Color(red: 0.85, green: 0.68, blue: 0.15).opacity(ecrit || ouvert ? 1 : 0.6))
+                if ecrit {
+                    VStack(alignment: .leading, spacing: w * 0.12) {
+                        ForEach(0..<3, id: \.self) { i in
+                            Capsule().fill(Color.black.opacity(0.4)).frame(width: w * (i == 2 ? 0.35 : 0.6), height: max(w * 0.06, 1.2))
+                        }
+                    }
+                    .padding(.leading, w * 0.16).padding(.top, w * 0.2)
+                }
+            }
+            .rotationEffect(.degrees(-4))
+        }
+        .aspectRatio(1, contentMode: .fit)
     }
 }

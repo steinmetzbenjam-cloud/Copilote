@@ -168,6 +168,16 @@ enum Codec {
             let r = base(.jour, j.uid, zone, systeme)
             r["date"] = j.date; r["titre"] = j.titre; r["notes"] = j.notes; r["creeLe"] = j.creeLe
             r["lieux"] = lieuxEnTexte(j.lieux); r["voyageUID"] = j.voyage?.uid
+            // Les notes mises en forme peuvent contenir des images : elles voyagent en fichier, repérées par leur empreinte.
+            r["notesMiseEnFormeEmpreinte"] = j.notesMiseEnForme.map(empreinteDonnees)
+            if avecAsset {
+                if let notes = j.notesMiseEnForme {
+                    let fichier = FileManager.default.temporaryDirectory.appending(path: "notes-\(j.uid).json")
+                    if (try? notes.write(to: fichier)) != nil { r["notesMiseEnForme"] = CKAsset(fileURL: fichier) }
+                } else {
+                    r["notesMiseEnForme"] = nil
+                }
+            }
             return r
         case let x as Depense:
             let r = base(.depense, x.uid, zone, systeme)
@@ -324,6 +334,11 @@ enum Codec {
             }()
             j.date = date("date") ?? j.date; j.titre = texte("titre"); j.notes = texte("notes")
             j.lieux = lieuxDepuisTexte(r["lieux"] as? String); j.creeLe = date("creeLe") ?? j.creeLe; j.voyage = parent
+            if let fichier = (r["notesMiseEnForme"] as? CKAsset)?.fileURL, let notes = try? Data(contentsOf: fichier) {
+                j.notesMiseEnForme = notes
+            } else if r["notesMiseEnFormeEmpreinte"] as? String == nil {
+                j.notesMiseEnForme = nil
+            }
             return j
 
         case .depense:

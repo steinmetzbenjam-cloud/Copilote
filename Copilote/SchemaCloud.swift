@@ -46,7 +46,7 @@ extension PartageCloud {
         membre.nomFamille = "x"; membre.email = "x"; membre.familleNom = "x"; membre.age = 1; membre.tarifBrut = "x"; membre.emailInvitation = "x"; membre.roleBrut = "x"; membre.avatar = Data("x".utf8)
         contexte.insert(membre)
 
-        let jour = JourVoyage(date: .now); jour.titre = "x"; jour.notes = "x"; jour.voyage = voyage
+        let jour = JourVoyage(date: .now); jour.titre = "x"; jour.notes = "x"; jour.notesMiseEnForme = Data("x".utf8); jour.voyage = voyage
         jour.lieux = [LieuReference(nom: "x", detail: "x", latitude: 1, longitude: 1, codePays: "FR", estPays: true)]
         contexte.insert(jour)
 

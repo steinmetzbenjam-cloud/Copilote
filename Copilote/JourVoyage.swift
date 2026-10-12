@@ -27,6 +27,8 @@ final class JourVoyage {
     var date: Date
     var titre: String
     var notes: String
+    /// Les notes mises en forme (titres, gras, couleurs, images, liens) : `NoteMiseEnForme` en JSON. `notes` en garde le texte seul.
+    @Attribute(.externalStorage) var notesMiseEnForme: Data?
     var lieux: [LieuReference] = []
     var uid: String = ""
     var creeLe: Date
