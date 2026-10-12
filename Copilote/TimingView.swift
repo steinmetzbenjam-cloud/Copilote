@@ -127,7 +127,6 @@ struct TimingView: View {
         let jours = voyage.jours
         let veille = cal.date(byAdding: .day, value: -1, to: jour) ?? jour
         let local = voyage.fuseau(du: jour)
-        var curseur = 9.0 * 60
 
         /// Écart entre l'heure du lieu visité et l'heure saisie dans `zone`, à cette date.
         func ecart(_ heure: Date, _ jourSaisie: Date, _ zone: TimeZone) -> Double {
@@ -141,27 +140,19 @@ struct TimingView: View {
         }
 
         // Matin : fin de la nuit d'hôtel de la veille, puis le transport qui en part.
-        if let h = voyage.hebergements(apres: veille).first {
+        let hotelMatin = voyage.hebergements(apres: veille).first
+        var departHotel: Double?
+        if let h = hotelMatin {
             let zh = h.fuseau
             let e = h.heureFin.map { ecart($0, jour, zh) } ?? 0
             let depart = borne(h.heureFin.map { minutes($0) + e } ?? 8 * 60)
+            departHotel = depart
             r.append(Bloc(id: "matin-\(h.uid)", genre: .hotelMatin, debut: 0, fin: depart, titre: h.titre.isEmpty ? "Hébergement" : h.titre,
                           detail: h.lieu, symbole: "bed.double.fill", etape: h, estime: h.heureFin == nil, delta: e, note: note(h.heureFin, zh)))
-            if let t = h.transport {
-                let arrivee = voyage.suivante(de: h)
-                let z = voyage.fuseaux(de: t, depuis: h, vers: arrivee)
-                let d = dureeTransport(t, de: h, vers: arrivee, jour: jour)
-                let debut = t.depart.map { borne(minutes($0) + ecart($0, jour, z.depart)) } ?? depart
-                r.append(Bloc(id: "t-\(h.uid)", genre: .transport, debut: debut, fin: debut + d.minutes, titre: nomTransport(t),
-                              detail: detailTransport(t, de: h, vers: arrivee, debut: debut, fin: debut + d.minutes), symbole: t.mode.symbole,
-                              etape: h, estime: d.estimee, transport: t, arrivee: arrivee))
-                curseur = max(curseur, debut + d.minutes)
-            } else {
-                curseur = max(curseur, depart)
-            }
         }
 
         // Aller : seulement s'il a des horaires.
+        var finAller: Double?
         if let premier = jours.first, cal.isDate(premier, inSameDayAs: jour), let t = voyage.transportAller, let d = t.depart, t.arrivee != nil {
             let premierElement = voyage.elementsDuVoyage.first
             let z = voyage.fuseaux(de: t, depuis: nil, vers: premierElement)
@@ -170,32 +161,79 @@ struct TimingView: View {
             r.append(Bloc(id: "aller", genre: .transport, debut: debut, fin: debut + max(duree.minutes, 15), titre: "Aller · \(nomTransport(t))",
                           detail: detailTransport(t, de: nil, vers: premierElement, debut: debut, fin: debut + duree.minutes), symbole: t.mode.symbole,
                           estime: duree.estimee, transport: t, extremite: .aller))
-            curseur = max(curseur, debut + duree.minutes)
+            finAller = debut + duree.minutes
         }
 
-        // Les étapes : à leur heure, sinon à la suite de la précédente (estimé).
+        // La journée comme une chaîne : trajet depuis l'hôtel, étape, trajet, étape… Chaque maillon a une durée,
+        // et une heure de début quand elle a été déclarée.
+        struct Maillon {
+            var etape: Etape
+            var transport: Transport?
+            var arrivee: Etape?
+            var duree: Double
+            var fixe: Double?
+            var estime: Bool
+            var delta: Double = 0
+            var note: String?
+            var debut: Double = 0
+        }
+        var chaine: [Maillon] = []
+        func maillonTransport(_ t: Transport, depuis e: Etape) -> Maillon {
+            let arrivee = voyage.suivante(de: e)
+            let z = voyage.fuseaux(de: t, depuis: e, vers: arrivee)
+            let d = dureeTransport(t, de: e, vers: arrivee, jour: jour)
+            return Maillon(etape: e, transport: t, arrivee: arrivee, duree: d.minutes,
+                           fixe: t.depart.map { borne(minutes($0) + ecart($0, jour, z.depart)) }, estime: d.estimee)
+        }
+        if let h = hotelMatin, let t = h.transport { chaine.append(maillonTransport(t, depuis: h)) }
         for e in voyage.etapes(du: jour) {
             let ze = e.fuseau
             let delta = e.heure.map { ecart($0, jour, ze) } ?? 0
-            var debut = e.heure.map { minutes($0) + delta } ?? curseur
-            debut = min(max(debut, 0), 24 * 60 - 30)
-            // La durée de l'étape, sinon une durée type selon sa catégorie.
-            var fin = debut + (e.duree ?? dureeParDefaut(e.categorie))
-            var estime = e.heure == nil
-            if let f = e.heureFin, e.heure != nil, minutes(f) + delta > debut { fin = minutes(f) + delta } else if e.heure != nil { estime = false }
-            fin = min(fin, 24 * 60)
-            r.append(Bloc(id: e.uid, genre: .etape, debut: debut, fin: fin, titre: e.titre.isEmpty ? e.categorie.libelle : e.titre,
-                          detail: e.lieu, symbole: e.categorie.symbole, etape: e, estime: estime, delta: delta, note: note(e.heure, ze)))
-            curseur = fin
-            if let t = e.transport {
-                let arrivee = voyage.suivante(de: e)
-                let z = voyage.fuseaux(de: t, depuis: e, vers: arrivee)
-                let d = dureeTransport(t, de: e, vers: arrivee, jour: jour)
-                let td = t.depart.map { borne(minutes($0) + ecart($0, jour, z.depart)) } ?? fin
-                r.append(Bloc(id: "t-\(e.uid)", genre: .transport, debut: td, fin: td + d.minutes, titre: nomTransport(t),
-                              detail: detailTransport(t, de: e, vers: arrivee, debut: td, fin: td + d.minutes), symbole: t.mode.symbole,
-                              etape: e, estime: d.estimee, transport: t, arrivee: arrivee))
-                curseur = max(curseur, td + d.minutes)
+            let fixe = e.heure.map { min(max(minutes($0) + delta, 0), 24 * 60 - 30) }
+            // La durée : de l'heure de début à l'heure de fin déclarées, sinon celle de l'étape, sinon une durée type selon sa catégorie.
+            var duree = e.duree ?? dureeParDefaut(e.categorie)
+            if let fixe, let f = e.heureFin, minutes(f) + delta > fixe { duree = minutes(f) + delta - fixe }
+            chaine.append(Maillon(etape: e, duree: duree, fixe: fixe, estime: e.heure == nil, delta: delta, note: note(e.heure, ze)))
+            if let t = e.transport { chaine.append(maillonTransport(t, depuis: e)) }
+        }
+
+        // Placement : un maillon à heure déclarée reste à son heure. Avant le premier d'entre eux, les maillons sans heure
+        // sont empilés à rebours pour finir juste à son heure ; la nuit d'hôtel s'allonge ou se raccourcit d'autant.
+        // Ensuite, chacun suit le précédent, et le trajet qui mène à une étape à heure déclarée arrive juste à son heure.
+        var curseur = max(finAller ?? 0, departHotel ?? 9 * 60)
+        var i = 0
+        var hotelAjuste = hotelMatin?.heureFin == nil
+        if finAller == nil, let j = chaine.firstIndex(where: { $0.fixe != nil }) {
+            hotelAjuste = true
+            var fin = chaine[j].fixe!
+            for k in stride(from: j - 1, through: 0, by: -1) {
+                chaine[k].debut = max(fin - chaine[k].duree, 0)
+                fin = chaine[k].debut
+            }
+            i = j
+        }
+        while i < chaine.count {
+            if let fixe = chaine[i].fixe {
+                chaine[i].debut = fixe
+            } else if chaine[i].transport != nil, i + 1 < chaine.count, chaine[i + 1].transport == nil, let suivante = chaine[i + 1].fixe {
+                chaine[i].debut = max(suivante - chaine[i].duree, 0)
+            } else {
+                chaine[i].debut = chaine[i].transport == nil ? min(curseur, 24 * 60 - 30) : curseur
+            }
+            curseur = chaine[i].debut + chaine[i].duree
+            i += 1
+        }
+
+        for m in chaine {
+            let e = m.etape
+            if let t = m.transport {
+                let fin = m.debut + m.duree
+                r.append(Bloc(id: "t-\(e.uid)", genre: .transport, debut: m.debut, fin: fin, titre: nomTransport(t),
+                              detail: detailTransport(t, de: e, vers: m.arrivee, debut: m.debut, fin: fin), symbole: t.mode.symbole,
+                              etape: e, estime: m.estime, transport: t, arrivee: m.arrivee))
+            } else {
+                r.append(Bloc(id: e.uid, genre: .etape, debut: m.debut, fin: min(m.debut + m.duree, 24 * 60), titre: e.titre.isEmpty ? e.categorie.libelle : e.titre,
+                              detail: e.lieu, symbole: e.categorie.symbole, etape: e, estime: m.estime, delta: m.delta, note: m.note))
             }
         }
 
@@ -227,6 +265,11 @@ struct TimingView: View {
                 b.genre == .etape || (b.genre == .transport && b.id != "t-" + (hotel.etape?.uid ?? ""))
             }.map(\.debut).min()
             if let premier, premier < hotel.fin { r[i].fin = max(premier, 0) }
+            // La nuit dure jusqu'au premier trajet ou à la première étape : celle-ci est calée sur la première heure déclarée de la journée,
+            // ou l'hôtel n'a pas d'heure de départ.
+            if hotelAjuste, let premierDepart = r.filter({ $0.genre == .etape || $0.genre == .transport }).map(\.debut).min() {
+                r[i].fin = max(premierDepart, 0)
+            }
         }
         return r
     }
