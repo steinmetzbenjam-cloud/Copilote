@@ -167,17 +167,31 @@ enum MiseEnForme {
     static func donnees(depuis texte: NSAttributedString) -> Data? {
         var note = NoteMiseEnForme()
         let chaine = texte.string as NSString
+        let reference = tailleCourante(texte)
         texte.enumerateAttributes(in: NSRange(location: 0, length: texte.length)) { a, r, _ in
             var m = NoteMiseEnForme.Morceau(texte: chaine.substring(with: r))
-            if let style = a[.styleNote] as? String, style != StyleNote.corps.rawValue { m.style = style }
-            if a[.grasNote] as? Bool == true { m.gras = true }
-            if a[.italiqueNote] as? Bool == true { m.italique = true }
+            if a[.styleNote] != nil {
+                if let style = a[.styleNote] as? String, style != StyleNote.corps.rawValue { m.style = style }
+                if a[.grasNote] as? Bool == true { m.gras = true }
+                if a[.italiqueNote] as? Bool == true { m.italique = true }
+                m.couleur = a[.couleurNote] as? [Double]
+            } else {
+                // Texte collé (Word, Pages, une page web…) : sa mise en forme est déduite de sa police et de sa couleur.
+                let police = a[.font] as? PoliceSysteme
+                if let police, let reference {
+                    if police.pointSize >= reference * 1.35 { m.style = StyleNote.titre.rawValue }
+                    else if police.pointSize >= reference * 1.12 { m.style = StyleNote.sousTitre.rawValue }
+                }
+                if m.style == nil, let police, estGras(police) { m.gras = true }
+                if let police, estItalique(police) { m.italique = true }
+                m.couleur = (a[.foregroundColor] as? CouleurSysteme).flatMap(composantesVisibles)
+            }
             if (a[.underlineStyle] as? Int ?? 0) != 0 { m.souligne = true }
-            m.couleur = a[.couleurNote] as? [Double]
             if let url = a[.link] as? URL { m.lien = url.absoluteString } else if let lien = a[.link] as? String { m.lien = lien }
             if let p = a[.paragraphStyle] as? NSParagraphStyle, AlignementNote(p.alignment) != .gauche { m.alignement = AlignementNote(p.alignment).rawValue }
             if let piece = a[.attachment] as? NSTextAttachment {
                 m.image = a[.imageNote] as? Data ?? piece.image.flatMap(jpeg)
+                    ?? (piece.contents ?? piece.fileWrapper?.regularFileContents).flatMap(reduire)
                 m.largeur = piece.bounds.width
                 m.hauteur = piece.bounds.height
                 m.texte = "\u{FFFC}"
@@ -185,6 +199,47 @@ enum MiseEnForme {
             note.morceaux.append(m)
         }
         return try? JSONEncoder().encode(note)
+    }
+
+    /// La taille de police la plus répandue dans le texte collé : elle sert de taille normale pour reconnaître les titres.
+    private static func tailleCourante(_ texte: NSAttributedString) -> CGFloat? {
+        var comptes: [CGFloat: Int] = [:]
+        texte.enumerateAttributes(in: NSRange(location: 0, length: texte.length)) { a, r, _ in
+            guard a[.styleNote] == nil, a[.attachment] == nil, let police = a[.font] as? PoliceSysteme else { return }
+            comptes[police.pointSize, default: 0] += r.length
+        }
+        return comptes.max { $0.value < $1.value }?.key
+    }
+
+    private static func estGras(_ police: PoliceSysteme) -> Bool {
+        #if os(iOS)
+        return police.fontDescriptor.symbolicTraits.contains(.traitBold)
+        #else
+        return police.fontDescriptor.symbolicTraits.contains(.bold)
+        #endif
+    }
+
+    private static func estItalique(_ police: PoliceSysteme) -> Bool {
+        #if os(iOS)
+        return police.fontDescriptor.symbolicTraits.contains(.traitItalic)
+        #else
+        return police.fontDescriptor.symbolicTraits.contains(.italic)
+        #endif
+    }
+
+    /// La couleur d'un texte collé, sauf le noir et le blanc (couleur « automatique ») : le texte garde alors la couleur par défaut,
+    /// lisible en mode clair comme en mode sombre.
+    private static func composantesVisibles(_ couleur: CouleurSysteme) -> [Double]? {
+        #if os(iOS)
+        var r: CGFloat = 0, v: CGFloat = 0, b: CGFloat = 0, alpha: CGFloat = 0
+        guard couleur != couleurParDefaut, couleur.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light)).getRed(&r, green: &v, blue: &b, alpha: &alpha) else { return nil }
+        #else
+        guard couleur != couleurParDefaut, let c = couleur.usingColorSpace(.sRGB) else { return nil }
+        let (r, v, b) = (c.redComponent, c.greenComponent, c.blueComponent)
+        #endif
+        let maxi = max(r, v, b), mini = min(r, v, b)
+        if maxi - mini < 0.08 && (maxi < 0.25 || mini > 0.85) { return nil }
+        return [Double(r), Double(v), Double(b)]
     }
 
     /// Une image insérée dans le texte, à sa taille d'origine mais jamais plus large que la zone de texte.
