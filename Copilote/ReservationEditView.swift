@@ -61,6 +61,32 @@ struct ReservationEditView: View {
                     TextField("Lieu ou adresse", text: $reservation.lieu)
                 }
 
+                Section {
+                    HStack {
+                        TextField("Lien Internet (réservation en ligne, site…)", text: siteWeb)
+                            .autocorrectionDisabled()
+                            #if os(iOS)
+                            .textInputAutocapitalization(.never)
+                            .keyboardType(.URL)
+                            #endif
+                        if let url = reservation.urlSite {
+                            Link(destination: url) {
+                                if reservation.estBooking { LogoBooking(taille: 22) } else { Image(systemName: "safari") }
+                            }
+                                .help("Ouvrir dans le navigateur")
+                        }
+                    }
+                    if reservation.siteWeb == nil, reservation.type == .hebergement {
+                        Button("Mes réservations Booking.com", systemImage: "link") {
+                            reservation.siteWeb = "https://secure.booking.com/myreservations.html"
+                        }
+                    }
+                } header: {
+                    Text("Lien Internet")
+                } footer: {
+                    Text("Colle le lien de la réservation (celui du courriel de confirmation de Booking.com, par exemple) : un bouton l'ouvre depuis la fiche de l'étape liée. Sur iPhone et iPad, l'app du site s'ouvre si elle est installée.")
+                }
+
                 Section("Prix") {
                     HStack {
                         TextField("Montant", text: prixTexte)
@@ -73,6 +99,10 @@ struct ReservationEditView: View {
                             .foregroundStyle(.secondary)
                     }
                 }
+
+                sectionLien
+
+                sectionVisibilite
 
                 DocumentsSection(voyage: voyage, reservation: reservation, titre: "Billets et justificatifs")
 
@@ -104,6 +134,81 @@ struct ReservationEditView: View {
         #if os(macOS)
         .frame(minWidth: 460, minHeight: 620)
         #endif
+    }
+
+    private var moi: String { MoiVoyage.lire(voyage) }
+
+    /// Qui voit la réservation : tout le monde, ou seulement certains voyageurs (moi toujours compris).
+    private var sectionVisibilite: some View {
+        let membres = voyage.membresTries
+        let pourTous = Binding<Bool>(
+            get: { !reservation.estRestreinte },
+            set: { tous in reservation.visiblePour = tous ? nil : membres.map(\.uid) })
+        return Section {
+            Toggle("Tout le monde", isOn: pourTous)
+            if reservation.estRestreinte {
+                ForEach(membres) { m in
+                    let estMoi = m.uid == moi
+                    Toggle(isOn: Binding(
+                        get: { reservation.visiblePour?.contains(m.uid) ?? false || estMoi },
+                        set: { coche in
+                            var liste = reservation.visiblePour ?? []
+                            liste.removeAll { $0 == m.uid }
+                            if coche { liste.append(m.uid) }
+                            if !moi.isEmpty, !liste.contains(moi) { liste.append(moi) }
+                            reservation.visiblePour = liste
+                        })) {
+                        Text(estMoi ? "\(m.nom) (moi)" : m.nom) + Text(m.famille.isEmpty ? "" : " · \(m.famille)").foregroundColor(.secondary)
+                    }
+                    .disabled(estMoi)
+                }
+            }
+        } header: {
+            Text("Qui peut la voir")
+        } footer: {
+            Text(reservation.estRestreinte
+                 ? "Les voyageurs non cochés ne voient ni la réservation, ni son bouton dans les fiches. Elle reste enregistrée dans le voyage partagé : c'est un affichage, pas un coffre-fort."
+                 : "Décoche « Tout le monde » pour réserver cette réservation à certains voyageurs.")
+        }
+    }
+
+    /// Les groupes proposés, dans l'ordre qui convient au type de réservation (un hôtel cherche d'abord parmi les hébergements…).
+    private var groupes: [CibleReservation.Groupe] {
+        switch reservation.type {
+        case .hebergement: [.hebergements, .etapes, .transports]
+        case .vol, .train, .voiture: [.transports, .etapes, .hebergements]
+        default: [.etapes, .hebergements, .transports]
+        }
+    }
+
+    /// Lier la réservation à une étape, un hébergement ou un transport : un bouton l'ouvre ensuite depuis leur fiche.
+    private var sectionLien: some View {
+        let cibles = voyage.ciblesReservation
+        return Section {
+            Picker("Lier à", selection: $reservation.lien) {
+                Text("Rien").tag(String?.none)
+                if let lien = reservation.lien, !cibles.contains(where: { $0.cle == lien }) {
+                    Text("Élément supprimé").tag(String?.some(lien))
+                }
+                ForEach(groupes, id: \.self) { groupe in
+                    let liste = cibles.filter { $0.groupe == groupe }
+                    if !liste.isEmpty {
+                        Section(groupe.rawValue) {
+                            ForEach(liste) { c in Label(c.libelle, systemImage: c.symbole).tag(String?.some(c.cle)) }
+                        }
+                    }
+                }
+            }
+        } header: {
+            Text("Lien")
+        } footer: {
+            Text("La fiche de l'étape, de l'hébergement ou du transport choisi affiche alors un bouton pour ouvrir cette réservation.")
+        }
+    }
+
+    private var siteWeb: Binding<String> {
+        Binding(get: { reservation.siteWeb ?? "" },
+                set: { reservation.siteWeb = $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 })
     }
 
     private var placeholderTitre: String {
@@ -138,5 +243,6 @@ struct ReservationEditView: View {
         etape.voyage = voyage
         contexte.insert(etape)
         reservation.ajouteeAItineraire = true
+        if reservation.lien == nil { reservation.lien = LienReservation.etape(etape) }
     }
 }

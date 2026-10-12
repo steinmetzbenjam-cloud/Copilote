@@ -153,7 +153,8 @@ struct EtapeEditView: View {
             contenu
                 .modifier(TailleDePage())
                 #if os(macOS)
-                .frame(minWidth: suggestionsOuvertes ? 940 : 420, minHeight: 520)
+                // Avec les idées, la fenêtre s'élargit pour que fiche et propositions tiennent côte à côte sans être tronquées.
+                .frame(minWidth: suggestionsOuvertes ? 1020 : 420, idealWidth: suggestionsOuvertes ? 1080 : 520, minHeight: 600, idealHeight: 720)
                 #endif
         }
     }
@@ -165,7 +166,7 @@ struct EtapeEditView: View {
                 Divider()
                 SuggestionsView(voyage: etape.voyage, etape: etape, onChoix: { valider($0) },
                                 onFermer: { withAnimation { suggestionsOuvertes = false } })
-                    .frame(minWidth: 380, idealWidth: 440, maxWidth: 480)
+                    .frame(minWidth: 480, idealWidth: 540, maxWidth: 620)
                     .transition(.move(edge: .trailing))
             }
         }
@@ -277,7 +278,8 @@ struct EtapeEditView: View {
         }
         guard voyage.elementsDuVoyage.first === etape else { return nil }
         let vue = TransportEditView(trajet: "Départ → \(nom)", jour: etape.jour ?? .now, coordonnees: nil,
-                                    existant: voyage.transportAller, lieuxExtremites: true, voyage: voyage) { voyage.transportAller = $0 }
+                                    existant: voyage.transportAller, lieuxExtremites: true, voyage: voyage,
+                                    cleLien: LienReservation.aller) { voyage.transportAller = $0 }
         return (voyage.transportAller, vue)
     }
 
@@ -319,6 +321,15 @@ struct EtapeEditView: View {
 
     /// En voyage, la catégorie, le jour et les horaires sont simplement rappelés, sans être modifiables.
     private var enVoyage: Bool { etape.voyage?.mode == .voyage }
+
+    /// Les réservations liées à l'étape (ou à l'hébergement) : un bouton ouvre chacune d'elles.
+    @ViewBuilder private var sectionReservations: some View {
+        if let voyage = etape.voyage, !voyage.reservations(lieesA: LienReservation.etape(etape)).isEmpty {
+            CadreSection("Réservation", symbole: "ticket", couleur: .indigo) {
+                BoutonsReservations(voyage: voyage, cle: LienReservation.etape(etape))
+            }
+        }
+    }
 
     private var sectionCategorie: some View {
         CadreSection("Catégorie", symbole: "square.grid.2x2", couleur: .purple) { tuilesCategories }
@@ -453,6 +464,7 @@ struct EtapeEditView: View {
                     sectionCategorieEtMoment
                 } else {
                     sectionCategorieEtMoment
+                    sectionReservations
                     // En voyage, les infos du lieu (horaires d'ouverture, contact…) passent avant les avis.
                     if enVoyage, etape.aDesInfosDeLieu { infosDuLieu }
                     sectionAvis

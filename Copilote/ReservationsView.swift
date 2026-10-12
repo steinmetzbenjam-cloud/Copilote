@@ -7,12 +7,12 @@ struct ReservationsView: View {
     @State private var enEdition: Reservation?
 
     private var reservations: [Reservation] {
-        voyage.reservations.sorted { $0.debut < $1.debut }
+        voyage.reservationsVisibles.sorted { $0.debut < $1.debut }
     }
 
     /// Totaux par devise, sans conversion.
     private var totaux: [(devise: String, montant: Double)] {
-        Dictionary(grouping: voyage.reservations.filter { $0.prix != nil }, by: \.devise)
+        Dictionary(grouping: voyage.reservationsVisibles.filter { $0.prix != nil }, by: \.devise)
             .map { ($0.key, $0.value.compactMap(\.prix).reduce(0, +)) }
             .sorted { $0.0 < $1.0 }
     }
@@ -57,6 +57,13 @@ struct ReservationsView: View {
                     }
                     if !r.documents.isEmpty {
                         Label("\(r.documents.count)", systemImage: "paperclip")
+                    }
+                    if r.estBooking { LogoBooking(taille: 14) }
+                    if r.estRestreinte {
+                        Label("\(r.visiblePour?.count ?? 0)", systemImage: "lock.fill").help("Visible seulement pour certains voyageurs")
+                    }
+                    if let lien = r.lien, let cible = voyage.ciblesReservation.first(where: { $0.cle == lien }) {
+                        Label(cible.libelle, systemImage: "link").lineLimit(1)
                     }
                 }
                 .font(.caption).foregroundStyle(.secondary)

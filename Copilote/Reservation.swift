@@ -58,6 +58,12 @@ final class Reservation {
     /// Fuseaux (identifiants) des heures de début et de fin, s'ils diffèrent de celui du voyage.
     var fuseauDebutId: String?
     var fuseauFinId: String?
+    /// Ce à quoi la réservation est liée (`LienReservation`) : une étape, un hébergement ou un transport.
+    var lien: String?
+    /// Adresse Internet : la réservation en ligne, le site de l'hôtel…
+    var siteWeb: String?
+    /// Les voyageurs (uid) qui voient la réservation dans l'app ; vide ou nil : tout le monde.
+    var visiblePour: [String]?
     var creeLe: Date
     var uid: String = ""
     var voyage: Voyage?

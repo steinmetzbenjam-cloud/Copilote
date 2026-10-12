@@ -16,6 +16,8 @@ struct TransportEditView: View {
     /// Les étapes de départ et d'arrivée (pour connaître les fuseaux horaires de leurs lieux).
     var etapeDepart: Etape?
     var etapeArrivee: Etape?
+    /// Clé des réservations liées à ce transport (`LienReservation`) : un bouton ouvre chacune d'elles.
+    var cleLien: String?
     /// Reçoit le transport enregistré, ou nil quand on le supprime.
     let enregistrer: (Transport?) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -30,8 +32,10 @@ struct TransportEditView: View {
     @State private var rechercheLieu: ChoixLieu?
 
     init(trajet: String, jour: Date, coordonnees: (CLLocationCoordinate2D, CLLocationCoordinate2D)?,
-         existant: Transport?, lieuxExtremites: Bool = false, voyage: Voyage? = nil, enregistrer: @escaping (Transport?) -> Void) {
+         existant: Transport?, lieuxExtremites: Bool = false, voyage: Voyage? = nil, cleLien: String? = nil,
+         enregistrer: @escaping (Transport?) -> Void) {
         self.lieuxExtremites = lieuxExtremites
+        self.cleLien = cleLien
         self.voyageDuTransport = voyage
         self.trajet = trajet
         self.jour = jour
@@ -46,7 +50,8 @@ struct TransportEditView: View {
         let titre: (Etape) -> String = { $0.titre.isEmpty ? "Étape" : $0.titre }
         self.init(trajet: "\(titre(depart)) → \(titre(arrivee))", jour: depart.jour ?? .now,
                   coordonnees: depart.coordonnee.flatMap { a in arrivee.coordonnee.map { (a, $0) } },
-                  existant: depart.transport, voyage: depart.voyage, enregistrer: { depart.transport = $0 })
+                  existant: depart.transport, voyage: depart.voyage, cleLien: LienReservation.transport(depart: depart),
+                  enregistrer: { depart.transport = $0 })
         self.etapeDepart = depart
         self.etapeArrivee = arrivee
     }
@@ -66,6 +71,10 @@ struct TransportEditView: View {
                     Text(trajet)
                 }
                 .onChange(of: transport.mode) { _, _ in transport.sousType = ""; transport.dureeModifiee = nil }
+
+                if let voyage = voyageDuTransport, let cleLien, !voyage.reservations(lieesA: cleLien).isEmpty {
+                    Section("Réservation") { BoutonsReservations(voyage: voyage, cle: cleLien) }
+                }
 
                 if lieuxExtremites {
                     Section {
@@ -549,7 +558,8 @@ struct NuitAjoutView: View {
             }
         }
         #if os(macOS)
-        .frame(minWidth: 480, minHeight: 560)
+        // Sans largeur imposée : la fiche de l'hébergement s'élargit d'elle-même quand ses idées s'ouvrent.
+        .frame(minHeight: 560)
         #endif
     }
 }

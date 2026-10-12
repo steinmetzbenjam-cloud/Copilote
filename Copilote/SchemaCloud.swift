@@ -62,7 +62,7 @@ extension PartageCloud {
 
         let reservation = Reservation(type: .vol, debut: .now)
         reservation.titre = "x"; reservation.fournisseur = "x"; reservation.numeroConfirmation = "x"
-        reservation.fin = .now; reservation.lieu = "x"; reservation.prix = 1; reservation.devise = "EUR"; reservation.fuseauDebutId = "x"; reservation.fuseauFinId = "x"; reservation.notes = "x"
+        reservation.fin = .now; reservation.lieu = "x"; reservation.prix = 1; reservation.devise = "EUR"; reservation.fuseauDebutId = "x"; reservation.fuseauFinId = "x"; reservation.notes = "x"; reservation.lien = "x"; reservation.siteWeb = "x"; reservation.visiblePour = ["x"]
         reservation.voyage = voyage; contexte.insert(reservation)
 
         let document = Document(nom: "x", extensionFichier: "txt", donnees: Data("x".utf8))

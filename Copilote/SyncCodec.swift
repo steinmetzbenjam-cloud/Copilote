@@ -225,6 +225,8 @@ enum Codec {
             r["numeroConfirmation"] = x.numeroConfirmation; r["debut"] = x.debut; r["fin"] = x.fin
             r["lieu"] = x.lieu; r["prix"] = x.prix; r["devise"] = x.devise; r["notes"] = x.notes
             r["ajouteeAItineraire"] = x.ajouteeAItineraire ? 1 : 0; r["fuseauDebut"] = x.fuseauDebutId; r["fuseauFin"] = x.fuseauFinId; r["creeLe"] = x.creeLe; r["voyageUID"] = x.voyage?.uid
+            r["lien"] = x.lien; r["siteWeb"] = x.siteWeb
+            r["visiblePour"] = (x.visiblePour ?? []).isEmpty ? nil : x.visiblePour
             return r
         case let d as Document:
             let r = base(.document, d.uid, zone, systeme)
@@ -398,6 +400,8 @@ enum Codec {
             x.debut = date("debut") ?? x.debut; x.fin = date("fin"); x.lieu = texte("lieu")
             x.prix = nombre("prix"); x.devise = texte("devise"); x.notes = texte("notes")
             x.ajouteeAItineraire = (entier("ajouteeAItineraire") ?? 0) == 1; x.fuseauDebutId = r["fuseauDebut"] as? String; x.fuseauFinId = r["fuseauFin"] as? String
+            x.lien = r["lien"] as? String; x.siteWeb = r["siteWeb"] as? String
+            x.visiblePour = r["visiblePour"] as? [String]
             x.creeLe = date("creeLe") ?? x.creeLe; x.voyage = parent
             return x
 

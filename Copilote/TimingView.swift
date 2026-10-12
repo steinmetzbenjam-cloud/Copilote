@@ -831,6 +831,7 @@ struct TimingView: View {
             existant: ex == .aller ? voyage.transportAller : voyage.transportRetour,
             lieuxExtremites: true,
             voyage: voyage,
+            cleLien: ex == .aller ? LienReservation.aller : LienReservation.retour,
             enregistrer: { nouveau in
                 if ex == .aller { voyage.transportAller = nouveau } else { voyage.transportRetour = nouveau }
             })

@@ -473,6 +473,48 @@ struct ItineraireView: View {
         var id: String { depart.uid }
     }
 
+    /// Le transport entre deux étapes du jour, en une ligne fine : le mode, la distance et le temps. Un appui ouvre sa fiche.
+    private func ligneTransport(_ t: Transport, depart: Etape, arrivee: Etape) -> some View {
+        Button { transportDeNuitEnEdition = NuitTransport(depart: depart, arrivee: arrivee) } label: {
+            HStack(spacing: 6) {
+                Image(systemName: t.mode.symbole).font(.caption).frame(width: 24)
+                Text(t.mode == .commun && !t.sousType.isEmpty ? t.sousType : t.mode.libelleCourt).font(.caption.weight(.medium))
+                if t.mode.aUnItineraire, let a = depart.coordonnee, let b = arrivee.coordonnee {
+                    Text("·").font(.caption)
+                    ResumeItineraire(a: a, b: b, mode: t.mode, dureeModifiee: t.dureeModifiee, google: t.itineraireGoogle(a, b))
+                } else if let resume = resumeTransport(t, depart: depart, arrivee: arrivee) {
+                    Text("· \(resume)").font(.caption)
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 2)
+            .overlay(alignment: .bottom) { Rectangle().fill(.separator.opacity(0.6)).frame(height: 0.5).padding(.leading, 30) }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Distance et temps d'un transport sans itinéraire routier (avion, transports en commun) : l'itinéraire enregistré,
+    /// sinon la distance à vol d'oiseau et la durée tirée des horaires.
+    private func resumeTransport(_ t: Transport, depart: Etape, arrivee: Etape) -> String? {
+        if let m = t.dureeModifiee {
+            return CategorieEtape.texteDuree(m)
+        }
+        if let it = t.itineraireCommun { return it.resume }
+        var morceaux: [String] = []
+        if let a = depart.coordonnee, let b = arrivee.coordonnee {
+            let km = CLLocation(latitude: a.latitude, longitude: a.longitude).distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude)) / 1000
+            morceaux.append(km >= 10 ? "\(Int(km.rounded())) km" : "\(km.formatted(.number.precision(.fractionLength(1)))) km")
+        }
+        if let d = t.depart, let f = t.arrivee {
+            var minutes = f.timeIntervalSince(d) / 60
+            if minutes < 0 { minutes += 24 * 60 }
+            morceaux.append(CategorieEtape.texteDuree(minutes))
+        }
+        return morceaux.isEmpty ? nil : morceaux.joined(separator: " · ")
+    }
+
     /// Le transport entre deux jours, présenté comme entre deux étapes ; un appui ouvre sa fiche.
     private func ligneTransportDeNuit(_ t: Transport, depart: Etape, arrivee: Etape) -> some View {
         Button { transportDeNuitEnEdition = NuitTransport(depart: depart, arrivee: arrivee) } label: {
@@ -559,9 +601,6 @@ struct ItineraireView: View {
                         Label("Où se passe la journée ?", systemImage: "mappin.and.ellipse")
                             .font(.footnote).foregroundStyle(.tertiary)
                     }
-                    if let notes = infos?.notes, !notes.isEmpty {
-                        Text(notes).font(.footnote).foregroundStyle(.secondary).lineLimit(3)
-                    }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
@@ -581,9 +620,13 @@ struct ItineraireView: View {
                 Text("Aucune étape").font(.footnote).foregroundStyle(.tertiary)
             } else {
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(etapes) { etape in
+                    ForEach(Array(etapes.enumerated()), id: \.element.uid) { i, etape in
                         ligneGlissable(etape, jour: jour, couleur: couleur,
                                        rang: placees.firstIndex { $0 === etape }, incoherence: incoherences[etape.uid], chevauche: chevauchements[etape.uid])
+                        // Le transport prévu vers l'étape suivante du jour : une ligne fine entre les deux.
+                        if let transport = etape.transport, i + 1 < etapes.count {
+                            ligneTransport(transport, depart: etape, arrivee: etapes[i + 1])
+                        }
                     }
                 }
             }
