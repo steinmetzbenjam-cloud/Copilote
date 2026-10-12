@@ -25,6 +25,9 @@ final class PartageCloud {
     /// Choix de l'utilisateur (Réglages).
     var actif = UserDefaults.standard.bool(forKey: "iCloudActif")
     var statut = ""
+    /// Le dernier échec d'envoi vers iCloud (une modification qui n'est pas partie) : affiché en bandeau tant qu'il dure.
+    /// Effacé dès qu'un envoi réussit, ou quand on referme le bandeau.
+    var erreur: String?
     var synchroEnCours = false
     /// Dernier échange réussi avec iCloud, et nombre de modifications locales qui attendent d'être envoyées.
     var derniereSynchro: Date?
@@ -294,12 +297,17 @@ final class PartageCloud {
                 metas.removeValue(forKey: id.recordName)
             case .quotaExceeded:
                 statut = "Espace iCloud insuffisant."
+                erreur = "Espace iCloud insuffisant : tes dernières modifications ne sont pas envoyées aux autres voyageurs."
             case .notAuthenticated:
                 statut = "Connecte-toi à iCloud dans les Réglages de l'appareil."
+                erreur = "Tu n'es pas connecté à iCloud : tes modifications restent sur cet appareil."
             default:
                 statut = "Synchronisation : \(echec.error.localizedDescription)"
+                // Souvent un champ absent du schéma iCloud de production (à déployer depuis la console CloudKit).
+                erreur = "Une modification n'a pas pu être envoyée à iCloud : \(echec.error.localizedDescription)"
             }
         }
+        if e.failedRecordSaves.isEmpty && !e.savedRecords.isEmpty { erreur = nil }
         sauvegarderMetas()
     }
 

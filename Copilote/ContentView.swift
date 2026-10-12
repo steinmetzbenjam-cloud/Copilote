@@ -260,10 +260,14 @@ struct ContentView: View {
     }
 
     private func importer(_ fichier: Sauvegarde.Fichier) {
-        Sauvegarde.importer(fichier, dans: contexte)
         importEnAttente = nil
-        let n = fichier.voyages.count
-        messageSauvegarde = n == 1 ? "Le voyage « \(fichier.voyages[0].titre) » est importé." : "\(n) voyages importés."
+        do {
+            try Sauvegarde.importer(fichier, dans: contexte)
+            let n = fichier.voyages.count
+            messageSauvegarde = n == 1 ? "Le voyage « \(fichier.voyages[0].titre) » est importé." : "\(n) voyages importés."
+        } catch {
+            messageSauvegarde = "L'import n'a pas pu être enregistré : \(error.localizedDescription)"
+        }
     }
 
     private func supprimer(_ voyage: Voyage) {

@@ -280,6 +280,28 @@ struct VoyageView: View {
                     .allowsHitTesting(false)
             }
         }
+        // Un envoi vers iCloud a échoué : on le dit, au lieu de laisser croire que les autres voyageurs voient les modifications.
+        .overlay(alignment: .top) {
+            if let erreur = PartageCloud.shared.erreur {
+                Button { PartageCloud.shared.erreur = nil } label: {
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: "exclamationmark.icloud.fill")
+                        Text(erreur).multilineTextAlignment(.leading)
+                        Image(systemName: "xmark").font(.caption.bold()).opacity(0.8)
+                    }
+                    .font(.footnote.weight(.semibold)).foregroundStyle(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 9)
+                    .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(Color.red))
+                    .shadow(radius: 3, y: 1)
+                    .frame(maxWidth: 560)
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 6).padding(.horizontal, 16)
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .accessibilityHint("Touche pour masquer")
+            }
+        }
+        .animation(.snappy, value: PartageCloud.shared.erreur)
         .animation(.snappy, value: Reseau.shared.enLigne)
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { largeur = $0 }
         .onChange(of: onglet) { _, o in dernieres[o.espace] = o }

@@ -96,7 +96,7 @@ enum Sauvegarde {
 
     /// Recrée les voyages du fichier. Un voyage déjà présent est mis à jour sur place : rien de ce qui a été
     /// ajouté depuis n'est supprimé, et il garde son propriétaire iCloud et son partage.
-    @MainActor static func importer(_ fichier: Fichier, dans contexte: ModelContext) {
+    @MainActor static func importer(_ fichier: Fichier, dans contexte: ModelContext) throws {
         let zone = CKRecordZone.default().zoneID
         var temporaires: [URL] = []
         defer { temporaires.forEach { try? FileManager.default.removeItem(at: $0) } }
@@ -136,7 +136,8 @@ enum Sauvegarde {
                 if let mode { voyage.modeBrut = mode }
             }
         }
-        try? contexte.save()
+        // Un import qui ne s'enregistre pas doit se voir : l'appelant affiche l'erreur.
+        try contexte.save()
         PartageCloud.shared.verifierChangementsLocaux()
     }
 }
