@@ -7,7 +7,6 @@ struct NouveauVoyageView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var titre = ""
     @State private var pays: [String] = []
-    @State private var paysAAjouter = ""
     @State private var debut = Calendar.current.startOfDay(for: .now)
     @State private var fin = Calendar.current.date(byAdding: .day, value: 7, to: Calendar.current.startOfDay(for: .now))!
     @FocusState private var titreActif: Bool
@@ -21,29 +20,7 @@ struct NouveauVoyageView: View {
                 }
 
                 Section {
-                    ForEach(pays, id: \.self) { code in
-                        if let p = Pays.avec(code: code) {
-                            HStack {
-                                Text(p.drapeau)
-                                Text(p.nom)
-                                Spacer()
-                                Button("Retirer", systemImage: "xmark.circle.fill") { pays.removeAll { $0 == code } }
-                                    .labelStyle(.iconOnly).foregroundStyle(.secondary).buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    Picker(pays.isEmpty ? "Choisir un pays" : "Ajouter un pays", selection: $paysAAjouter) {
-                        Text("—").tag("")
-                        ForEach(Pays.tous.filter { !pays.contains($0.code) }) { p in
-                            Text("\(p.drapeau)  \(p.nom)").tag(p.code)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .onChange(of: paysAAjouter) { _, code in
-                        guard !code.isEmpty else { return }
-                        pays.append(code)
-                        paysAAjouter = ""
-                    }
+                    ListePays(pays: $pays)
                 } header: {
                     Text("Pays")
                 } footer: {

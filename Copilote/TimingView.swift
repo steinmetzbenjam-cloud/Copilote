@@ -464,6 +464,10 @@ struct TimingView: View {
 
     private var barre: some View {
         HStack(spacing: 12) {
+            if voyage.etapes.isEmpty {
+                Label("Ajoute des étapes dans l'Itinéraire : elles s'affichent ici heure par heure.", systemImage: "info.circle")
+                    .font(.footnote).foregroundStyle(.secondary)
+            }
             Button { aPlacerOuvert = true } label: {
                 Label("À placer\(voyage.etapesSansJour.isEmpty ? "" : " (\(voyage.etapesSansJour.count))")", systemImage: "tray.full")
             }

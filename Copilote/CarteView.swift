@@ -8,6 +8,7 @@ struct CarteView: View {
     /// nil = tous les jours.
     @State private var jourChoisi: Date?
     @State private var etapeEnEdition: Etape?
+    @State private var choixPaysOuvert = false
     @Environment(\.modelContext) private var contexte
 
     private var aucuneEtapePlacee: Bool {
@@ -27,10 +28,21 @@ struct CarteView: View {
             .safeAreaInset(edge: .bottom) { barreDesJours }
             .overlay {
                 if aucuneEtapePlacee && voyage.pays.isEmpty {
-                    ContentUnavailableView("Aucune étape sur la carte", systemImage: "map",
-                                           description: Text("Choisis le pays du voyage dans Infos, puis place tes étapes depuis l'itinéraire."))
-                        .background(.regularMaterial)
+                    ContentUnavailableView {
+                        Label("Aucune étape sur la carte", systemImage: "map")
+                    } description: {
+                        Text("Choisis le pays du voyage : la carte s'y centre. Tes étapes s'y placeront ensuite depuis l'itinéraire.")
+                    } actions: {
+                        if !voyage.lectureSeule {
+                            Button("Choisir le pays", systemImage: "flag.fill") { choixPaysOuvert = true }
+                                .buttonStyle(.borderedProminent)
+                        }
+                    }
+                    .background(.regularMaterial)
                 }
+            }
+            .sheet(isPresented: $choixPaysOuvert) {
+                ChoixPaysView(dejaChoisis: voyage.pays) { voyage.pays.append($0) }
             }
             .sheet(item: $etapeEnEdition) { etape in
                 EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }

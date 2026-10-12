@@ -4,7 +4,6 @@ import SwiftData
 struct VoyageDetailView: View {
     @Bindable var voyage: Voyage
     @Environment(\.modelContext) private var contexte
-    @State private var paysAAjouter = ""
     @State private var profilOuvert = false
     private var profil = Profil.partage
 
@@ -102,33 +101,7 @@ struct VoyageDetailView: View {
     @ViewBuilder private var pays: some View {
         VStack(alignment: .leading, spacing: 10) {
             Label("Pays", systemImage: "flag.fill").font(.subheadline.weight(.semibold)).foregroundStyle(.secondary)
-            ForEach(voyage.pays, id: \.self) { code in
-                if let pays = Pays.avec(code: code) {
-                    HStack {
-                        Text(pays.drapeau)
-                        Text(pays.nom)
-                        Spacer()
-                        Button("Retirer", systemImage: "xmark.circle.fill") {
-                            voyage.pays.removeAll { $0 == code }
-                        }
-                        .labelStyle(.iconOnly)
-                        .foregroundStyle(.secondary)
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            Picker(voyage.pays.isEmpty ? "Choisir un pays" : "Ajouter un pays", selection: $paysAAjouter) {
-                Text("—").tag("")
-                ForEach(Pays.tous.filter { !voyage.pays.contains($0.code) }) { pays in
-                    Text("\(pays.drapeau)  \(pays.nom)").tag(pays.code)
-                }
-            }
-            .pickerStyle(.menu)
-            .onChange(of: paysAAjouter) { _, code in
-                guard !code.isEmpty else { return }
-                voyage.pays.append(code)
-                paysAAjouter = ""
-            }
+            ListePays(pays: $voyage.pays)
             Text("La carte et la recherche de lieux se centrent sur ces pays.").font(.footnote).foregroundStyle(.secondary)
         }
     }

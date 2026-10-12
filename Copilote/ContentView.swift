@@ -53,6 +53,13 @@ struct ContentView: View {
                 }
             }
             .navigationTitle("Voyages")
+            .overlay {
+                if voyages.isEmpty {
+                    Text("Aucun voyage pour l'instant.\nTouche « Nouveau » pour commencer.")
+                        .font(.footnote).foregroundStyle(.secondary).multilineTextAlignment(.center)
+                        .padding()
+                }
+            }
             // En haut, au-dessus des voyages : nouveau voyage.
             .safeAreaInset(edge: .top, spacing: 0) {
                 Button { nouveauVoyageOuvert = true } label: {
@@ -93,8 +100,18 @@ struct ContentView: View {
             if let voyage = voyageOuvert {
                 VoyageView(voyage: voyage).id(voyage.creeLe)
             } else {
-                ContentUnavailableView("Aucun voyage sélectionné", systemImage: "car.fill",
-                                       description: Text("Crée un voyage pour commencer à le préparer avec ton groupe."))
+                ContentUnavailableView {
+                    Label(voyages.isEmpty ? "Aucun voyage" : "Aucun voyage ouvert", systemImage: "car.fill")
+                } description: {
+                    Text(voyages.isEmpty ? "Crée ton premier voyage pour commencer à le préparer, seul ou avec ton groupe."
+                                         : "Choisis un voyage dans la liste, ou crées-en un nouveau.")
+                } actions: {
+                    Button("Nouveau voyage", systemImage: "plus.circle.fill") { nouveauVoyageOuvert = true }
+                        .buttonStyle(.borderedProminent)
+                    if !voyages.isEmpty {
+                        Button("Voir mes voyages", systemImage: "sidebar.left") { withAnimation { colonnes = .all } }
+                    }
+                }
             }
         }
         .sheet(isPresented: $reglagesOuverts) { ReglagesView() }
@@ -144,8 +161,10 @@ struct ContentView: View {
         .onChange(of: phase) { _, nouvelle in
             if nouvelle == .active { Task { await Rappels.planifier(voyages) } }
         }
-        .task {
-            if Rappels.actifs, !(await Rappels.autorise()) { _ = await Rappels.autoriser() }
+        // Les notifications ne sont demandées qu'une fois un voyage en place (la veille du départ, les transports…) :
+        // jamais au premier lancement, avant même le tutoriel.
+        .task(id: voyages.isEmpty) {
+            if !voyages.isEmpty { await Rappels.proposer() }
         }
         .onChange(of: selection) { _, voyage in
             guard let voyage else { return }

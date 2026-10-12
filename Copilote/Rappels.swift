@@ -18,6 +18,13 @@ enum Rappels {
         (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge])) ?? false
     }
 
+    /// Demande l'autorisation une seule fois, au moment où l'app a un rappel à proposer (un voyage vient d'être créé…),
+    /// et non dès le premier lancement, avant que l'on sache à quoi servent les notifications.
+    static func proposer() async {
+        guard actifs, await UNUserNotificationCenter.current().notificationSettings().authorizationStatus == .notDetermined else { return }
+        _ = await autoriser()
+    }
+
     static func autorise() async -> Bool {
         let statut = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
         return statut == .authorized || statut == .provisional
