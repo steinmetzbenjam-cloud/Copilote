@@ -218,6 +218,7 @@ enum Codec {
             r["prixEtudiantLocal"] = e.prixEtudiantLocal ? 1 : 0
             r["prixAdulteTierce"] = e.prixAdulteTierce ? 1 : 0; r["prixEnfantTierce"] = e.prixEnfantTierce ? 1 : 0
             r["prixEtudiantTierce"] = e.prixEtudiantTierce ? 1 : 0
+            r["exclusBudget"] = (e.exclusBudget ?? []).isEmpty ? nil : e.exclusBudget
             return r
         case let x as Reservation:
             let r = base(.reservation, x.uid, zone, systeme)
@@ -388,6 +389,7 @@ enum Codec {
             e.prixEtudiantLocal = (entier("prixEtudiantLocal") ?? 0) == 1
             e.prixAdulteTierce = (entier("prixAdulteTierce") ?? 0) == 1; e.prixEnfantTierce = (entier("prixEnfantTierce") ?? 0) == 1
             e.prixEtudiantTierce = (entier("prixEtudiantTierce") ?? 0) == 1
+            e.exclusBudget = r["exclusBudget"] as? [String]
             return e
 
         case .reservation:

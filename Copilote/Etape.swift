@@ -162,6 +162,8 @@ final class Etape {
     var prixAdulteTierce: Bool = false
     var prixEnfantTierce: Bool = false
     var prixEtudiantTierce: Bool = false
+    /// Voyageurs (uid) non concernés par le prix prévu : ils ne comptent pas dans le Budget. Vide ou nil : tout le monde.
+    var exclusBudget: [String]?
     var creeLe: Date
     var uid: String = ""
     /// Transport vers l'étape suivante, en JSON (voir Transport).

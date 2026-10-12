@@ -100,6 +100,8 @@ struct Transport: Codable, Equatable {
     var dureeModifiee: Double?
     /// Itinéraire en voiture, à pied ou à vélo calculé avec Google Maps : il remplace celui de Plans sur la carte et pour la durée.
     var itineraireGoogle: ItineraireGoogle?
+    /// Voyageurs (uid) non concernés par le prix prévu : ils ne comptent pas dans le Budget. Vide ou nil : tout le monde.
+    var exclusBudget: [String]?
 
     /// L'itinéraire Google, s'il a été calculé pour ce mode et entre ces deux lieux (il ne vaut plus si une étape a bougé).
     func itineraireGoogle(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> ItineraireGoogle? {

@@ -182,6 +182,58 @@ private struct ChoixMonnaie: View {
     }
 }
 
+/// Le petit bouton à côté d'un tarif : tous les voyageurs de ce tarif sont concernés (par défaut), ou seulement certains.
+private struct BoutonConcernes: View {
+    let voyage: Voyage
+    let tarif: Tarif
+    var exclus: Binding<[String]?>
+    @State private var ouvert = false
+
+    private var membres: [Membre] { voyage.membresTries.filter { $0.tarif == tarif } }
+    private var nonConcernes: Set<String> { Set(exclus.wrappedValue ?? []) }
+    private var nombre: Int { membres.filter { !nonConcernes.contains($0.uid) }.count }
+
+    var body: some View {
+        if !membres.isEmpty {
+            Button { ouvert = true } label: {
+                HStack(spacing: 2) {
+                    Image(systemName: nombre == membres.count ? "person.2.fill" : "person.2.badge.minus")
+                    if nombre != membres.count { Text("\(nombre)/\(membres.count)").monospacedDigit() }
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(nombre == membres.count ? Color.secondary : Color.orange)
+                .padding(.horizontal, 5).padding(.vertical, 3)
+                .background(Capsule().fill((nombre == membres.count ? Color.secondary : Color.orange).opacity(0.14)))
+                .contentShape(Capsule())
+            }
+            .buttonStyle(.plain)
+            .help(nombre == membres.count ? "Tous concernés" : "\(nombre) sur \(membres.count) concernés")
+            .popover(isPresented: $ouvert) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("\(tarif.libelle)s concernés").font(.headline)
+                    ForEach(membres) { m in
+                        Toggle(isOn: Binding(
+                            get: { !nonConcernes.contains(m.uid) },
+                            set: { concerne in
+                                var liste = exclus.wrappedValue ?? []
+                                liste.removeAll { $0 == m.uid }
+                                if !concerne { liste.append(m.uid) }
+                                exclus.wrappedValue = liste.isEmpty ? nil : liste
+                            })) {
+                            Text(m.nom) + Text(m.famille.isEmpty ? "" : " · \(m.famille)").foregroundColor(.secondary)
+                        }
+                    }
+                    Text("Les voyageurs décochés ne comptent pas ce prix dans le Budget.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                .padding()
+                .frame(minWidth: 260)
+                .presentationCompactAdaptation(.popover)
+            }
+        }
+    }
+}
+
 /// Trois lignes de prix par personne (adulte, étudiant, enfant), chacune saisie en euros, en monnaie locale ou dans la troisième monnaie.
 /// Commun à la fiche d'une étape et à celle d'un transport.
 struct LignesPrix: View {
@@ -192,6 +244,8 @@ struct LignesPrix: View {
     var etudiantMonnaie: Binding<MonnaiePrix>
     var enfant: Binding<Double?>
     var enfantMonnaie: Binding<MonnaiePrix>
+    /// Voyageurs non concernés par ces prix (nil : pas de choix proposé). Un bouton par ligne règle qui est concerné.
+    var exclus: Binding<[String]?>? = nil
 
     /// Les colonnes : la monnaie locale, l'euro, puis la troisième monnaie, quand elles sont choisies.
     private var colonnes: [MonnaiePrix] {
@@ -214,9 +268,9 @@ struct LignesPrix: View {
                         .frame(width: largeurCase, alignment: .center)
                 }
             }
-            ligne("Adulte", adulte, adulteMonnaie)
-            ligne("Étudiant", etudiant, etudiantMonnaie)
-            ligne("Enfant", enfant, enfantMonnaie)
+            ligne("Adulte", adulte, adulteMonnaie, .adulte)
+            ligne("Étudiant", etudiant, etudiantMonnaie, .etudiant)
+            ligne("Enfant", enfant, enfantMonnaie, .enfant)
         }
     }
 
@@ -224,12 +278,17 @@ struct LignesPrix: View {
 
     /// Une case par monnaie. Ce que l'on tape dans l'une remplit les autres ;
     /// seul le dernier montant saisi est gardé (avec sa monnaie), les autres cases sont calculées avec les taux.
-    private func ligne(_ titre: String, _ prix: Binding<Double?>, _ monnaie: Binding<MonnaiePrix>) -> some View {
+    private func ligne(_ titre: String, _ prix: Binding<Double?>, _ monnaie: Binding<MonnaiePrix>, _ tarif: Tarif) -> some View {
         GridRow {
-            // Le libellé garde sa taille : jamais tronqué ni coupé sur deux lignes.
-            Text(titre).lineLimit(1).fixedSize()
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .gridColumnAlignment(.leading)
+            // Le libellé garde sa taille : jamais tronqué ni coupé sur deux lignes. À côté, qui est concerné.
+            HStack(spacing: 6) {
+                Text(titre).lineLimit(1).fixedSize()
+                if let exclus, let voyage {
+                    BoutonConcernes(voyage: voyage, tarif: tarif, exclus: exclus)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gridColumnAlignment(.leading)
             ForEach(colonnes, id: \.self) { m in
                 saisie(Binding<Double?>(
                     get: {
@@ -290,13 +349,18 @@ extension Transport {
 struct SectionBudgetTransport: View {
     let voyage: Voyage?
     @Binding var transport: Transport
+    /// Clé des réservations liées au transport : leur prix remplace le prix prévu, qui est alors grisé.
+    var cleLien: String?
 
     var body: some View {
         Section {
-            LignesPrix(voyage: voyage,
-                       adulte: $transport.prixAdulte, adulteMonnaie: $transport.monnaieAdulte,
-                       etudiant: $transport.prixEtudiant, etudiantMonnaie: $transport.monnaieEtudiant,
-                       enfant: $transport.prixEnfant, enfantMonnaie: $transport.monnaieEnfant)
+            PrixPrevuOuReserve(voyage: voyage, cle: cleLien) {
+                LignesPrix(voyage: voyage,
+                           adulte: $transport.prixAdulte, adulteMonnaie: $transport.monnaieAdulte,
+                           etudiant: $transport.prixEtudiant, etudiantMonnaie: $transport.monnaieEtudiant,
+                           enfant: $transport.prixEnfant, enfantMonnaie: $transport.monnaieEnfant,
+                           exclus: $transport.exclusBudget)
+            }
         } header: {
             Text("Budget")
         } footer: {

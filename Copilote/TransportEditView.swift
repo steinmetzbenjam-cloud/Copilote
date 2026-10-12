@@ -93,7 +93,7 @@ struct TransportEditView: View {
                 case .commun: commun
                 }
 
-                SectionBudgetTransport(voyage: voyageDuTransport, transport: $transport)
+                SectionBudgetTransport(voyage: voyageDuTransport, transport: $transport, cleLien: cleLien)
 
                 Section("Notes") {
                     TextEditor(text: $transport.notes).frame(minHeight: 60)

@@ -8,6 +8,8 @@ struct DocumentsSection: View {
     var voyage: Voyage
     var reservation: Reservation?
     var titre = "Documents"
+    /// Couleur de la section (titre et fond), comme les autres parties de la fiche ; nil : présentation ordinaire.
+    var couleur: Color?
 
     @Environment(\.modelContext) private var contexte
     @State private var importOuvert = false
@@ -20,7 +22,7 @@ struct DocumentsSection: View {
     }
 
     var body: some View {
-        Section(titre) {
+        Section {
             ForEach(documents) { doc in
                 Button { ouvrir(doc) } label: {
                     HStack {
@@ -50,7 +52,10 @@ struct DocumentsSection: View {
                 }
                 .sheet(item: $apercu) { fichier in ApercuDocumentView(fichier: fichier) }
             if let erreur { Text(erreur).font(.footnote).foregroundStyle(.red) }
+        } header: {
+            if let couleur { EnTeteColore(titre, symbole: "paperclip", couleur: couleur) } else { Text(titre) }
         }
+        .teinte(couleur)
     }
 
     private func importer(_ resultat: Result<[URL], Error>) {

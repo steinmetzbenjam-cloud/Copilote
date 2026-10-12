@@ -57,7 +57,7 @@ extension PartageCloud {
         etape.noteTripadvisor = 1; etape.avisTripadvisor = 1; etape.lienTripadvisor = "x"; etape.siteWeb = "x"
         etape.prixAdulte = 1; etape.prixEnfant = 1; etape.prixEtudiant = 1
         etape.prixAdulteLocal = true; etape.prixEnfantLocal = true; etape.prixEtudiantLocal = true
-        etape.prixAdulteTierce = true; etape.prixEnfantTierce = true; etape.prixEtudiantTierce = true
+        etape.prixAdulteTierce = true; etape.prixEnfantTierce = true; etape.prixEtudiantTierce = true; etape.exclusBudget = ["x"]
         etape.voyage = voyage; contexte.insert(etape)
 
         let reservation = Reservation(type: .vol, debut: .now)

@@ -22,6 +22,7 @@ struct ReservationsView: View {
             Section {
                 ForEach(reservations) { r in
                     Button { enEdition = r } label: { ligne(r) }.buttonStyle(.plain)
+                        .teinte(r.type.couleur)
                         .swipeActions {
                             if !voyage.lectureSeule { Button("Supprimer", role: .destructive) { contexte.delete(r) } }
                         }
@@ -30,14 +31,14 @@ struct ReservationsView: View {
                     .buttonStyle(.borderless)
                     .disabled(voyage.lectureSeule)
             } header: {
-                Text("Réservations")
+                EnTeteColore("Réservations", symbole: "ticket", couleur: .indigo)
             } footer: {
                 if !totaux.isEmpty {
                     Text("Total : " + totaux.map { $0.montant.formatted(.currency(code: $0.devise)) }.joined(separator: " + "))
                 }
             }
 
-            DocumentsSection(voyage: voyage, reservation: nil, titre: "Documents du voyage")
+            DocumentsSection(voyage: voyage, reservation: nil, titre: "Documents du voyage", couleur: .teal)
         }
         .sheet(item: $enEdition, onDismiss: nettoyer) { r in
             ReservationEditView(reservation: r, voyage: voyage) { contexte.delete(r) }
@@ -46,7 +47,11 @@ struct ReservationsView: View {
 
     private func ligne(_ r: Reservation) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: r.type.symbole).frame(width: 24).foregroundStyle(.tint)
+            Image(systemName: r.type.symbole)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 34, height: 34)
+                .background(Circle().fill(r.type.couleur))
             VStack(alignment: .leading, spacing: 2) {
                 Text(r.titre.isEmpty ? r.type.libelle : r.titre).font(.headline)
                 Text(r.debut.formatted(date: .abbreviated, time: .shortened))

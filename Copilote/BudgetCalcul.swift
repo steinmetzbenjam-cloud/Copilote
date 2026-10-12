@@ -68,8 +68,16 @@ struct ElementBudget: Identifiable {
     var jour: Date
     var poste: CategorieEtape
     var prix: [Tarif: Double]
+    /// Voyageurs dont le coût vient d'une réservation liée : le prix prévu ne compte plus pour eux.
+    var exclus: Set<String> = []
+    /// Prix réel d'une réservation (en euros), partagé à parts égales entre les voyageurs concernés.
+    var forfait: Double?
+    var concernes: Set<String> = []
 
-    func montant(_ tarif: Tarif) -> Double { prix[tarif] ?? 0 }
+    func montant(pour membre: Membre) -> Double {
+        if let forfait { return concernes.contains(membre.uid) && !concernes.isEmpty ? forfait / Double(concernes.count) : 0 }
+        return exclus.contains(membre.uid) ? 0 : prix[membre.tarif] ?? 0
+    }
 }
 
 struct BudgetCalcule {
@@ -102,18 +110,43 @@ extension Voyage {
             if let v = euros(a.0, a.1) { r[.adulte] = v }
             if let v = euros(e.0, e.1) { r[.etudiant] = v }
             if let v = euros(n.0, n.1) { r[.enfant] = v }
+            // Sans prix étudiant, un étudiant paie le prix adulte.
+            if r[.etudiant] == nil, let adulte = r[.adulte] { r[.etudiant] = adulte }
             return r
         }
-        func ajouter(_ transport: Transport?, titre: String, jour: Date) {
-            guard let t = transport else { return }
-            let p = prix((t.prixAdulte, t.monnaieAdulte), (t.prixEtudiant, t.monnaieEtudiant), (t.prixEnfant, t.monnaieEnfant))
-            if !p.isEmpty {
-                resultat.elements.append(ElementBudget(titre: "\(t.mode.libelleCourt) · \(titre)", jour: jour, poste: .transport, prix: p))
+        /// Le prix prévu d'un élément, sauf pour les voyageurs couverts par une réservation liée qui a un prix :
+        /// pour eux, c'est le prix réel de la réservation qui compte. Renvoie vrai si un montant a été retenu.
+        @discardableResult
+        func retenir(_ cle: String, titre: String, jour: Date, poste: CategorieEtape, prevu: [Tarif: Double],
+                     nonConcernes: [String]? = nil) -> Bool {
+            var couverts = Set<String>()
+            var retenu = false
+            for r in reservationsChiffrees(lieesA: cle) {
+                guard let montant = r.prix else { continue }
+                guard let enEuros = versEuros(montant, code: r.devise) else { resultat.tauxManquants += 1; continue }
+                let concernes = self.concernes(par: r)
+                resultat.elements.append(ElementBudget(titre: "\(titre) · réservation", jour: jour, poste: poste, prix: [:],
+                                                       forfait: enEuros, concernes: concernes))
+                couverts.formUnion(concernes)
+                retenu = true
             }
+            let tous = Set(membres.map(\.uid))
+            if !prevu.isEmpty, !(tous.isSubset(of: couverts) && !tous.isEmpty) {
+                resultat.elements.append(ElementBudget(titre: titre, jour: jour, poste: poste, prix: prevu,
+                                                       exclus: couverts.union(nonConcernes ?? [])))
+                retenu = true
+            }
+            return retenu
         }
 
-        ajouter(transportAller, titre: "Aller", jour: premier)
-        ajouter(transportRetour, titre: "Retour", jour: dernier)
+        func ajouter(_ transport: Transport?, cle: String, titre: String, jour: Date) {
+            guard let t = transport else { return }
+            let p = prix((t.prixAdulte, t.monnaieAdulte), (t.prixEtudiant, t.monnaieEtudiant), (t.prixEnfant, t.monnaieEnfant))
+            retenir(cle, titre: "\(t.mode.libelleCourt) · \(titre)", jour: jour, poste: .transport, prevu: p, nonConcernes: t.exclusBudget)
+        }
+
+        ajouter(transportAller, cle: LienReservation.aller, titre: "Aller", jour: premier)
+        ajouter(transportRetour, cle: LienReservation.retour, titre: "Retour", jour: dernier)
 
         for etape in etapes {
             let titre = etape.titre.isEmpty ? etape.categorie.libelle : etape.titre
@@ -123,18 +156,18 @@ extension Voyage {
                 }
                 continue
             }
-            if etape.aUnBudget {
-                let p = prix((etape.prixAdulte, etape.monnaieAdulte), (etape.prixEtudiant, etape.monnaieEtudiant),
-                             (etape.prixEnfant, etape.monnaieEnfant))
-                if !p.isEmpty { resultat.elements.append(ElementBudget(titre: titre, jour: jour, poste: etape.categorie, prix: p)) }
-            } else {
+            let p = etape.aUnBudget
+                ? prix((etape.prixAdulte, etape.monnaieAdulte), (etape.prixEtudiant, etape.monnaieEtudiant), (etape.prixEnfant, etape.monnaieEnfant))
+                : [:]
+            if !retenir(LienReservation.etape(etape), titre: titre, jour: jour, poste: etape.categorie, prevu: p,
+                        nonConcernes: etape.exclusBudget), !etape.aUnBudget {
                 resultat.etapesSansPrix += 1
             }
             var jourDuTransport = jour
             if etape.apresJour, let lendemain = cal.date(byAdding: .day, value: 1, to: jour) {
                 jourDuTransport = min(lendemain, dernier)
             }
-            ajouter(etape.transport, titre: titre, jour: jourDuTransport)
+            ajouter(etape.transport, cle: LienReservation.transport(depart: etape), titre: titre, jour: jourDuTransport)
         }
         return resultat
     }
@@ -160,6 +193,6 @@ extension Voyage {
 extension Array where Element == ElementBudget {
     /// Ce que ces éléments coûtent à ces voyageurs, chacun avec son tarif.
     func total(pour membres: [Membre]) -> Double {
-        reduce(0) { somme, element in somme + membres.reduce(0) { $0 + element.montant($1.tarif) } }
+        reduce(0) { somme, element in somme + membres.reduce(0) { $0 + element.montant(pour: $1) } }
     }
 }

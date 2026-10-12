@@ -44,7 +44,10 @@ struct ReservationEditView: View {
                                 .labelStyle(.iconOnly).buttonStyle(.plain).foregroundStyle(.secondary)
                         }
                     }
+                } header: {
+                    EnTeteColore(reservation.type.libelle, symbole: reservation.type.symbole, couleur: reservation.type.couleur)
                 }
+                .teinte(reservation.type.couleur)
 
                 Section {
                     DatePicker(reservation.type == .hebergement ? "Arrivée" : "Début", selection: $reservation.debut)
@@ -59,7 +62,10 @@ struct ReservationEditView: View {
                                     parDefaut: reservation.fuseauDebutId.flatMap(TimeZone.init(identifier:)) ?? reservation.voyage?.fuseauParDefaut ?? .current)
                     }
                     TextField("Lieu ou adresse", text: $reservation.lieu)
+                } header: {
+                    EnTeteColore("Dates et lieu", symbole: "calendar", couleur: .blue)
                 }
+                .teinte(.blue)
 
                 Section {
                     HStack {
@@ -82,33 +88,45 @@ struct ReservationEditView: View {
                         }
                     }
                 } header: {
-                    Text("Lien Internet")
+                    EnTeteColore("Lien Internet", symbole: "safari", couleur: .orange)
                 } footer: {
                     Text("Colle le lien de la réservation (celui du courriel de confirmation de Booking.com, par exemple) : un bouton l'ouvre depuis la fiche de l'étape liée. Sur iPhone et iPad, l'app du site s'ouvre si elle est installée.")
                 }
+                .teinte(.orange)
 
-                Section("Prix") {
+                Section {
+                    // Le montant, puis juste le code de la monnaie (sans libellé) : un menu propose les monnaies du voyage.
                     HStack {
                         TextField("Montant", text: prixTexte)
+                            .labelsHidden()
                             #if os(iOS)
                             .keyboardType(.decimalPad)
                             #endif
-                        TextField("Devise", text: $reservation.devise)
-                            .frame(width: 60)
-                            .multilineTextAlignment(.trailing)
-                            .foregroundStyle(.secondary)
+                        Picker("", selection: $reservation.devise) {
+                            ForEach(devisesProposees, id: \.self) { Text($0).tag($0) }
+                        }
+                        .labelsHidden()
+                        .fixedSize()
                     }
+                } header: {
+                    EnTeteColore("Prix", symbole: "eurosign.circle", couleur: .green)
                 }
+                .teinte(.green)
 
                 sectionLien
 
                 sectionVisibilite
 
-                DocumentsSection(voyage: voyage, reservation: reservation, titre: "Billets et justificatifs")
+                DocumentsSection(voyage: voyage, reservation: reservation, titre: "Billets et justificatifs", couleur: .teal)
 
-                Section("Notes") {
-                    TextEditor(text: $reservation.notes).frame(minHeight: 70)
+                Section {
+                    TextEditor(text: $reservation.notes)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 70)
+                } header: {
+                    EnTeteColore("Notes", symbole: "note.text", couleur: .yellow)
                 }
+                .teinte(.yellow)
 
                 Section {
                     Button(reservation.ajouteeAItineraire ? "Déjà dans l'itinéraire" : "Ajouter à l'itinéraire",
@@ -130,6 +148,7 @@ struct ReservationEditView: View {
                 ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } }
             }
             .onAppear { if reservation.titre.isEmpty { titreActif = true } }
+            .onChange(of: reservation.lien) { _, nouveau in reprendre(nouveau) }
         }
         #if os(macOS)
         .frame(minWidth: 460, minHeight: 620)
@@ -164,12 +183,13 @@ struct ReservationEditView: View {
                 }
             }
         } header: {
-            Text("Qui peut la voir")
+            EnTeteColore("Qui peut la voir", symbole: "person.2", couleur: .pink)
         } footer: {
             Text(reservation.estRestreinte
                  ? "Les voyageurs non cochés ne voient ni la réservation, ni son bouton dans les fiches. Elle reste enregistrée dans le voyage partagé : c'est un affichage, pas un coffre-fort."
                  : "Décoche « Tout le monde » pour réserver cette réservation à certains voyageurs.")
         }
+        .teinte(.pink)
     }
 
     /// Les groupes proposés, dans l'ordre qui convient au type de réservation (un hôtel cherche d'abord parmi les hébergements…).
@@ -200,10 +220,30 @@ struct ReservationEditView: View {
                 }
             }
         } header: {
-            Text("Lien")
+            EnTeteColore("Lien avec le voyage", symbole: "link", couleur: .purple)
         } footer: {
             Text("La fiche de l'étape, de l'hébergement ou du transport choisi affiche alors un bouton pour ouvrir cette réservation.")
         }
+        .teinte(.purple)
+    }
+
+    /// En liant la réservation, elle reprend le type et les dates de l'élément lié ; le nom, le lieu et la compagnie
+    /// seulement s'ils sont encore vides (ce qui a déjà été saisi n'est pas écrasé).
+    private func reprendre(_ cle: String?) {
+        guard let cle, let infos = voyage.infos(deLaCible: cle) else { return }
+        reservation.type = infos.type
+        reservation.debut = infos.debut
+        reservation.fin = infos.fin
+        if reservation.titre.trimmingCharacters(in: .whitespaces).isEmpty { reservation.titre = infos.titre }
+        if reservation.lieu.trimmingCharacters(in: .whitespaces).isEmpty { reservation.lieu = infos.lieu }
+        if reservation.fournisseur.isEmpty { reservation.fournisseur = infos.fournisseur }
+    }
+
+    /// Les monnaies du voyage (euro, locale, troisième), plus celle déjà choisie si elle n'en fait pas partie.
+    private var devisesProposees: [String] {
+        var codes = voyage.codesMonnaies
+        if !reservation.devise.isEmpty, !codes.contains(reservation.devise) { codes.append(reservation.devise) }
+        return codes
     }
 
     private var siteWeb: Binding<String> {

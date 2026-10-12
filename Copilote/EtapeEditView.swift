@@ -445,10 +445,14 @@ struct EtapeEditView: View {
 
     private var sectionBudget: some View {
         CadreSection("Budget", symbole: "eurosign.circle", couleur: .green) {
-            LignesPrix(voyage: etape.voyage,
-                       adulte: $etape.prixAdulte, adulteMonnaie: $etape.monnaieAdulte,
-                       etudiant: $etape.prixEtudiant, etudiantMonnaie: $etape.monnaieEtudiant,
-                       enfant: $etape.prixEnfant, enfantMonnaie: $etape.monnaieEnfant)
+            // Une réservation liée avec un prix le remplace dans le Budget : le prix prévu est alors grisé.
+            PrixPrevuOuReserve(voyage: etape.voyage, cle: LienReservation.etape(etape)) {
+                LignesPrix(voyage: etape.voyage,
+                           adulte: $etape.prixAdulte, adulteMonnaie: $etape.monnaieAdulte,
+                           etudiant: $etape.prixEtudiant, etudiantMonnaie: $etape.monnaieEtudiant,
+                           enfant: $etape.prixEnfant, enfantMonnaie: $etape.monnaieEnfant,
+                           exclus: $etape.exclusBudget)
+            }
             piedBudget(etape.voyage).font(.footnote).foregroundStyle(.secondary)
         }
     }
