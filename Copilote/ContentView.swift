@@ -3,6 +3,7 @@ import SwiftData
 
 struct ContentView: View {
     @Environment(\.modelContext) private var contexte
+    @Environment(\.undoManager) private var annulation
     @Query(sort: \Voyage.debut) private var voyages: [Voyage]
     @State private var selection: Voyage?
     /// Voyage affiché à droite. Distinct de la sélection de la liste : quand on referme le volet, SwiftUI
@@ -47,7 +48,7 @@ struct ContentView: View {
                 .contextMenu {
                     Button("Sauvegarder ce voyage…", systemImage: "square.and.arrow.up") { sauvegarder([voyage]) }
                     Button(voyage.estRecu ? "Quitter ce voyage" : "Supprimer", role: .destructive) {
-                        if voyage.partage || voyage.estRecu { voyageASupprimer = voyage } else { supprimer(voyage) }
+                        voyageASupprimer = voyage
                     }
                 }
             }
@@ -104,6 +105,8 @@ struct ContentView: View {
         .sheet(isPresented: $tutorielOuvert, onDismiss: {
             if !Profil.partage.estRenseigne { profilPremiereFois = true } else { rouvrirOuProposer() }
         }) { TutorielView() }
+        // Annuler (⌘Z, menu Édition, secousse de l'iPhone) reprend la dernière modification : une suppression comprise.
+        .onChange(of: annulation, initial: true) { _, nouvelle in contexte.undoManager = nouvelle }
         .onAppear {
             if !Profil.partage.estRenseigne {
                 // Nouvel utilisateur : le tutoriel d'abord (une seule fois), puis son profil.
@@ -157,20 +160,26 @@ struct ContentView: View {
             NouveauVoyageView { voyage in
                 voyage.fuseauReferenceId = Horloge.zoneAppareil().identifier
                 contexte.insert(voyage)
+                // Le créateur fait partie du voyage d'office : Budget, Dépenses et votes le connaissent tout de suite.
+                if Profil.partage.estRenseigne { Profil.partage.identifier(dans: voyage, contexte: contexte) }
                 selection = voyage
             }
         }
-        .confirmationDialog(voyageASupprimer?.estRecu == true ? "Quitter ce voyage ?" : "Supprimer ce voyage partagé ?",
+        .confirmationDialog(voyageASupprimer?.estRecu == true ? "Quitter ce voyage ?"
+                            : voyageASupprimer?.partage == true ? "Supprimer ce voyage partagé ?" : "Supprimer ce voyage ?",
                             isPresented: Binding(get: { voyageASupprimer != nil }, set: { if !$0 { voyageASupprimer = nil } }),
                             titleVisibility: .visible) {
-            Button(voyageASupprimer?.estRecu == true ? "Quitter" : "Supprimer pour tout le monde", role: .destructive) {
+            Button(voyageASupprimer?.estRecu == true ? "Quitter" : voyageASupprimer?.partage == true ? "Supprimer pour tout le monde" : "Supprimer",
+                   role: .destructive) {
                 if let v = voyageASupprimer { supprimer(v) }
                 voyageASupprimer = nil
             }
         } message: {
             Text(voyageASupprimer?.estRecu == true
                  ? "Il disparaîtra de tes appareils, mais restera chez les autres voyageurs."
-                 : "Les personnes invitées perdront aussi ce voyage.")
+                 : voyageASupprimer?.partage == true
+                 ? "Les personnes invitées perdront aussi ce voyage."
+                 : "Ses étapes, réservations, dépenses et documents seront effacés. Fais une sauvegarde avant si tu veux le garder.")
         }
         #if os(macOS)
         .frame(minWidth: 700, minHeight: 450)

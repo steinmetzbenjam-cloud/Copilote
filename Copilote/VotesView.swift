@@ -8,6 +8,7 @@ struct VotesView: View {
     @State private var edition: EditionSondage?
     /// Étape (ou logement) d'une option, ouverte en entier pour la regarder de près.
     @State private var etapeOuverte: Etape?
+    @State private var aSupprimer: Sondage?
 
     private struct EditionSondage: Identifiable {
         let id = UUID()
@@ -28,6 +29,10 @@ struct VotesView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .disabled(voyage.lectureSeule || voyage.membres.isEmpty)
+                if voyage.membres.isEmpty {
+                    Text("Ajoute d'abord les voyageurs dans l'onglet Infos : chaque famille aura une voix.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
 
                 if sondages.isEmpty {
                     ContentUnavailableView("Aucun vote", systemImage: "hand.thumbsup",
@@ -41,6 +46,7 @@ struct VotesView: View {
             .frame(maxWidth: .infinity)
         }
         .background(FondDePage.couleur)
+        .confirmerSuppression($aSupprimer, titre: { "Supprimer le vote « \($0.titre) » ?" }) { voyage.supprimer($0, contexte: contexte) }
         .sheet(item: $edition) { PropositionEditView(voyage: voyage, sondage: $0.sondage) }
         .sheet(item: $etapeOuverte) { etape in
             EtapeEditView(etape: etape, jours: voyage.jours, onSupprimer: { contexte.delete(etape) }, depuisVote: true)
@@ -191,7 +197,7 @@ struct VotesView: View {
                 Button("Modifier", systemImage: "pencil") { edition = EditionSondage(sondage: sondage) }
             }
             Spacer()
-            Button("Supprimer", systemImage: "trash", role: .destructive) { voyage.supprimer(sondage, contexte: contexte) }
+            Button("Supprimer", systemImage: "trash", role: .destructive) { aSupprimer = sondage }
         }
         .font(.footnote)
         .buttonStyle(.borderless)

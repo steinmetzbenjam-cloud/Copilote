@@ -24,6 +24,7 @@ struct TransportEditView: View {
     @State private var transport: Transport
     @State private var rechercheEnCours = false
     @State private var erreurRecherche: String?
+    @State private var suppressionDemandee = false
 
     private enum ChoixLieu: String, Identifiable {
         case depart, arrivee
@@ -100,10 +101,11 @@ struct TransportEditView: View {
                 }
                 if existant != nil {
                     Section {
-                        Button("Supprimer le transport", role: .destructive) {
-                            enregistrer(nil)
-                            dismiss()
-                        }
+                        Button("Supprimer le transport", role: .destructive) { suppressionDemandee = true }
+                            .confirmerSuppression($suppressionDemandee, titre: "Supprimer ce transport ?") {
+                                enregistrer(nil)
+                                dismiss()
+                            }
                     }
                 }
             }

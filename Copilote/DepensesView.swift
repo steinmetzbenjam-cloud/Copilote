@@ -13,6 +13,7 @@ struct DepensesView: View {
     @State private var onglet = Onglet.depenses
     @State private var remboursements = false
     @State private var triParNom = false
+    @State private var aSupprimer: Depense?
 
     private enum Onglet: String, CaseIterable, Identifiable {
         case depenses = "Dépenses", soldes = "Soldes"
@@ -72,6 +73,7 @@ struct DepensesView: View {
         .overlay(alignment: .bottom) {
             if onglet == .depenses && membres.count >= 2 && !voyage.lectureSeule { boutonAjouter }
         }
+        .confirmerSuppression($aSupprimer, titre: { "Supprimer « \($0.titre.isEmpty ? "cette dépense" : $0.titre) » ?" }) { contexte.delete($0) }
         .sheet(isPresented: $declaration) { DepenseAssistantView(voyage: voyage, moi: moi) }
         .sheet(item: $enEdition, onDismiss: nettoyer) { d in
             DepenseEditView(depense: d, voyage: voyage, moi: moi) { contexte.delete(d) }
@@ -96,7 +98,7 @@ struct DepensesView: View {
                 Button("Ajouter", action: ajouterVoyageur)
                     .disabled(nouveauVoyageur.trimmingCharacters(in: .whitespaces).isEmpty)
             }
-            Text("Écris simplement les prénoms de ceux qui participent aux dépenses, toi compris : il n'est pas nécessaire de les inviter. Il en faut au moins deux pour répartir.")
+            Text("Écris simplement les prénoms de ceux qui participent aux dépenses et ne sont pas encore listés : il n'est pas nécessaire de les inviter. Il en faut au moins deux pour répartir. Ils rejoignent aussi la liste des voyageurs de l'onglet Infos.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
         .padding()
@@ -112,7 +114,9 @@ struct DepensesView: View {
             VStack(spacing: 8) {
                 IconeLiasse().frame(width: 70, height: 70)
                 Text("Aucune dépense pour l'instant").font(.headline)
-                Text("Ajoute la première avec le bouton ci-dessous.").font(.subheadline).foregroundStyle(.secondary)
+                Text(membres.count < 2 ? "Ajoute d'abord au moins deux voyageurs ci-dessus pour partager les frais."
+                                       : "Ajoute la première avec le bouton ci-dessous.")
+                    .font(.subheadline).foregroundStyle(.secondary).multilineTextAlignment(.center)
             }
             .padding(.top, 40)
         } else {
@@ -124,7 +128,7 @@ struct DepensesView: View {
                 ForEach(groupe.depenses) { d in
                     Button { enEdition = d } label: { ligne(d) }
                         .buttonStyle(.plain)
-                        .contextMenu { if !voyage.lectureSeule { Button("Supprimer", systemImage: "trash", role: .destructive) { contexte.delete(d) } } }
+                        .contextMenu { if !voyage.lectureSeule { Button("Supprimer", systemImage: "trash", role: .destructive) { aSupprimer = d } } }
                 }
             }
         }

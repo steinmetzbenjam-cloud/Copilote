@@ -6,6 +6,7 @@ struct DepenseEditView: View {
     var voyage: Voyage
     var moi: String
     var onSupprimer: () -> Void
+    @State private var suppressionDemandee = false
 
     @Environment(\.dismiss) private var dismiss
     @State private var participants: Set<String> = []
@@ -104,7 +105,8 @@ struct DepenseEditView: View {
                 Section("Notes") { TextEditor(text: $depense.notes).frame(minHeight: 60) }
 
                 Section {
-                    Button("Supprimer la dépense", role: .destructive) { onSupprimer(); dismiss() }
+                    Button("Supprimer la dépense", role: .destructive) { suppressionDemandee = true }
+                        .confirmerSuppression($suppressionDemandee, titre: "Supprimer cette dépense ?") { onSupprimer(); dismiss() }
                 }
             }
             .formStyle(.grouped)

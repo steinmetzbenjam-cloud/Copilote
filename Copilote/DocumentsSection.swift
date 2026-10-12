@@ -15,6 +15,7 @@ struct DocumentsSection: View {
     @State private var importOuvert = false
     @State private var apercu: FichierAApercevoir?
     @State private var erreur: String?
+    @State private var aSupprimer: Document?
 
     private var documents: [Document] {
         let tous = reservation?.documents ?? voyage.documents.filter { $0.reservation == nil && $0.etape == nil }
@@ -38,7 +39,7 @@ struct DocumentsSection: View {
                 }
                 .buttonStyle(.plain)
                 .contextMenu {
-                    Button("Supprimer", systemImage: "trash", role: .destructive) { contexte.delete(doc) }
+                    Button("Supprimer", systemImage: "trash", role: .destructive) { aSupprimer = doc }
                 }
             }
             .onDelete { indices in
@@ -56,6 +57,7 @@ struct DocumentsSection: View {
             if let couleur { EnTeteColore(titre, symbole: "paperclip", couleur: couleur) } else { Text(titre) }
         }
         .teinte(couleur)
+        .confirmerSuppression($aSupprimer, titre: { "Supprimer « \($0.nom) » ?" }) { contexte.delete($0) }
     }
 
     private func importer(_ resultat: Result<[URL], Error>) {

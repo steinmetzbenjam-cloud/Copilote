@@ -23,7 +23,7 @@ struct SectionPartage: View {
                       systemImage: "icloud.slash")
                     .font(.footnote).foregroundStyle(.secondary)
             } else if !cloud.actif {
-                Label("Active la synchronisation iCloud dans les réglages (icône clé) pour partager ce voyage.",
+                Label("Pour partager ce voyage, active la synchronisation iCloud dans les Réglages (en bas de la liste des voyages).",
                       systemImage: "icloud")
                     .font(.footnote).foregroundStyle(.secondary)
             } else {

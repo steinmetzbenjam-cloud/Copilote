@@ -41,6 +41,7 @@ struct EtapeEditView: View {
     }
 
     @State private var horaireOuvert = false
+    @State private var suppressionDemandee = false
 
     /// Sans jour, l'étape n'a pas non plus d'horaires.
     private var jourChoisi: Binding<Date?> {
@@ -526,6 +527,12 @@ struct EtapeEditView: View {
                         .background(RoundedRectangle(cornerRadius: 8).fill(FondDePage.carte))
                 }
                 Button(etape.categorie == .hebergement ? "Supprimer l'hébergement" : "Supprimer l'étape", systemImage: "trash", role: .destructive) {
+                    // Une étape encore vide part sans question ; sinon on confirme.
+                    if etape.titre.trimmingCharacters(in: .whitespaces).isEmpty && etape.lieu.isEmpty { onSupprimer(); fermer() }
+                    else { suppressionDemandee = true }
+                }
+                .confirmerSuppression($suppressionDemandee,
+                                      titre: "Supprimer « \(etape.titre.isEmpty ? etape.categorie.libelle : etape.titre) » ?") {
                     onSupprimer()
                     fermer()
                 }

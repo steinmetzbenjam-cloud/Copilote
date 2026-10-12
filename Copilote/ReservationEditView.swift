@@ -9,6 +9,7 @@ struct ReservationEditView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var contexte
     @FocusState private var titreActif: Bool
+    @State private var suppressionDemandee = false
 
     private var finActivee: Binding<Bool> {
         Binding(get: { reservation.fin != nil },
@@ -132,10 +133,11 @@ struct ReservationEditView: View {
                     Button(reservation.ajouteeAItineraire ? "Déjà dans l'itinéraire" : "Ajouter à l'itinéraire",
                            systemImage: "calendar.badge.plus", action: ajouterALItineraire)
                         .disabled(reservation.ajouteeAItineraire)
-                    Button("Supprimer la réservation", role: .destructive) {
-                        onSupprimer()
-                        dismiss()
-                    }
+                    Button("Supprimer la réservation", role: .destructive) { suppressionDemandee = true }
+                        .confirmerSuppression($suppressionDemandee, titre: "Supprimer cette réservation ?") {
+                            onSupprimer()
+                            dismiss()
+                        }
                 }
             }
             .formStyle(.grouped)

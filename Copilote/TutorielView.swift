@@ -19,7 +19,7 @@ struct TutorielView: View {
     private let pages: [Page] = [
         Page(symbole: "car.fill", couleur: .indigo, titre: "Bienvenue dans Copilote",
              points: [("map", "Prépare tes voyages jour par jour, seul ou avec ta famille et tes amis."),
-                      ("icloud", "Tout se synchronise avec iCloud : chacun voit les mêmes informations sur ses appareils."),
+                      ("icloud", "Active iCloud dans les Réglages pour tout synchroniser et partager : chacun voit alors les mêmes informations sur ses appareils."),
                       ("pencil.and.list.clipboard", "Un voyage passe par trois modes : Préparation, Voyage puis Souvenir (le rond coloré en haut à gauche).")]),
         Page(symbole: "list.bullet.rectangle", couleur: .blue, titre: "L'itinéraire",
              points: [("calendar", "Les jours sont à gauche, la carte à côté. Ajoute des étapes dans chaque jour et glisse-les pour changer l'ordre."),

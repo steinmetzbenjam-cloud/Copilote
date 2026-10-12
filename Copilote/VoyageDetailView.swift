@@ -91,8 +91,10 @@ struct VoyageDetailView: View {
             Divider()
             pays
             Divider()
-            DatePicker("Départ", selection: $voyage.debut, displayedComponents: .date)
-            DatePicker("Retour", selection: $voyage.fin, in: voyage.debut..., displayedComponents: .date)
+            // Les deux dates dans le même format (« 12 oct. 2026 ») : le sélecteur d'iOS affichait parfois le retour en chiffres.
+            ChampDate(titre: "Départ", date: $voyage.debut)
+                .onChange(of: voyage.debut) { _, debut in if voyage.fin < debut { voyage.fin = debut } }
+            ChampDate(titre: "Retour", date: $voyage.fin, minimum: voyage.debut)
             LabeledContent("Durée", value: "\(voyage.nombreDeJours) jour\(voyage.nombreDeJours > 1 ? "s" : "")")
             Divider()
             LigneFuseau(titre: "Fuseau d'enregistrement", choisi: $voyage.fuseauReferenceId, parDefaut: Horloge.zoneAppareil())
@@ -156,6 +158,41 @@ struct CadreInfos<Contenu: View>: View {
         .modifier(FondDeCarte())
         .overlay(alignment: .leading) {
             Capsule().fill(couleur).frame(width: 4).padding(.vertical, 14).padding(.leading, 4)
+        }
+    }
+}
+
+/// Une date affichée en toutes lettres (« 12 oct. 2026 ») ; un toucher ouvre le calendrier.
+struct ChampDate: View {
+    let titre: String
+    @Binding var date: Date
+    var minimum: Date?
+    @State private var ouvert = false
+
+    var body: some View {
+        LabeledContent(titre) {
+            Button { ouvert = true } label: {
+                Text(date.formatted(.dateTime.day().month(.abbreviated).year()))
+                    .foregroundStyle(.primary)
+                    .padding(.horizontal, 12).padding(.vertical, 6)
+                    .background(Capsule().fill(Color.secondary.opacity(0.14)))
+            }
+            .buttonStyle(.plain)
+            .popover(isPresented: $ouvert) {
+                Group {
+                    if let minimum {
+                        DatePicker(titre, selection: $date, in: minimum..., displayedComponents: .date)
+                    } else {
+                        DatePicker(titre, selection: $date, displayedComponents: .date)
+                    }
+                }
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .padding()
+                .frame(minWidth: 320)
+                .presentationCompactAdaptation(.popover)
+                .onChange(of: date) { _, _ in ouvert = false }
+            }
         }
     }
 }

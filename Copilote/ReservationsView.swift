@@ -5,6 +5,7 @@ struct ReservationsView: View {
     @Bindable var voyage: Voyage
     @Environment(\.modelContext) private var contexte
     @State private var enEdition: Reservation?
+    @State private var aSupprimer: Reservation?
 
     private var reservations: [Reservation] {
         voyage.reservationsVisibles.sorted { $0.debut < $1.debut }
@@ -24,7 +25,7 @@ struct ReservationsView: View {
                     Button { enEdition = r } label: { ligne(r) }.buttonStyle(.plain)
                         .teinte(r.type.couleur)
                         .swipeActions {
-                            if !voyage.lectureSeule { Button("Supprimer", role: .destructive) { contexte.delete(r) } }
+                            if !voyage.lectureSeule { Button("Supprimer", role: .destructive) { aSupprimer = r } }
                         }
                 }
                 Button("Ajouter une réservation", systemImage: "plus.circle", action: ajouter)
@@ -40,6 +41,7 @@ struct ReservationsView: View {
 
             DocumentsSection(voyage: voyage, reservation: nil, titre: "Documents du voyage", couleur: .teal)
         }
+        .confirmerSuppression($aSupprimer, titre: { "Supprimer « \($0.titre.isEmpty ? $0.type.libelle : $0.titre) » ?" }) { contexte.delete($0) }
         .sheet(item: $enEdition, onDismiss: nettoyer) { r in
             ReservationEditView(reservation: r, voyage: voyage) { contexte.delete(r) }
         }
