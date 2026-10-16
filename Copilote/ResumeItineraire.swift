@@ -10,11 +10,19 @@ struct ResumeItineraire: View {
     var dureeModifiee: Double?
     /// Itinéraire calculé avec Google Maps : il passe avant celui de Plans.
     var google: ItineraireGoogle?
+    /// Sans distance ni durée (pas encore calculées, ou introuvables) : rien plutôt que « … ».
+    var masquerSiVide = false
     @State private var itineraires = Itineraires.shared
 
     var body: some View {
-        Text((google?.trajet ?? itineraires.trajet(a, b, mode))?.resume(dureeModifiee: dureeModifiee) ?? "…")
-            .font(.caption).foregroundStyle(.secondary)
-            .task(id: Itineraires.cle(a, b, mode)) { await itineraires.charger(a, b, mode) }
+        let resume = (google?.trajet ?? itineraires.trajet(a, b, mode))?.resume(dureeModifiee: dureeModifiee)
+        Group {
+            if let texte = resume ?? (masquerSiVide ? nil : "…") {
+                Text(texte).font(.caption).foregroundStyle(.secondary)
+            } else {
+                Color.clear.frame(width: 0, height: 0)
+            }
+        }
+        .task(id: Itineraires.cle(a, b, mode)) { await itineraires.charger(a, b, mode) }
     }
 }

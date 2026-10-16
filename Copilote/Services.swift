@@ -485,8 +485,8 @@ actor CacheTripadvisor {
 // MARK: - Vols (AeroDataBox, via RapidAPI)
 
 /// Ce que l'on sait d'un vol à une date : terminaux, portes, tapis à bagages, horaires prévus et révisés, avion.
-struct InfosVol: Equatable {
-    struct Escale: Equatable {
+struct InfosVol: Equatable, Codable {
+    struct Escale: Equatable, Codable {
         var aeroport = ""
         var code = ""
         var ville = ""
@@ -610,6 +610,35 @@ enum SourceVols {
     }
 }
 
+/// Un vol trouvé par un voyageur, gardé dans le voyage partagé avec l'heure de la recherche.
+struct VolPartage: Codable, Equatable {
+    var infos: InfosVol
+    var misAJour: Date
+}
+
+extension Voyage {
+    private var volsPartages: [String: VolPartage] {
+        get { infosVolsJSON.flatMap { try? JSONDecoder().decode([String: VolPartage].self, from: Data($0.utf8)) } ?? [:] }
+        set { infosVolsJSON = (try? JSONEncoder().encode(newValue)).flatMap { String(data: $0, encoding: .utf8) } }
+    }
+
+    func volPartage(_ numero: String, _ jour: Date) -> VolPartage? { volsPartages[Vols.cle(numero, jour)] }
+
+    /// Range le vol trouvé dans le voyage, pour tout le groupe. Pour ne pas multiplier les envois iCloud,
+    /// seulement s'il a changé ou si la dernière version a plus d'une demi-heure.
+    func partager(_ infos: InfosVol, _ numero: String, _ jour: Date) {
+        guard !lectureSeule else { return }
+        let cle = Vols.cle(numero, jour)
+        var tous = volsPartages
+        if let actuel = tous[cle], actuel.infos == infos, Date.now.timeIntervalSince(actuel.misAJour) < 1800 { return }
+        tous[cle] = VolPartage(infos: infos, misAJour: .now)
+        // Seuls les vols d'aller et de retour actuels sont gardés.
+        let utiles = Set([transportAller.map { Vols.cle($0.numero, jours.first ?? debut) },
+                          transportRetour.map { Vols.cle($0.numero, jours.last ?? debut) }].compactMap { $0 })
+        volsPartages = tous.filter { utiles.contains($0.key) }
+    }
+}
+
 /// Les vols déjà cherchés : gardés quelques minutes, pour ne pas épuiser le quota gratuit à chaque affichage.
 @MainActor @Observable
 final class Vols {
@@ -618,7 +647,7 @@ final class Vols {
     private(set) var etats: [String: Etat] = [:]
     private var misAJour: [String: Date] = [:]
 
-    static func cle(_ numero: String, _ jour: Date) -> String {
+    nonisolated static func cle(_ numero: String, _ jour: Date) -> String {
         "\(SourceVols.numeroNettoye(numero))|\(jour.formatted(.iso8601.year().month().day()))"
     }
 

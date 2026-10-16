@@ -222,4 +222,23 @@ struct CalculsTests {
         #expect(lou.ageAuVoyage == 12)
         #expect(lou.tarif == .adolescent)
     }
+
+    @Test func infosDuVolPartageesDansLeVoyage() {
+        let v = voyage()
+        var aller = Transport()
+        aller.mode = .avion
+        aller.numero = "AF 430"
+        v.transportAller = aller
+        var infos = InfosVol()
+        infos.numero = "AF 430"
+        infos.depart.terminal = "2E"
+        infos.depart.porte = "K45"
+        infos.arrivee.tapis = "5"
+        v.partager(infos, "af430", v.jours.first!)
+        // Le numéro est retrouvé quelle que soit son écriture ; les infos survivent à l'encodage.
+        #expect(v.volPartage("AF430", v.jours.first!)?.infos == infos)
+        // Un vol qui n'est plus ni l'aller ni le retour n'est pas gardé.
+        v.partager(infos, "XX999", v.jours.first!)
+        #expect(v.volPartage("XX999", v.jours.first!) == nil)
+    }
 }

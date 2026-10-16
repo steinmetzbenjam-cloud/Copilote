@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Le transport d'aller (premier jour) ou de retour (dernier jour), en pavé : pour un vol, ce que l'on en sait en direct
 /// (terminal, comptoirs, porte, tapis à bagages, horaires prévus et révisés, durée, avion), et une recherche Google du vol.
+/// Ce qu'un voyageur avec une clé AeroDataBox a trouvé est rangé dans le voyage : les autres le voient sans clé.
 /// Affiché en tête du premier jour et en bas du dernier, dans l'Itinéraire et dans l'Aperçu.
 struct PaveExtremite: View {
     let voyage: Voyage
@@ -38,6 +39,9 @@ struct PaveExtremite: View {
                 guard estUnVol, !numero.isEmpty, aUneCle else { return }
                 await vols.actualiser(numero, jour)
             }
+            .onChange(of: vols.etat(numero, jour)) { _, etat in
+                if case .trouve(let infos)? = etat { voyage.partager(infos, numero, jour) }
+            }
         }
     }
 
@@ -52,7 +56,7 @@ struct PaveExtremite: View {
                     Text(t.descriptif).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                 }
                 Spacer(minLength: 0)
-                if case .trouve(let infos)? = vols.etat(numero, jour), !infos.statut.isEmpty { pastille(infos.statut) }
+                if let infos = infosAffichees?.infos, !infos.statut.isEmpty { pastille(infos.statut) }
                 if onOuvrir != nil { Image(systemName: "chevron.right").font(.footnote).foregroundStyle(teinte.opacity(0.6)) }
             }
             .contentShape(Rectangle())
@@ -77,6 +81,15 @@ struct PaveExtremite: View {
             switch aUneCle ? vols.etat(numero, jour) : nil {
             case .trouve(let infos)?:
                 infosDuVol(infos)
+            case _ where infosAffichees != nil:
+                // Trouvé par un autre voyageur (ou recherche en cours / sans clé ici) : sa version partagée.
+                if let partage = infosAffichees {
+                    infosDuVol(partage.infos)
+                    if let date = partage.partageLe {
+                        Text("Infos partagées par le groupe, mises à jour \(date.formatted(.relative(presentation: .named))).")
+                            .font(.caption).foregroundStyle(.secondary)
+                    }
+                }
             case .enCours?:
                 HStack(spacing: 8) { ProgressView().controlSize(.small); Text("Recherche du vol…") }
                     .font(.footnote).foregroundStyle(.secondary)
@@ -87,7 +100,7 @@ struct PaveExtremite: View {
                 Text(message).font(.footnote).foregroundStyle(.orange)
             case nil:
                 if !aUneCle {
-                    Text("Ajoute une clé AeroDataBox dans Réglages pour voir ici le terminal, la porte, le tapis à bagages et les horaires à jour.")
+                    Text("Aucune info sur ce vol pour l'instant : elles apparaissent dès qu'un voyageur qui a une clé AeroDataBox (dans Réglages) ouvre ce pavé.")
                         .font(.footnote).foregroundStyle(.secondary)
                 }
             }
@@ -102,6 +115,12 @@ struct PaveExtremite: View {
             .buttonStyle(.borderless)
             .tint(teinte)
         }
+    }
+
+    /// Le vol trouvé ici même, sinon celui qu'un autre voyageur a partagé (avec l'heure de sa recherche).
+    private var infosAffichees: (infos: InfosVol, partageLe: Date?)? {
+        if case .trouve(let infos)? = vols.etat(numero, jour) { return (infos, nil) }
+        return voyage.volPartage(numero, jour).map { ($0.infos, $0.misAJour) }
     }
 
     private var rechercheGoogle: URL? {

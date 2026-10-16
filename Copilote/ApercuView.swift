@@ -106,14 +106,83 @@ struct ApercuView: View {
                 if elements.isEmpty {
                     Text("Rien de prévu ce jour-là pour l'instant.").foregroundStyle(.secondary)
                 }
+                // Le matin : le trajet depuis l'hôtel de la veille (ou la dernière étape de la veille) vers la première étape.
+                if let (depart, arrivee) = trajetDuMatin(jour), let t = depart.transport {
+                    ligneTransport(t, depuis: depart, vers: arrivee, jour: jour)
+                }
                 ForEach(elements) { etape in
                     ligne(etape, estProchaine: etape === prochaine)
+                    // Le transport vers l'élément suivant, entre les deux ; en fin de journée, vers celui du lendemain.
+                    if let t = etape.transport, let vers = destination(de: etape, jour: jour) {
+                        ligneTransport(t, depuis: etape, vers: vers, jour: jour)
+                    }
                 }
                 if dernier, voyage.transportRetour != nil {
                     PaveExtremite(voyage: voyage, extremite: .retour) { extremiteOuverte = .retour }
                 }
             }
         }
+    }
+
+    /// L'élément vers lequel part le transport d'une étape : la suivante du jour, l'hébergement, ou la première étape du lendemain.
+    private func destination(de etape: Etape, jour: Date) -> Etape? {
+        if let suivante = voyage.suivante(de: etape) { return suivante }
+        if let nuit = voyage.transportDeNuit(apres: jour), nuit.depart === etape { return nuit.arrivee }
+        return nil
+    }
+
+    /// Le trajet qui ouvre la journée : depuis l'hôtel de la veille, ou depuis la dernière étape de la veille sans hôtel.
+    private func trajetDuMatin(_ jour: Date) -> (Etape, Etape)? {
+        guard let veille = Calendar.current.date(byAdding: .day, value: -1, to: jour), let premiere = voyage.etapes(du: jour).first else { return nil }
+        if let h = voyage.hebergements(apres: veille).first, h.transport != nil, voyage.suivante(de: h) === premiere { return (h, premiere) }
+        if let nuit = voyage.transportDeNuit(apres: veille), nuit.arrivee === premiere { return (nuit.depart, nuit.arrivee) }
+        return nil
+    }
+
+    /// Un transport entre deux éléments du programme : son mode, vers où il mène (et quel jour, s'il change de jour),
+    /// sa distance et son temps de trajet.
+    private func ligneTransport(_ t: Transport, depuis depart: Etape, vers arrivee: Etape, jour: Date) -> some View {
+        let cal = Calendar.current
+        let nom: (Etape) -> String = { $0.titre.isEmpty ? $0.categorie.libelle : $0.titre }
+        let jourArrivee = arrivee.apresJour ? nil : arrivee.jour
+        let autreJour = jourArrivee.map { !cal.isDate($0, inSameDayAs: jour) } ?? false
+        let quand = jourArrivee.map { j -> String in
+            if let demain = cal.date(byAdding: .day, value: 1, to: jour), cal.isDate(j, inSameDayAs: demain) { return "demain" }
+            return j.formatted(.dateTime.weekday(.wide).day().month(.wide))
+        }
+        let depuisVeille = depart.jour.map { !cal.isDate($0, inSameDayAs: jour) } ?? false
+        return HStack(alignment: .top, spacing: 12) {
+            Image(systemName: t.mode.symbole).font(.footnote.weight(.semibold)).foregroundStyle(.indigo)
+                .frame(width: 32)
+            VStack(alignment: .leading, spacing: 2) {
+                Group {
+                    if depuisVeille {
+                        Text("\(t.mode == .commun && !t.sousType.isEmpty ? t.sousType : t.mode.libelleCourt) depuis \(nom(depart)) → \(nom(arrivee))")
+                    } else {
+                        Text("\(t.mode == .commun && !t.sousType.isEmpty ? t.sousType : t.mode.libelleCourt) → \(nom(arrivee))")
+                            + Text(autreJour ? " (\(quand ?? "le lendemain"))" : "").foregroundColor(.orange)
+                    }
+                }
+                .font(.footnote.weight(.medium)).foregroundStyle(.indigo)
+                // Distance et temps seulement s'ils sont connus ; sinon, le mode suffit.
+                if t.mode.aUnItineraire, let a = depart.coordonnee, let b = arrivee.coordonnee {
+                    ResumeItineraire(a: a, b: b, mode: t.mode, dureeModifiee: t.dureeModifiee, google: t.itineraireGoogle(a, b), masquerSiVide: true)
+                } else if let resume = t.resume(depuis: depart, vers: arrivee) {
+                    Text(resume).font(.caption).foregroundStyle(.secondary)
+                }
+                // Ce qui a été saisi en plus du mode : compagnie, numéro, horaires.
+                let details = [[t.compagnie, t.numero].filter { !$0.isEmpty }.joined(separator: " "),
+                               t.depart.map { d in d.formatted(date: .omitted, time: .shortened) + (t.arrivee.map { " → " + $0.formatted(date: .omitted, time: .shortened) } ?? "") } ?? ""]
+                    .filter { !$0.isEmpty }
+                if !details.isEmpty {
+                    Text(details.joined(separator: " · ")).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10).padding(.vertical, 8)
+        .background(Color.indigo.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .padding(.leading, 20)
     }
 
     private func ligne(_ etape: Etape, estProchaine: Bool) -> some View {
@@ -130,9 +199,6 @@ struct ApercuView: View {
                 if let h = etape.heure { Text(h.formatted(date: .omitted, time: .shortened)).monospacedDigit().foregroundStyle(.secondary) }
                 // Sur chaque étape placée sur la carte : l'itinéraire dans Plans depuis la position actuelle.
                 BoutonYAller(etape: etape, taille: 40)
-            }
-            if let t = etape.transport {
-                Label(t.descriptif, systemImage: t.mode.symbole).font(.footnote).foregroundStyle(.secondary).padding(.leading, 44)
             }
         }
         .padding(10)

@@ -17,6 +17,10 @@ struct TimingView: View {
     @State private var deplacement: Deplacement?
     @State private var confirmation: DeplacementEnAttente?
     @State private var itineraires = Itineraires.shared
+    /// Prévisions météo : le fond de chaque jour en prend l'aspect, quand elles le couvrent (16 jours).
+    @State private var meteo = Meteo.shared
+    @State private var lieuMeteoVoyage: CLLocationCoordinate2D?
+    @Environment(\.scenePhase) private var phase
     /// Vrai pour dessiner l'agenda hors écran (contrôles du système remplacés par de simples images).
     var rendu = false
 
@@ -356,6 +360,9 @@ struct TimingView: View {
             .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { largeurDisponible = $0 }
         }
         .background(FondDePage.couleur)
+        // Les fonds suivent les prévisions : une mise à jour qui change le temps d'un jour change son fond.
+        .task(id: voyage.cleMeteo) { await chargerMeteo() }
+        .onChange(of: phase) { _, p in if p == .active { Task { await chargerMeteo() } } }
         .task(id: clesItineraires) {
             for e in voyage.etapes {
                 if let t = e.transport, t.mode.aUnItineraire, let a = e.coordonnee, let b = voyage.suivante(de: e)?.coordonnee {
@@ -444,6 +451,12 @@ struct TimingView: View {
         }
     }
 
+    private func chargerMeteo() async {
+        guard !rendu, !voyage.joursPrevisibles.isEmpty else { return }
+        if lieuMeteoVoyage == nil { lieuMeteoVoyage = await voyage.lieuMeteo() }
+        await meteo.chargerJours(de: voyage, lieuVoyage: lieuMeteoVoyage)
+    }
+
     private var clesItineraires: String {
         voyage.etapes.compactMap { e in e.transport.map { "\(e.uid)\($0.mode.rawValue)" } }.joined(separator: ",")
     }
@@ -494,6 +507,7 @@ struct TimingView: View {
                     Text("JOUR \(i + 1)").font(.caption.bold()).foregroundStyle(.white.opacity(0.85))
                     if aujourdhui { Text("Aujourd'hui").font(.caption2.bold()).padding(.horizontal, 6).padding(.vertical, 1)
                         .background(.white.opacity(0.28), in: Capsule()).foregroundStyle(.white) }
+                    if let temps = meteo.prevision(jour, de: voyage, lieuVoyage: lieuMeteoVoyage) { EtiquetteMeteo(meteo: temps) }
                 }
                 Text(jour.formatted(.dateTime.weekday(.wide).day().month(.abbreviated))).font(.headline).foregroundStyle(.white)
                 Text("Heure locale · \(voyage.fuseau(du: jour).libelle(le: jour))").font(.caption2).foregroundStyle(.white.opacity(0.85))
@@ -524,11 +538,15 @@ struct TimingView: View {
         let placement = voies(liste)
         let hauteur = hauteurHeure * 24
         let contenu = largeurColonne - 8
+        let temps = meteo.prevision(jour, de: voyage, lieuVoyage: lieuMeteoVoyage)
         return ZStack(alignment: .topLeading) {
             // Fond du jour : sa couleur, plus soutenue la nuit.
             Rectangle().fill(c.opacity(0.10))
             Rectangle().fill(c.opacity(0.10)).frame(height: hauteurHeure * 6)
             Rectangle().fill(c.opacity(0.10)).frame(height: hauteurHeure * 4).offset(y: hauteurHeure * 20)
+            // Le temps prévu ce jour-là, par-dessus la couleur du jour (sous les heures et les activités) :
+            // son symbole en fin de matinée, là où se passe la journée.
+            if let temps { FondMeteo(meteo: temps, hauteurSymbole: hauteurHeure * 9) }
             // Lignes des heures.
             ForEach(0..<24, id: \.self) { h in
                 Rectangle().fill(c.opacity(h % 6 == 0 ? 0.65 : 0.38)).frame(height: h % 6 == 0 ? 1.5 : 1).offset(y: CGFloat(h) * hauteurHeure)

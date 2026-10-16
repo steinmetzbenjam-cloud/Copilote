@@ -278,3 +278,25 @@ extension Trajet {
         return "\(km) · \(temps)"
     }
 }
+
+extension Transport {
+    /// Distance et temps d'un transport sans itinéraire routier (avion, transports en commun) : l'itinéraire enregistré,
+    /// sinon la distance à vol d'oiseau et la durée tirée des horaires.
+    func resume(depuis etapeDepart: Etape, vers etapeArrivee: Etape) -> String? {
+        if let m = dureeModifiee {
+            return CategorieEtape.texteDuree(m)
+        }
+        if let it = itineraireCommun { return it.resume }
+        var morceaux: [String] = []
+        if let a = etapeDepart.coordonnee, let b = etapeArrivee.coordonnee {
+            let km = CLLocation(latitude: a.latitude, longitude: a.longitude).distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude)) / 1000
+            morceaux.append(km >= 10 ? "\(Int(km.rounded())) km" : "\(km.formatted(.number.precision(.fractionLength(1)))) km")
+        }
+        if let d = self.depart, let f = self.arrivee {
+            var minutes = f.timeIntervalSince(d) / 60
+            if minutes < 0 { minutes += 24 * 60 }
+            morceaux.append(CategorieEtape.texteDuree(minutes))
+        }
+        return morceaux.isEmpty ? nil : morceaux.joined(separator: " · ")
+    }
+}

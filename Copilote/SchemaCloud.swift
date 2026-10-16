@@ -39,7 +39,7 @@ extension PartageCloud {
 
         let voyage = Voyage(titre: "Exemple", destination: "Exemple")
         voyage.pays = ["FR"]; voyage.notes = "x"
-        voyage.transportAllerJSON = "x"; voyage.transportRetourJSON = "x"; voyage.deviseLocale = "x"; voyage.tauxChange = 1; voyage.deviseTierce = "x"; voyage.tauxTierce = 1; voyage.fuseauReferenceId = "x"
+        voyage.transportAllerJSON = "x"; voyage.transportRetourJSON = "x"; voyage.infosVolsJSON = "x"; voyage.deviseLocale = "x"; voyage.tauxChange = 1; voyage.deviseTierce = "x"; voyage.tauxTierce = 1; voyage.fuseauReferenceId = "x"
         contexte.insert(voyage)
 
         let membre = Membre(nom: "Exemple"); membre.voyage = voyage

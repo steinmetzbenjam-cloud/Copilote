@@ -129,7 +129,7 @@ final class Meteo {
     private(set) var prevision: [String: [MeteoJour]] = [:]
     private(set) var misAJour: [String: Date] = [:]
 
-    static func cle(_ c: CLLocationCoordinate2D) -> String { String(format: "%.1f,%.1f", c.latitude, c.longitude) }
+    nonisolated static func cle(_ c: CLLocationCoordinate2D) -> String { String(format: "%.1f,%.1f", c.latitude, c.longitude) }
 
     private init() {}
 

@@ -30,6 +30,9 @@ final class Voyage {
     var fuseauReferenceId: String?
     var transportAllerJSON: String?
     var transportRetourJSON: String?
+    /// Ce que l'on sait des vols d'aller et de retour (`VolPartage`, par numéro et date), trouvé par un voyageur qui a une clé
+    /// AeroDataBox : partagé avec le groupe, qui le voit sans clé.
+    var infosVolsJSON: String?
     @Relationship(deleteRule: .cascade, inverse: \Membre.voyage)
     var membres: [Membre] = []
     @Relationship(deleteRule: .cascade, inverse: \Etape.voyage)

@@ -12,6 +12,11 @@ struct ItineraireView: View {
     @State private var transportDeNuitEnEdition: NuitTransport?
     /// Transport d'aller ou de retour ouvert depuis son pavé, en tête du premier jour ou en bas du dernier.
     @State private var extremiteEnEdition: TimingView.ExtremiteTransport?
+    /// Prévisions météo : le fond de chaque jour en prend l'aspect, quand elles le couvrent (16 jours).
+    @State private var meteo = Meteo.shared
+    /// Lieu de la météo pour les jours sans étape placée : le milieu du voyage, ou le premier pays.
+    @State private var lieuMeteoVoyage: CLLocationCoordinate2D?
+    @Environment(\.scenePhase) private var phase
     @State private var jourEnEdition: JourVoyage?
     /// Étape au-dessus de laquelle on s'apprête à déposer (trait d'insertion), ou jour survolé.
     @State private var etapeVisee: String?
@@ -178,6 +183,9 @@ struct ItineraireView: View {
             #endif
         }
         .onAppear { chargerDiscussionVue() }
+        // Les fonds suivent les prévisions : une mise à jour qui change le temps d'un jour change son fond.
+        .task(id: voyage.cleMeteo) { await chargerMeteo() }
+        .onChange(of: phase) { _, p in if p == .active { Task { await chargerMeteo() } } }
         .onChange(of: discussionOuverte) { marquerDiscussionVue() }
         .onChange(of: voyage.commentaires.count) { if discussionOuverte { marquerDiscussionVue() } }
         .sheet(isPresented: $profilOuvert) { ProfilEditView() }
@@ -533,7 +541,7 @@ struct ItineraireView: View {
                 if t.mode.aUnItineraire, let a = depart.coordonnee, let b = arrivee.coordonnee {
                     Text("·").font(.caption)
                     ResumeItineraire(a: a, b: b, mode: t.mode, dureeModifiee: t.dureeModifiee, google: t.itineraireGoogle(a, b))
-                } else if let resume = resumeTransport(t, depart: depart, arrivee: arrivee) {
+                } else if let resume = t.resume(depuis: depart, vers: arrivee) {
                     Text("· \(resume)").font(.caption)
                 }
                 Spacer(minLength: 0)
@@ -544,26 +552,6 @@ struct ItineraireView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-    }
-
-    /// Distance et temps d'un transport sans itinéraire routier (avion, transports en commun) : l'itinéraire enregistré,
-    /// sinon la distance à vol d'oiseau et la durée tirée des horaires.
-    private func resumeTransport(_ t: Transport, depart: Etape, arrivee: Etape) -> String? {
-        if let m = t.dureeModifiee {
-            return CategorieEtape.texteDuree(m)
-        }
-        if let it = t.itineraireCommun { return it.resume }
-        var morceaux: [String] = []
-        if let a = depart.coordonnee, let b = arrivee.coordonnee {
-            let km = CLLocation(latitude: a.latitude, longitude: a.longitude).distance(from: CLLocation(latitude: b.latitude, longitude: b.longitude)) / 1000
-            morceaux.append(km >= 10 ? "\(Int(km.rounded())) km" : "\(km.formatted(.number.precision(.fractionLength(1)))) km")
-        }
-        if let d = t.depart, let f = t.arrivee {
-            var minutes = f.timeIntervalSince(d) / 60
-            if minutes < 0 { minutes += 24 * 60 }
-            morceaux.append(CategorieEtape.texteDuree(minutes))
-        }
-        return morceaux.isEmpty ? nil : morceaux.joined(separator: " · ")
     }
 
     /// Le transport entre deux jours, présenté comme entre deux étapes ; un appui ouvre sa fiche.
@@ -615,8 +603,17 @@ struct ItineraireView: View {
 
     // MARK: Carte d'un jour
 
+    private func chargerMeteo() async {
+        guard !voyage.joursPrevisibles.isEmpty else { return }
+        if lieuMeteoVoyage == nil { lieuMeteoVoyage = await voyage.lieuMeteo() }
+        await meteo.chargerJours(de: voyage, lieuVoyage: lieuMeteoVoyage)
+    }
+
+    private func meteoDuJour(_ jour: Date) -> MeteoJour? { meteo.prevision(jour, de: voyage, lieuVoyage: lieuMeteoVoyage) }
+
     private func carte(numero: Int, jour: Date) -> some View {
         let infos = voyage.infos(du: jour)
+        let temps = meteoDuJour(jour)
         let etapes = voyage.etapes(du: jour)
         // Même couleur et mêmes numéros que le tracé et les repères sur la carte.
         let couleur = CarteDuVoyage.couleur(du: numero - 1)
@@ -630,6 +627,7 @@ struct ItineraireView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(alignment: .firstTextBaseline) {
                         Text("JOUR \(numero)").font(.caption.bold()).foregroundStyle(couleur)
+                        if let temps { EtiquetteMeteo(meteo: temps) }
                         Spacer()
                     }
                     Text(premiereLettreEnMajuscule(jour.formatted(.dateTime.weekday(.wide).day().month(.wide))))
@@ -698,6 +696,12 @@ struct ItineraireView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        // Le temps prévu ce jour-là, en fond (sous les étapes, au-dessus du blanc de la carte).
+        .background {
+            if let temps {
+                FondMeteo(meteo: temps).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+            }
+        }
         .modifier(FondDeCarte())
         .overlay(alignment: .leading) {
             Capsule().fill(couleur).frame(width: 5).padding(.vertical, 16).padding(.leading, 5)
