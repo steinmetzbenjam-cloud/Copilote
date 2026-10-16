@@ -76,6 +76,8 @@ struct CarteDuVoyage: View {
         var etape: String?
         var latitude: Double?
         var longitude: Double?
+        /// Nombre de points des tracés du jour : un itinéraire qui arrive peut agrandir le cadre.
+        var traces: Int
     }
 
     private func estEtapeFocus(_ etape: Etape) -> Bool { etapeFocus === etape }
@@ -84,7 +86,14 @@ struct CarteDuVoyage: View {
         let somme = points(du: nil).reduce(0.0) { $0 + $1.latitude * 3 + $1.longitude }
         return Signature(jour: jourFocus, empreinte: somme + Double(points(du: nil).count),
                          largeur: taille.width.rounded(), hauteur: taille.height.rounded(), pays: voyage.pays,
-                         etape: etapeFocus?.uid, latitude: etapeFocus?.latitude, longitude: etapeFocus?.longitude)
+                         etape: etapeFocus?.uid, latitude: etapeFocus?.latitude, longitude: etapeFocus?.longitude,
+                         traces: tracesDuFocus.count)
+    }
+
+    /// Les points des transports du jour choisi (aller et retour exceptés) : le cadrage les fait tenir dans la carte.
+    private var tracesDuFocus: [CLLocationCoordinate2D] {
+        guard let jourFocus else { return [] }
+        return segments(du: jourFocus, avecExtremites: false).flatMap(\.points)
     }
 
     // MARK: Tracés entre étapes
@@ -179,7 +188,7 @@ struct CarteDuVoyage: View {
 
     /// Une ligne entre chaque étape localisée : arc pour l'avion, itinéraire pour la voiture, la marche et le vélo,
     /// pointillés pour les transports en commun, trait droit sans transport.
-    private func segments(du jour: Date) -> [Segment] {
+    private func segments(du jour: Date, avecExtremites: Bool = true) -> [Segment] {
         let liste = voyage.etapes(du: jour)
         var resultat: [Segment] = []
         for (i, depart) in liste.enumerated() {
@@ -195,7 +204,7 @@ struct CarteDuVoyage: View {
             resultat += segment("\(d.uid)-\(s.uid)", a, b, mode, transport: d.transport)
         }
         // L'aller se rattache au premier jour du voyage, le retour au dernier.
-        for e in extremites {
+        for e in extremites where avecExtremites {
             let jourCible = e.id == "aller" ? voyage.jours.first : voyage.jours.last
             if let jourCible, Calendar.current.isDate(jourCible, inSameDayAs: jour) {
                 let t = e.id == "aller" ? voyage.transportAller : voyage.transportRetour
@@ -553,7 +562,7 @@ struct CarteDuVoyage: View {
         func ajouter(_ r: MKMapRect) { rectangle = rectangle.map { $0.union(r) } ?? r }
 
         let pts = points(du: jourFocus)
-        for p in pts {
+        for p in pts + tracesDuFocus {
             let m = MKMapPoint(p)
             ajouter(MKMapRect(origin: m, size: MKMapSize(width: 0, height: 0)))
         }

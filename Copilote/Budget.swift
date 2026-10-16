@@ -2,7 +2,7 @@ import SwiftUI
 import SwiftData
 
 /// Monnaie dans laquelle un prix est saisi : l'euro, la monnaie locale du voyage, ou la troisième monnaie choisie dans Infos.
-enum MonnaiePrix {
+enum MonnaiePrix: String {
     case euro, locale, tierce
 
     init(locale: Bool, tierce: Bool) { self = tierce ? .tierce : (locale ? .locale : .euro) }
@@ -367,6 +367,23 @@ struct SectionBudgetTransport: View {
             piedBudget(voyage)
         }
     }
+}
+
+extension Reservation {
+    var monnaieAdulte: MonnaiePrix {
+        get { monnaieAdulteBrut.flatMap(MonnaiePrix.init(rawValue:)) ?? .euro }
+        set { monnaieAdulteBrut = newValue == .euro ? nil : newValue.rawValue }
+    }
+    var monnaieEtudiant: MonnaiePrix {
+        get { monnaieEtudiantBrut.flatMap(MonnaiePrix.init(rawValue:)) ?? .euro }
+        set { monnaieEtudiantBrut = newValue == .euro ? nil : newValue.rawValue }
+    }
+    var monnaieEnfant: MonnaiePrix {
+        get { monnaieEnfantBrut.flatMap(MonnaiePrix.init(rawValue:)) ?? .euro }
+        set { monnaieEnfantBrut = newValue == .euro ? nil : newValue.rawValue }
+    }
+
+    var aDesPrixParPersonne: Bool { prixAdulte != nil || prixEtudiant != nil || prixEnfant != nil }
 }
 
 extension Etape {

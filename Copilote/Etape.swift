@@ -60,6 +60,13 @@ extension Etape {
         return c
     }
 
+    /// Une copie de cet hébergement pour la nuit qui suit `jour` ; l'hébergement qui y était passe dans « Étapes à placer ».
+    func copieHebergement(nuit jour: Date, dans contexte: ModelContext) -> Etape {
+        let c = nouvelleCopie(jour: nil, avecHoraires: true, dans: contexte)
+        voyage?.placerEntreJours(c, apres: jour)
+        return c
+    }
+
     /// La copie elle-même (sans transport), insérée dans le contexte mais pas encore rangée dans son jour.
     private func nouvelleCopie(jour: Date?, avecHoraires: Bool, dans contexte: ModelContext) -> Etape {
         let c = Etape(titre: titre, jour: jour, categorie: categorie)

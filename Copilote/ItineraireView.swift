@@ -112,6 +112,16 @@ struct ItineraireView: View {
                         .background(FondDePage.couleur)
                         .overlay { cadreEtape.padding(8) }
                 }
+                // Les notes du jour s'ouvrent en haut, par-dessus la carte : le clavier, qui monte du bas, ne les cache pas.
+                // (Les déplacer seulement à l'apparition du clavier recréerait la zone de texte et refermerait le clavier.)
+                .overlay(alignment: .top) {
+                    if let jour = notesOuvertes, let numero = voyage.jours.firstIndex(where: { cal.isDate($0, inSameDayAs: jour) }) {
+                        cadreNotes(jour, numero: numero + 1)
+                            .padding(.horizontal, 12).padding(.top, 8)
+                            .transition(.move(edge: .top).combined(with: .opacity))
+                            .ignoresSafeArea(.keyboard)
+                    }
+                }
             }
         }
         .coordinateSpace(.named(Self.espace))
@@ -645,8 +655,6 @@ struct ItineraireView: View {
             }
             .buttonStyle(.plain)
 
-            if !ecranLarge, notesSontOuvertes(jour) { cadreNotes(jour, numero: numero) }
-
             Divider()
 
             // Transport prévu après l'hôtel de la veille : il ouvre la journée.
@@ -774,7 +782,9 @@ struct ItineraireView: View {
             })
         return VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Label("Notes · Jour \(numero)", systemImage: "note.text").font(.subheadline.bold())
+                Label("Notes · Jour \(numero) · \(jour.formatted(.dateTime.weekday(.wide).day().month(.wide).year()))", systemImage: "note.text")
+                    .font(.subheadline.bold())
+                    .lineLimit(1).minimumScaleFactor(0.75)
                 Spacer()
                 Menu { actionsDuJour(jour, infos: infos) } label: { Image(systemName: "ellipsis") }
                     .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
@@ -786,12 +796,14 @@ struct ItineraireView: View {
             .foregroundStyle(Color.black.opacity(0.7))
             EditeurNotes(texte: texte, donnees: miseEnForme, lectureSeule: voyage.lectureSeule, invite: "Écris ici tes notes pour ce jour…")
                 .id(jour)
-                .frame(minHeight: 220, maxHeight: ecranLarge ? 380 : 300)
+                // Sur iPhone, le post-it tient entre le haut de l'écran et le clavier : la zone d'écriture reste visible en tapant.
+                .frame(minHeight: ecranLarge ? 220 : 150, maxHeight: ecranLarge ? 380 : 180)
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 6, style: .continuous)
-                .fill(LinearGradient(colors: [IconePostIt.jaune, IconePostIt.jaune.opacity(0.88)], startPoint: .top, endPoint: .bottom))
+                // Opaque : ouvert par-dessus la carte (iPhone), rien ne doit transparaître.
+                .fill(LinearGradient(colors: [IconePostIt.jaune, Color(red: 0.98, green: 0.82, blue: 0.3)], startPoint: .top, endPoint: .bottom))
                 .shadow(color: .black.opacity(0.22), radius: 8, y: 4)
         )
         .environment(\.colorScheme, .light)

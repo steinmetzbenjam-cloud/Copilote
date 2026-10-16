@@ -230,7 +230,66 @@ extension Voyage {
 extension Voyage {
     /// Les réservations liées à cet élément qui ont un prix : dans le Budget, elles remplacent le prix prévu.
     func reservationsChiffrees(lieesA cle: String) -> [Reservation] {
-        reservations.filter { $0.lien == cle && $0.prix != nil }.sorted { $0.debut < $1.debut }
+        reservations.filter { $0.lien == cle && ($0.prix != nil || $0.aDesPrixParPersonne) }.sorted { $0.debut < $1.debut }
+    }
+
+    /// Ce que le report d'un hébergement réservé ferait : les nuits où le copier, et les hébergements qu'il y remplacerait.
+    struct ReportHebergement {
+        let hebergement: Etape
+        let nuits: [Date]
+        let remplaces: [(nuit: Date, etape: Etape)]
+    }
+
+    /// Une réservation d'hébergement de plusieurs nuits, liée à l'une d'elles : les autres nuits de la réservation (dans le voyage)
+    /// où cet hébergement n'est pas déjà. Celles qu'occupe un autre hébergement sont comptées dans `remplaces`.
+    func reportHebergement(de r: Reservation) -> ReportHebergement? {
+        let cal = Calendar.current
+        guard let cle = r.lien, let fin = r.fin,
+              let h = etapes.first(where: { LienReservation.etape($0) == cle }),
+              h.categorie == .hebergement, h.apresJour, let nuitLiee = h.jour else { return nil }
+        let arrivee = cal.startOfDay(for: r.debut), depart = cal.startOfDay(for: fin)
+        // La nuit liée doit faire partie de la réservation.
+        guard arrivee <= nuitLiee, nuitLiee < depart else { return nil }
+        func meme(_ e: Etape) -> Bool {
+            e.titre.caseInsensitiveCompare(h.titre) == .orderedSame && e.lieu.caseInsensitiveCompare(h.lieu) == .orderedSame
+        }
+        var nuits: [Date] = []
+        var remplaces: [(nuit: Date, etape: Etape)] = []
+        for jour in jours where arrivee <= jour && jour < depart && !cal.isDate(jour, inSameDayAs: nuitLiee) {
+            let occupants = hebergements(apres: jour)
+            if occupants.contains(where: meme) { continue }
+            nuits.append(jour)
+            remplaces += occupants.map { (jour, $0) }
+        }
+        return nuits.isEmpty ? nil : ReportHebergement(hebergement: h, nuits: nuits, remplaces: remplaces)
+    }
+
+    /// Reporte l'hébergement réservé sur ses autres nuits ; l'hébergement qui occupait l'une d'elles passe dans « Étapes à placer ».
+    /// Le prix de la réservation couvre tout le séjour : les copies ne reprennent alors pas le prix prévu, pour ne pas le compter deux fois.
+    @discardableResult
+    func reporterHebergement(de r: Reservation, dans contexte: ModelContext) -> ReportHebergement? {
+        guard let report = reportHebergement(de: r) else { return nil }
+        let paye = r.prix != nil || r.aDesPrixParPersonne
+        for jour in report.nuits {
+            let copie = report.hebergement.copieHebergement(nuit: jour, dans: contexte)
+            if paye {
+                copie.prixAdulte = nil; copie.prixEtudiant = nil; copie.prixEnfant = nil
+            }
+        }
+        return report
+    }
+
+    /// Ce que coûte une réservation : avec des prix par personne, la somme (en euros) du prix de chaque voyageur concerné
+    /// selon son tarif (sans prix étudiant, le prix adulte) ; sinon son prix total, dans sa monnaie.
+    func montant(de r: Reservation) -> (montant: Double, devise: String)? {
+        guard r.aDesPrixParPersonne else { return r.prix.map { ($0, r.devise) } }
+        func euros(_ prix: Double?, _ monnaie: MonnaiePrix) -> Double? { prix.flatMap { versEuros($0, depuis: monnaie) } }
+        let adulte = euros(r.prixAdulte, r.monnaieAdulte)
+        let parTarif: [Tarif: Double?] = [.adulte: adulte, .etudiant: euros(r.prixEtudiant, r.monnaieEtudiant) ?? adulte,
+                                          .enfant: euros(r.prixEnfant, r.monnaieEnfant)]
+        let concernes = concernes(par: r)
+        let total = membres.filter { concernes.contains($0.uid) }.reduce(0.0) { $0 + ((parTarif[$1.tarif] ?? nil) ?? 0) }
+        return (total, "EUR")
     }
 
     /// Les voyageurs concernés par une réservation : ceux qui la voient, ou tout le monde.
@@ -258,7 +317,7 @@ struct PrixPrevuOuReserve<Contenu: View>: View {
                 ForEach(voyage.reservationsChiffrees(lieesA: cle)) { r in
                     let pour = couverture.tous && !r.estRestreinte ? "" :
                         " pour " + voyage.membresTries.filter { voyage.concernes(par: r).contains($0.uid) }.map(\.nom).joined(separator: ", ")
-                    Label("Réservation « \(r.titre.isEmpty ? r.type.libelle : r.titre) » : \(Monnaies.formater(r.prix ?? 0, r.devise))\(pour)",
+                    Label("Réservation « \(r.titre.isEmpty ? r.type.libelle : r.titre) » : \(voyage.montant(de: r).map { Monnaies.formater($0.montant, $0.devise) } ?? "—")\(pour)",
                           systemImage: "ticket.fill")
                         .font(.footnote.weight(.medium))
                         .foregroundStyle(.indigo)

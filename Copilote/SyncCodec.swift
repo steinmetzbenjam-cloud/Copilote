@@ -227,6 +227,8 @@ enum Codec {
             r["lieu"] = x.lieu; r["prix"] = x.prix; r["devise"] = x.devise; r["notes"] = x.notes
             r["ajouteeAItineraire"] = x.ajouteeAItineraire ? 1 : 0; r["fuseauDebut"] = x.fuseauDebutId; r["fuseauFin"] = x.fuseauFinId; r["creeLe"] = x.creeLe; r["voyageUID"] = x.voyage?.uid
             r["lien"] = x.lien; r["siteWeb"] = x.siteWeb
+            r["prixAdulte"] = x.prixAdulte; r["prixEtudiant"] = x.prixEtudiant; r["prixEnfant"] = x.prixEnfant
+            r["monnaieAdulte"] = x.monnaieAdulteBrut; r["monnaieEtudiant"] = x.monnaieEtudiantBrut; r["monnaieEnfant"] = x.monnaieEnfantBrut
             r["visiblePour"] = (x.visiblePour ?? []).isEmpty ? nil : x.visiblePour
             return r
         case let d as Document:
@@ -403,6 +405,9 @@ enum Codec {
             x.prix = nombre("prix"); x.devise = texte("devise"); x.notes = texte("notes")
             x.ajouteeAItineraire = (entier("ajouteeAItineraire") ?? 0) == 1; x.fuseauDebutId = r["fuseauDebut"] as? String; x.fuseauFinId = r["fuseauFin"] as? String
             x.lien = r["lien"] as? String; x.siteWeb = r["siteWeb"] as? String
+            x.prixAdulte = nombre("prixAdulte"); x.prixEtudiant = nombre("prixEtudiant"); x.prixEnfant = nombre("prixEnfant")
+            x.monnaieAdulteBrut = r["monnaieAdulte"] as? String; x.monnaieEtudiantBrut = r["monnaieEtudiant"] as? String
+            x.monnaieEnfantBrut = r["monnaieEnfant"] as? String
             x.visiblePour = r["visiblePour"] as? [String]
             x.creeLe = date("creeLe") ?? x.creeLe; x.voyage = parent
             return x

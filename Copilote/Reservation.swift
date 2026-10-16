@@ -53,6 +53,14 @@ final class Reservation {
     var lieu: String
     var prix: Double?
     var devise: String
+    /// Prix par personne : dès que l'un est saisi, le Budget applique à chaque voyageur concerné celui de son tarif, au lieu du prix total.
+    var prixAdulte: Double?
+    var prixEtudiant: Double?
+    var prixEnfant: Double?
+    /// Monnaie de chaque prix par personne (`MonnaiePrix`) ; nil : l'euro.
+    var monnaieAdulteBrut: String?
+    var monnaieEtudiantBrut: String?
+    var monnaieEnfantBrut: String?
     var notes: String
     var ajouteeAItineraire: Bool
     /// Fuseaux (identifiants) des heures de début et de fin, s'ils diffèrent de celui du voyage.

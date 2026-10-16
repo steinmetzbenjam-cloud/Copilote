@@ -10,6 +10,8 @@ struct ReservationEditView: View {
     @Environment(\.modelContext) private var contexte
     @FocusState private var titreActif: Bool
     @State private var suppressionDemandee = false
+    /// Hébergements remplacés en reportant la réservation sur ses nuits : une alerte les signale avant de fermer.
+    @State private var remplacements: String?
 
     private var finActivee: Binding<Bool> {
         Binding(get: { reservation.fin != nil },
@@ -95,24 +97,7 @@ struct ReservationEditView: View {
                 }
                 .teinte(.orange)
 
-                Section {
-                    // Le montant, puis juste le code de la monnaie (sans libellé) : un menu propose les monnaies du voyage.
-                    HStack {
-                        TextField("Montant", text: prixTexte)
-                            .labelsHidden()
-                            #if os(iOS)
-                            .keyboardType(.decimalPad)
-                            #endif
-                        Picker("", selection: $reservation.devise) {
-                            ForEach(devisesProposees, id: \.self) { Text($0).tag($0) }
-                        }
-                        .labelsHidden()
-                        .fixedSize()
-                    }
-                } header: {
-                    EnTeteColore("Prix", symbole: "eurosign.circle", couleur: .green)
-                }
-                .teinte(.green)
+                sectionBudget
 
                 sectionLien
 
@@ -147,10 +132,22 @@ struct ReservationEditView: View {
             .navigationBarTitleDisplayMode(.inline)
             #endif
             .toolbar {
-                ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) { Button("OK", action: valider) }
             }
             .onAppear { if reservation.titre.isEmpty { titreActif = true } }
             .onChange(of: reservation.lien) { _, nouveau in reprendre(nouveau) }
+            // Réservation validée (OK ou fiche fermée) : un hébergement de plusieurs nuits est reporté sur chacune.
+            .onDisappear {
+                guard !reservation.isDeleted, reservation.modelContext != nil, !voyage.lectureSeule else { return }
+                voyage.reporterHebergement(de: reservation, dans: contexte)
+            }
+            // Si le report doit remplacer un autre hébergement, on passe par « OK » pour voir l'alerte.
+            .interactiveDismissDisabled(!voyage.lectureSeule && !(voyage.reportHebergement(de: reservation)?.remplaces.isEmpty ?? true))
+            .alert("Hébergements remplacés", isPresented: Binding(get: { remplacements != nil }, set: { if !$0 { remplacements = nil } })) {
+                Button("OK") { dismiss() }
+            } message: {
+                Text(remplacements ?? "")
+            }
         }
         #if os(macOS)
         .frame(minWidth: 460, minHeight: 620)
@@ -158,6 +155,60 @@ struct ReservationEditView: View {
     }
 
     private var moi: String { MoiVoyage.lire(voyage) }
+
+    /// « OK » : reporte un hébergement de plusieurs nuits sur chacune, et prévient si d'autres hébergements ont dû céder leur place.
+    private func valider() {
+        guard !voyage.lectureSeule, let report = voyage.reporterHebergement(de: reservation, dans: contexte),
+              !report.remplaces.isEmpty else { dismiss(); return }
+        let nom = report.hebergement.titre.isEmpty ? "L'hébergement réservé" : "« \(report.hebergement.titre) »"
+        let lignes = report.remplaces.map { r in
+            let titre = r.etape.titre.isEmpty ? r.etape.categorie.libelle : r.etape.titre
+            return "• « \(titre) », nuit du \(r.nuit.formatted(.dateTime.weekday(.wide).day().month(.wide)))"
+        }
+        remplacements = "\(nom) occupe maintenant toutes les nuits de la réservation. Ces hébergements sont passés dans « Étapes à placer » :\n"
+            + lignes.joined(separator: "\n")
+    }
+
+    /// Le prix par personne (adulte, étudiant, enfant), comme dans la fiche d'une étape ; sinon un prix total.
+    private var sectionBudget: some View {
+        Section {
+            LignesPrix(voyage: voyage,
+                       adulte: $reservation.prixAdulte, adulteMonnaie: $reservation.monnaieAdulte,
+                       etudiant: $reservation.prixEtudiant, etudiantMonnaie: $reservation.monnaieEtudiant,
+                       enfant: $reservation.prixEnfant, enfantMonnaie: $reservation.monnaieEnfant)
+            if reservation.aDesPrixParPersonne {
+                let nombre = voyage.concernes(par: reservation).count
+                LabeledContent(nombre > 1 ? "Total pour \(nombre) voyageurs" : "Total") {
+                    Text(voyage.montant(de: reservation).map { Monnaies.formater($0.montant, $0.devise) } ?? "—")
+                        .monospacedDigit()
+                }
+            } else {
+                // Le montant, puis juste le code de la monnaie (sans libellé) : un menu propose les monnaies du voyage.
+                HStack {
+                    Text("Ou prix total")
+                    TextField("Montant", text: prixTexte)
+                        .labelsHidden()
+                        .multilineTextAlignment(.trailing)
+                        #if os(iOS)
+                        .keyboardType(.decimalPad)
+                        #endif
+                    Picker("", selection: $reservation.devise) {
+                        ForEach(devisesProposees, id: \.self) { Text($0).tag($0) }
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
+            }
+        } header: {
+            EnTeteColore("Budget", symbole: "eurosign.circle", couleur: .green)
+        } footer: {
+            Text(reservation.aDesPrixParPersonne
+                 ? "Chaque voyageur qui peut voir la réservation compte le prix de son tarif (sans prix étudiant, le prix adulte). Efface les prix par personne pour saisir un prix total."
+                 : "Saisis le prix par personne, ou un prix total partagé à parts égales entre les voyageurs qui peuvent voir la réservation.")
+            + Text(" Liée à une étape, un hébergement ou un transport, la réservation remplace son prix prévu dans le Budget.")
+        }
+        .teinte(.green)
+    }
 
     /// Qui voit la réservation : tout le monde, ou seulement certains voyageurs (moi toujours compris).
     private var sectionVisibilite: some View {
@@ -234,8 +285,17 @@ struct ReservationEditView: View {
     private func reprendre(_ cle: String?) {
         guard let cle, let infos = voyage.infos(deLaCible: cle) else { return }
         reservation.type = infos.type
-        reservation.debut = infos.debut
-        reservation.fin = infos.fin
+        // Un séjour de plusieurs nuits qui comprend la nuit liée garde ses dates : les autres nuits y seront reportées.
+        let cal = Calendar.current
+        let sejourDejaSaisi = infos.type == .hebergement && reservation.fin.map { fin in
+            cal.startOfDay(for: reservation.debut) <= cal.startOfDay(for: infos.debut)
+                && cal.startOfDay(for: fin) >= cal.startOfDay(for: infos.fin ?? infos.debut)
+                && cal.startOfDay(for: fin) > cal.startOfDay(for: reservation.debut)
+        } == true
+        if !sejourDejaSaisi {
+            reservation.debut = infos.debut
+            reservation.fin = infos.fin
+        }
         if reservation.titre.trimmingCharacters(in: .whitespaces).isEmpty { reservation.titre = infos.titre }
         if reservation.lieu.trimmingCharacters(in: .whitespaces).isEmpty { reservation.lieu = infos.lieu }
         if reservation.fournisseur.isEmpty { reservation.fournisseur = infos.fournisseur }
@@ -281,9 +341,14 @@ struct ReservationEditView: View {
         if !reservation.numeroConfirmation.isEmpty {
             etape.notes = "Réservation : \(reservation.numeroConfirmation)"
         }
-        etape.ordre = voyage.prochainOrdre(du: reservation.debut)
         etape.voyage = voyage
         contexte.insert(etape)
+        // Un hébergement va dans la nuit de l'arrivée (les nuits suivantes sont reportées en fermant la fiche).
+        if reservation.type == .hebergement, voyage.hebergements(apres: reservation.debut).isEmpty {
+            voyage.placerEntreJours(etape, apres: reservation.debut)
+        } else {
+            etape.ordre = voyage.prochainOrdre(du: reservation.debut)
+        }
         reservation.ajouteeAItineraire = true
         if reservation.lien == nil { reservation.lien = LienReservation.etape(etape) }
     }

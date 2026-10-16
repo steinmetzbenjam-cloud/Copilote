@@ -13,8 +13,8 @@ struct ReservationsView: View {
 
     /// Totaux par devise, sans conversion.
     private var totaux: [(devise: String, montant: Double)] {
-        Dictionary(grouping: voyage.reservationsVisibles.filter { $0.prix != nil }, by: \.devise)
-            .map { ($0.key, $0.value.compactMap(\.prix).reduce(0, +)) }
+        Dictionary(grouping: voyage.reservationsVisibles.compactMap { voyage.montant(de: $0) }, by: \.devise)
+            .map { ($0.key, $0.value.map(\.montant).reduce(0, +)) }
             .sorted { $0.0 < $1.0 }
     }
 
@@ -80,8 +80,8 @@ struct ReservationsView: View {
                 .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            if let prix = r.prix {
-                Text(prix.formatted(.currency(code: r.devise))).font(.subheadline).foregroundStyle(.secondary)
+            if let prix = voyage.montant(de: r) {
+                Text(prix.montant.formatted(.currency(code: prix.devise))).font(.subheadline).foregroundStyle(.secondary)
             }
         }
         .contentShape(Rectangle())

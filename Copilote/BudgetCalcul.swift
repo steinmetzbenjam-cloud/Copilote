@@ -122,6 +122,16 @@ extension Voyage {
             var couverts = Set<String>()
             var retenu = false
             for r in reservationsChiffrees(lieesA: cle) {
+                // Prix par personne : chaque voyageur concerné paie celui de son tarif.
+                if r.aDesPrixParPersonne {
+                    let concernes = self.concernes(par: r)
+                    let p = prix((r.prixAdulte, r.monnaieAdulte), (r.prixEtudiant, r.monnaieEtudiant), (r.prixEnfant, r.monnaieEnfant))
+                    resultat.elements.append(ElementBudget(titre: "\(titre) · réservation", jour: jour, poste: poste, prix: p,
+                                                           exclus: Set(membres.map(\.uid)).subtracting(concernes)))
+                    couverts.formUnion(concernes)
+                    retenu = true
+                    continue
+                }
                 guard let montant = r.prix else { continue }
                 guard let enEuros = versEuros(montant, code: r.devise) else { resultat.tauxManquants += 1; continue }
                 let concernes = self.concernes(par: r)

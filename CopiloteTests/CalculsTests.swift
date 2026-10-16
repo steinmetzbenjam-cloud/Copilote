@@ -115,4 +115,67 @@ struct CalculsTests {
         #expect(elements.total(pour: [alex]) == 150)
         #expect(elements.total(pour: [bruno]) == 100)
     }
+
+    @Test func budgetPrendLesPrixParPersonneDUneReservationLiee() {
+        let v = voyage()
+        let alex = membre("Alex", tarif: .adulte, dans: v)
+        let chloe = membre("Chloé", tarif: .etudiant, dans: v)
+        let lou = membre("Lou", tarif: .enfant, dans: v)
+        let musee = Etape(titre: "Musée", jour: v.debut, categorie: .activite)
+        musee.prixAdulte = 30
+        musee.voyage = v
+        contexte.insert(musee)
+        // Billets à 20 € l'adulte et 8 € l'enfant ; sans prix étudiant, Chloé paie le prix adulte.
+        let r = Reservation(type: .activite, debut: v.debut)
+        r.prixAdulte = 20
+        r.prixEnfant = 8
+        r.lien = LienReservation.etape(musee)
+        r.voyage = v
+        contexte.insert(r)
+
+        let elements = v.calculerBudget().elements
+        #expect(elements.total(pour: [alex]) == 20)
+        #expect(elements.total(pour: [chloe]) == 20)
+        #expect(elements.total(pour: [lou]) == 8)
+        #expect(v.montant(de: r)?.montant == 48)
+    }
+
+    @Test func hebergementReporteSurLesNuitsDeLaReservation() {
+        let cal = Calendar.current
+        let debut = cal.startOfDay(for: .now)
+        func jour(_ n: Int) -> Date { cal.date(byAdding: .day, value: n, to: debut)! }
+        let v = Voyage(titre: "Essai", debut: debut, fin: jour(6))
+        contexte.insert(v)
+        membre("Alex", dans: v)
+        // L'hôtel est saisi pour la nuit du jour 2 ; la nuit du jour 4 a déjà un autre hébergement, qui lui cède la place.
+        let hotel = Etape(titre: "Hôtel du Lac", jour: nil, categorie: .hebergement)
+        hotel.prixAdulte = 80
+        hotel.voyage = v
+        contexte.insert(hotel)
+        v.placerEntreJours(hotel, apres: jour(2))
+        let autre = Etape(titre: "Camping", jour: nil, categorie: .hebergement)
+        autre.voyage = v
+        contexte.insert(autre)
+        v.placerEntreJours(autre, apres: jour(4))
+        // Réservé du jour 1 au jour 5, 400 € : nuits des jours 1, 2, 3 et 4.
+        let r = Reservation(type: .hebergement, debut: jour(1).addingTimeInterval(15 * 3600))
+        r.fin = jour(5).addingTimeInterval(11 * 3600)
+        r.prix = 400
+        r.lien = LienReservation.etape(hotel)
+        r.voyage = v
+        contexte.insert(r)
+
+        let report = v.reporterHebergement(de: r, dans: contexte)
+        #expect(report?.nuits.count == 3)
+        #expect(report?.remplaces.map(\.etape.titre) == ["Camping"])
+        #expect(v.hebergements(apres: jour(1)).map(\.titre) == ["Hôtel du Lac"])
+        #expect(v.hebergements(apres: jour(3)).map(\.titre) == ["Hôtel du Lac"])
+        #expect(v.hebergements(apres: jour(4)).map(\.titre) == ["Hôtel du Lac"])
+        #expect(autre.jour == nil)
+        #expect(v.hebergements(apres: jour(0)).isEmpty)
+        // Le prix de la réservation couvre le séjour : il n'est pas compté deux fois.
+        #expect(v.calculerBudget().elements.total(pour: v.membres) == 400)
+        // Une seconde validation n'ajoute rien.
+        #expect(v.reporterHebergement(de: r, dans: contexte) == nil)
+    }
 }
