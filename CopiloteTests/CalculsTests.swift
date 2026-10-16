@@ -178,4 +178,48 @@ struct CalculsTests {
         // Une seconde validation n'ajoute rien.
         #expect(v.reporterHebergement(de: r, dans: contexte) == nil)
     }
+
+    @Test func budgetAdolescentPaieSonPrixOuLePrixEnfant() {
+        let v = voyage()
+        let sam = membre("Sam", tarif: .adolescent, dans: v)
+        #expect(Tarif.pour(age: 11) == .enfant)
+        #expect(Tarif.pour(age: 14) == .adolescent)
+        #expect(Tarif.pour(age: 18) == .adulte)
+        let zoo = Etape(titre: "Zoo", jour: v.debut, categorie: .activite)
+        zoo.prixAdulte = 25
+        zoo.prixEnfant = 10
+        zoo.voyage = v
+        contexte.insert(zoo)
+        // Sans prix adolescent : le prix enfant.
+        #expect(v.calculerBudget().elements.total(pour: [sam]) == 10)
+        zoo.prixAdolescent = 15
+        #expect(v.calculerBudget().elements.total(pour: [sam]) == 15)
+    }
+
+    @Test func budgetEnfantEtAdolescentPeuventEchangerLeurPrix() {
+        let v = voyage()
+        let sam = membre("Sam", tarif: .adolescent, dans: v)
+        let lou = membre("Lou", tarif: .enfant, dans: v)
+        let parc = Etape(titre: "Parc", jour: v.debut, categorie: .activite)
+        parc.prixEnfant = 10
+        parc.prixAdolescent = 15
+        parc.voyage = v
+        contexte.insert(parc)
+        // Ici, Sam paie le prix enfant et Lou le prix adolescent.
+        parc.basculesTarif = [sam.uid, lou.uid]
+        let elements = v.calculerBudget().elements
+        #expect(elements.total(pour: [sam]) == 10)
+        #expect(elements.total(pour: [lou]) == 15)
+    }
+
+    @Test func dateDeNaissanceDonneLAgeAuDepart() {
+        let v = voyage()
+        let lou = membre("Lou", dans: v)
+        lou.age = 30
+        // 12 ans la veille du départ : adolescent, quel que soit l'âge saisi.
+        let veille = Calendar.current.date(byAdding: .day, value: -1, to: v.debut)!
+        lou.dateNaissance = Calendar.current.date(byAdding: .year, value: -12, to: veille)
+        #expect(lou.ageAuVoyage == 12)
+        #expect(lou.tarif == .adolescent)
+    }
 }

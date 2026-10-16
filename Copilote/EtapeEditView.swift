@@ -450,8 +450,9 @@ struct EtapeEditView: View {
                 LignesPrix(voyage: etape.voyage,
                            adulte: $etape.prixAdulte, adulteMonnaie: $etape.monnaieAdulte,
                            etudiant: $etape.prixEtudiant, etudiantMonnaie: $etape.monnaieEtudiant,
+                           adolescent: $etape.prixAdolescent, adolescentMonnaie: $etape.monnaieAdolescent,
                            enfant: $etape.prixEnfant, enfantMonnaie: $etape.monnaieEnfant,
-                           exclus: $etape.exclusBudget)
+                           exclus: $etape.exclusBudget, bascules: $etape.basculesTarif)
             }
             piedBudget(etape.voyage).font(.footnote).foregroundStyle(.secondary)
         }

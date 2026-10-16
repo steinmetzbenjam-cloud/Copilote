@@ -78,8 +78,8 @@ extension Etape {
         c.noteGoogle = noteGoogle; c.avisGoogle = avisGoogle; c.lienGoogle = lienGoogle
         c.noteTripadvisor = noteTripadvisor; c.avisTripadvisor = avisTripadvisor; c.lienTripadvisor = lienTripadvisor
         c.siteWeb = siteWeb
-        c.prixAdulte = prixAdulte; c.prixEnfant = prixEnfant; c.prixEtudiant = prixEtudiant
-        c.monnaieAdulte = monnaieAdulte; c.monnaieEnfant = monnaieEnfant; c.monnaieEtudiant = monnaieEtudiant
+        c.prixAdulte = prixAdulte; c.prixEnfant = prixEnfant; c.prixEtudiant = prixEtudiant; c.prixAdolescent = prixAdolescent
+        c.monnaieAdulte = monnaieAdulte; c.monnaieEnfant = monnaieEnfant; c.monnaieEtudiant = monnaieEtudiant; c.monnaieAdolescent = monnaieAdolescent
         c.voyage = voyage
         contexte.insert(c)
         for photo in photos {
@@ -162,6 +162,9 @@ final class Etape {
     var prixAdulte: Double?
     var prixEnfant: Double?
     var prixEtudiant: Double?
+    var prixAdolescent: Double?
+    var prixAdolescentLocal: Bool = false
+    var prixAdolescentTierce: Bool = false
     var prixAdulteLocal: Bool = false
     var prixEnfantLocal: Bool = false
     var prixEtudiantLocal: Bool = false
@@ -171,6 +174,8 @@ final class Etape {
     var prixEtudiantTierce: Bool = false
     /// Voyageurs (uid) non concernés par le prix prévu : ils ne comptent pas dans le Budget. Vide ou nil : tout le monde.
     var exclusBudget: [String]?
+    /// Enfants et adolescents (uid) qui paient ici le prix de l'autre tarif : un adolescent au prix enfant, un enfant au prix adolescent.
+    var basculesTarif: [String]?
     var creeLe: Date
     var uid: String = ""
     /// Transport vers l'étape suivante, en JSON (voir Transport).

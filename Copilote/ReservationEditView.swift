@@ -169,12 +169,13 @@ struct ReservationEditView: View {
             + lignes.joined(separator: "\n")
     }
 
-    /// Le prix par personne (adulte, étudiant, enfant), comme dans la fiche d'une étape ; sinon un prix total.
+    /// Le prix par personne (adulte, étudiant, adolescent, enfant), comme dans la fiche d'une étape ; sinon un prix total.
     private var sectionBudget: some View {
         Section {
             LignesPrix(voyage: voyage,
                        adulte: $reservation.prixAdulte, adulteMonnaie: $reservation.monnaieAdulte,
                        etudiant: $reservation.prixEtudiant, etudiantMonnaie: $reservation.monnaieEtudiant,
+                       adolescent: $reservation.prixAdolescent, adolescentMonnaie: $reservation.monnaieAdolescent,
                        enfant: $reservation.prixEnfant, enfantMonnaie: $reservation.monnaieEnfant)
             if reservation.aDesPrixParPersonne {
                 let nombre = voyage.concernes(par: reservation).count
@@ -203,7 +204,7 @@ struct ReservationEditView: View {
             EnTeteColore("Budget", symbole: "eurosign.circle", couleur: .green)
         } footer: {
             Text(reservation.aDesPrixParPersonne
-                 ? "Chaque voyageur qui peut voir la réservation compte le prix de son tarif (sans prix étudiant, le prix adulte). Efface les prix par personne pour saisir un prix total."
+                 ? "Chaque voyageur qui peut voir la réservation compte le prix de son tarif (sans prix étudiant, le prix adulte ; sans prix adolescent, le prix enfant). Efface les prix par personne pour saisir un prix total."
                  : "Saisis le prix par personne, ou un prix total partagé à parts égales entre les voyageurs qui peuvent voir la réservation.")
             + Text(" Liée à une étape, un hébergement ou un transport, la réservation remplace son prix prévu dans le Budget.")
         }

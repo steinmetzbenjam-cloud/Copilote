@@ -13,13 +13,21 @@ final class Membre {
     @Attribute(.externalStorage) var avatar: Data?
     /// Famille à laquelle le voyageur appartient pour le budget (nom libre, commun aux membres d'une même famille).
     var familleNom: String?
+    /// Âge saisi à la main ; avec une date de naissance, c'est elle qui compte (voir `ageAuVoyage`).
     var age: Int?
+    var dateNaissance: Date?
     /// Tarif choisi à la main (`Tarif`) ; sinon il découle de l'âge.
     var tarifBrut: String?
     /// E-mail utilisé pour inviter cette personne dans l'app : sert à la reconnaître quand elle ouvre le voyage.
     var emailInvitation: String?
     /// Rôle dans le voyage (`RoleVoyage`) ; vide tant qu'aucun rôle n'a été distribué.
     var roleBrut: String?
+
+    /// L'âge au premier jour du voyage, d'après la date de naissance ; sinon l'âge saisi.
+    var ageAuVoyage: Int? {
+        guard let dateNaissance else { return age }
+        return Calendar.current.dateComponents([.year], from: dateNaissance, to: voyage?.debut ?? .now).year.map { max($0, 0) }
+    }
 
     init(nom: String) {
         self.nom = nom

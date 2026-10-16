@@ -273,19 +273,20 @@ extension Voyage {
         for jour in report.nuits {
             let copie = report.hebergement.copieHebergement(nuit: jour, dans: contexte)
             if paye {
-                copie.prixAdulte = nil; copie.prixEtudiant = nil; copie.prixEnfant = nil
+                copie.prixAdulte = nil; copie.prixEtudiant = nil; copie.prixAdolescent = nil; copie.prixEnfant = nil
             }
         }
         return report
     }
 
     /// Ce que coûte une réservation : avec des prix par personne, la somme (en euros) du prix de chaque voyageur concerné
-    /// selon son tarif (sans prix étudiant, le prix adulte) ; sinon son prix total, dans sa monnaie.
+    /// selon son tarif (sans prix étudiant, le prix adulte ; sans prix adolescent, le prix enfant) ; sinon son prix total, dans sa monnaie.
     func montant(de r: Reservation) -> (montant: Double, devise: String)? {
         guard r.aDesPrixParPersonne else { return r.prix.map { ($0, r.devise) } }
         func euros(_ prix: Double?, _ monnaie: MonnaiePrix) -> Double? { prix.flatMap { versEuros($0, depuis: monnaie) } }
         let adulte = euros(r.prixAdulte, r.monnaieAdulte)
         let parTarif: [Tarif: Double?] = [.adulte: adulte, .etudiant: euros(r.prixEtudiant, r.monnaieEtudiant) ?? adulte,
+                                          .adolescent: euros(r.prixAdolescent, r.monnaieAdolescent) ?? euros(r.prixEnfant, r.monnaieEnfant),
                                           .enfant: euros(r.prixEnfant, r.monnaieEnfant)]
         let concernes = concernes(par: r)
         let total = membres.filter { concernes.contains($0.uid) }.reduce(0.0) { $0 + ((parTarif[$1.tarif] ?? nil) ?? 0) }

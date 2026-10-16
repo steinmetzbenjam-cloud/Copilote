@@ -190,7 +190,7 @@ enum Codec {
             let r = base(.membre, m.uid, zone, systeme)
             r["nom"] = m.nom; r["creeLe"] = m.creeLe; r["voyageUID"] = m.voyage?.uid
             r["nomFamille"] = m.nomFamille; r["email"] = m.email
-            r["famille"] = m.familleNom; r["age"] = m.age; r["tarif"] = m.tarifBrut; r["emailInvitation"] = m.emailInvitation
+            r["famille"] = m.familleNom; r["age"] = m.age; r["dateNaissance"] = m.dateNaissance; r["tarif"] = m.tarifBrut; r["emailInvitation"] = m.emailInvitation
             r["role"] = m.roleBrut
             // L'empreinte de la photo (un texte) permet de détecter son changement : les fichiers ne comptent pas dans l'empreinte.
             r["avatarEmpreinte"] = m.avatar.map(empreinteDonnees)
@@ -218,7 +218,10 @@ enum Codec {
             r["prixEtudiantLocal"] = e.prixEtudiantLocal ? 1 : 0
             r["prixAdulteTierce"] = e.prixAdulteTierce ? 1 : 0; r["prixEnfantTierce"] = e.prixEnfantTierce ? 1 : 0
             r["prixEtudiantTierce"] = e.prixEtudiantTierce ? 1 : 0
+            r["prixAdolescent"] = e.prixAdolescent
+            r["prixAdolescentLocal"] = e.prixAdolescentLocal ? 1 : 0; r["prixAdolescentTierce"] = e.prixAdolescentTierce ? 1 : 0
             r["exclusBudget"] = (e.exclusBudget ?? []).isEmpty ? nil : e.exclusBudget
+            r["basculesTarif"] = (e.basculesTarif ?? []).isEmpty ? nil : e.basculesTarif
             return r
         case let x as Reservation:
             let r = base(.reservation, x.uid, zone, systeme)
@@ -228,6 +231,7 @@ enum Codec {
             r["ajouteeAItineraire"] = x.ajouteeAItineraire ? 1 : 0; r["fuseauDebut"] = x.fuseauDebutId; r["fuseauFin"] = x.fuseauFinId; r["creeLe"] = x.creeLe; r["voyageUID"] = x.voyage?.uid
             r["lien"] = x.lien; r["siteWeb"] = x.siteWeb
             r["prixAdulte"] = x.prixAdulte; r["prixEtudiant"] = x.prixEtudiant; r["prixEnfant"] = x.prixEnfant
+            r["prixAdolescent"] = x.prixAdolescent; r["monnaieAdolescent"] = x.monnaieAdolescentBrut
             r["monnaieAdulte"] = x.monnaieAdulteBrut; r["monnaieEtudiant"] = x.monnaieEtudiantBrut; r["monnaieEnfant"] = x.monnaieEnfantBrut
             r["visiblePour"] = (x.visiblePour ?? []).isEmpty ? nil : x.visiblePour
             return r
@@ -364,7 +368,7 @@ enum Codec {
             }()
             m.nom = texte("nom"); m.creeLe = date("creeLe") ?? m.creeLe; m.voyage = parent
             m.nomFamille = r["nomFamille"] as? String; m.email = r["email"] as? String
-            m.familleNom = r["famille"] as? String; m.age = entier("age"); m.tarifBrut = r["tarif"] as? String
+            m.familleNom = r["famille"] as? String; m.age = entier("age"); m.dateNaissance = date("dateNaissance"); m.tarifBrut = r["tarif"] as? String
             m.emailInvitation = r["emailInvitation"] as? String; m.roleBrut = r["role"] as? String
             if let fichier = (r["avatar"] as? CKAsset)?.fileURL, let photo = try? Data(contentsOf: fichier) {
                 m.avatar = photo
@@ -391,7 +395,10 @@ enum Codec {
             e.prixEtudiantLocal = (entier("prixEtudiantLocal") ?? 0) == 1
             e.prixAdulteTierce = (entier("prixAdulteTierce") ?? 0) == 1; e.prixEnfantTierce = (entier("prixEnfantTierce") ?? 0) == 1
             e.prixEtudiantTierce = (entier("prixEtudiantTierce") ?? 0) == 1
+            e.prixAdolescent = nombre("prixAdolescent")
+            e.prixAdolescentLocal = (entier("prixAdolescentLocal") ?? 0) == 1; e.prixAdolescentTierce = (entier("prixAdolescentTierce") ?? 0) == 1
             e.exclusBudget = r["exclusBudget"] as? [String]
+            e.basculesTarif = r["basculesTarif"] as? [String]
             return e
 
         case .reservation:
@@ -408,6 +415,7 @@ enum Codec {
             x.prixAdulte = nombre("prixAdulte"); x.prixEtudiant = nombre("prixEtudiant"); x.prixEnfant = nombre("prixEnfant")
             x.monnaieAdulteBrut = r["monnaieAdulte"] as? String; x.monnaieEtudiantBrut = r["monnaieEtudiant"] as? String
             x.monnaieEnfantBrut = r["monnaieEnfant"] as? String
+            x.prixAdolescent = nombre("prixAdolescent"); x.monnaieAdolescentBrut = r["monnaieAdolescent"] as? String
             x.visiblePour = r["visiblePour"] as? [String]
             x.creeLe = date("creeLe") ?? x.creeLe; x.voyage = parent
             return x

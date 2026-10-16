@@ -284,9 +284,9 @@ struct BudgetView: View {
         case .personne:
             if let membre = voyage.membre(uid: personneEffective) {
                 CadreInfos(titre: "Tarif appliqué", symbole: "person.fill", couleur: .teal,
-                           pied: "Le tarif découle de l'âge (enfant jusqu'à \(Tarif.ageEnfantMax) ans) ou du choix fait dans la fiche du voyageur, dans l'onglet Groupe.") {
+                           pied: "Le tarif découle de l'âge (enfant jusqu'à \(Tarif.ageEnfantMax) ans, adolescent jusqu'à \(Tarif.ageAdolescentMax) ans) ou du choix fait dans la fiche du voyageur, dans l'onglet Groupe.") {
                     LabeledContent("Tarif", value: membre.tarif.libelle)
-                    if let age = membre.age { LabeledContent("Âge", value: "\(age) ans") }
+                    if let age = membre.ageAuVoyage { LabeledContent("Âge", value: "\(age) ans") }
                     if !membre.famille.isEmpty { LabeledContent("Famille", value: membre.famille) }
                 }
             }
@@ -294,7 +294,7 @@ struct BudgetView: View {
     }
 
     private func detailPersonne(_ membre: Membre) -> String {
-        [membre.age.map { "\($0) ans" }, membre.tarif.libelle].compactMap { $0 }.joined(separator: " · ")
+        [membre.ageAuVoyage.map { "\($0) ans" }, membre.tarif.libelle].compactMap { $0 }.joined(separator: " · ")
     }
 
     private func ligneFamille(_ nom: String, _ membres: [Membre], _ calcul: BudgetCalcule, ouvrir: @escaping () -> Void) -> some View {
@@ -336,7 +336,7 @@ struct BudgetView: View {
         if ignorees > 0 {
             notes.append("\(ignorees) dépense\(ignorees > 1 ? "s" : "") dans une monnaie que le voyage ne convertit pas (ni euro, ni monnaie locale, ni troisième monnaie) ne sont pas prises en compte dans « Déjà réglé ».")
         }
-        if !voyage.membres.isEmpty, voyage.membres.allSatisfy({ $0.age == nil && $0.tarifBrut == nil }) {
+        if !voyage.membres.isEmpty, voyage.membres.allSatisfy({ $0.ageAuVoyage == nil && $0.tarifBrut == nil }) {
             notes.append("Aucun âge renseigné : tout le monde est compté au tarif adulte.")
         }
         return notes

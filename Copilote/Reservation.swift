@@ -57,10 +57,12 @@ final class Reservation {
     var prixAdulte: Double?
     var prixEtudiant: Double?
     var prixEnfant: Double?
+    var prixAdolescent: Double?
     /// Monnaie de chaque prix par personne (`MonnaiePrix`) ; nil : l'euro.
     var monnaieAdulteBrut: String?
     var monnaieEtudiantBrut: String?
     var monnaieEnfantBrut: String?
+    var monnaieAdolescentBrut: String?
     var notes: String
     var ajouteeAItineraire: Bool
     /// Fuseaux (identifiants) des heures de début et de fin, s'ils diffèrent de celui du voyage.

@@ -89,7 +89,7 @@ struct CadreFamilles: View {
                             if voyage.role(de: membre.uid) != .voyageur { PastilleRole(role: voyage.role(de: membre.uid)) }
                         }
                     }
-                    Text([membre.age.map { "\($0) ans" }, membre.tarif.libelle].compactMap { $0 }.joined(separator: " · "))
+                    Text([membre.ageAuVoyage.map { "\($0) ans" }, membre.tarif.libelle].compactMap { $0 }.joined(separator: " · "))
                         .font(.footnote).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -181,12 +181,28 @@ struct MembreEditView: View {
                 }
                 Section {
                     TextField("Prénom", text: $membre.nom)
-                    LabeledContent("Âge") {
-                        TextField("—", text: ageTexte)
-                            .multilineTextAlignment(.trailing)
-                            #if os(iOS)
-                            .keyboardType(.numberPad)
-                            #endif
+                    // Avec une date de naissance, l'âge (au premier jour du voyage) en découle.
+                    if let naissance = membre.dateNaissance {
+                        HStack {
+                            DatePicker("Date de naissance", selection: Binding(get: { naissance }, set: { membre.dateNaissance = $0 }),
+                                       in: ...Date.now, displayedComponents: .date)
+                            Button("Retirer la date de naissance", systemImage: "xmark.circle.fill") { membre.dateNaissance = nil }
+                                .labelStyle(.iconOnly).buttonStyle(.borderless).foregroundStyle(.secondary)
+                        }
+                        LabeledContent("Âge au départ", value: membre.ageAuVoyage.map { "\($0) ans" } ?? "—")
+                    } else {
+                        Button("Ajouter la date de naissance", systemImage: "birthday.cake") {
+                            // Proposée d'après l'âge saisi, s'il y en a un.
+                            let ans = membre.age ?? 30
+                            membre.dateNaissance = Calendar.current.date(byAdding: .year, value: -ans, to: Calendar.current.startOfDay(for: voyage.debut))
+                        }
+                        LabeledContent("Âge") {
+                            TextField("—", text: ageTexte)
+                                .multilineTextAlignment(.trailing)
+                                #if os(iOS)
+                                .keyboardType(.numberPad)
+                                #endif
+                        }
                     }
                     LabeledContent("Famille") {
                         HStack(spacing: 6) {
@@ -202,11 +218,11 @@ struct MembreEditView: View {
                 }
                 Section {
                     Picker("Tarif", selection: tarifChoisi) {
-                        Text("Selon l'âge (\(Tarif.pour(age: membre.age).libelle))").tag("")
+                        Text("Selon l'âge (\(Tarif.pour(age: membre.ageAuVoyage).libelle))").tag("")
                         ForEach(Tarif.allCases) { Text($0.libelle).tag($0.rawValue) }
                     }
                 } footer: {
-                    Text("Détermine le prix retenu pour cette personne : adulte, étudiant ou enfant. Sans choix, l'enfant va jusqu'à \(Tarif.ageEnfantMax) ans.")
+                    Text("Détermine le prix retenu pour cette personne : adulte, étudiant, adolescent ou enfant. Sans choix : enfant jusqu'à \(Tarif.ageEnfantMax) ans, adolescent jusqu'à \(Tarif.ageAdolescentMax) ans.")
                 }
                 Section {
                     if estMoi {

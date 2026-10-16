@@ -93,6 +93,9 @@ struct Transport: Codable, Equatable {
     var prixAdulteTierce: Bool?
     var prixEtudiantTierce: Bool?
     var prixEnfantTierce: Bool?
+    var prixAdolescent: Double?
+    var prixAdolescentLocal: Bool?
+    var prixAdolescentTierce: Bool?
     /// Itinéraire en transports en commun cherché avec Google, gardé avec le transport (absent des anciens transports).
     var itineraireCommun: ItineraireCommun?
     /// Durée du trajet corrigée à la main après le calcul, en minutes. Le tracé calculé reste sur la carte ;
@@ -102,6 +105,8 @@ struct Transport: Codable, Equatable {
     var itineraireGoogle: ItineraireGoogle?
     /// Voyageurs (uid) non concernés par le prix prévu : ils ne comptent pas dans le Budget. Vide ou nil : tout le monde.
     var exclusBudget: [String]?
+    /// Enfants et adolescents (uid) qui paient ici le prix de l'autre tarif : un adolescent au prix enfant, un enfant au prix adolescent.
+    var basculesTarif: [String]?
 
     /// L'itinéraire Google, s'il a été calculé pour ce mode et entre ces deux lieux (il ne vaut plus si une étape a bougé).
     func itineraireGoogle(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> ItineraireGoogle? {
