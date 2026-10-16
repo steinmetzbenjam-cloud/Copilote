@@ -98,7 +98,12 @@ struct ApercuView: View {
 
     @ViewBuilder private var cadreProgramme: some View {
         if let (jour, aujourdhui) = voyage.jourEnAvant {
-            let elements = voyage.etapes(du: jour) + voyage.hebergements(apres: jour)
+            let etapesDuJour = voyage.etapes(du: jour)
+            // L'hébergement du matin (la nuit qui vient de finir) ouvre la journée, celui du soir (la nuit qui vient) la ferme.
+            let veille = Calendar.current.date(byAdding: .day, value: -1, to: jour) ?? jour
+            let hebergementsDuMatin = voyage.hebergements(apres: veille)
+            let hebergementsDuSoir = voyage.hebergements(apres: jour)
+            let elements = etapesDuJour + hebergementsDuSoir
             let prochaine = aujourdhui ? elements.first { ($0.dateHeure ?? .distantPast) > .now } : nil
             // Le temps prévu là où l'on est ce jour-là : la carte en prend l'aspect.
             let temps = meteo.prevision(jour, de: voyage, lieuVoyage: lieu) ?? meteoDuJour(jour)
@@ -111,15 +116,20 @@ struct ApercuView: View {
                 if premier, voyage.transportAller != nil {
                     PaveExtremite(voyage: voyage, extremite: .aller) { extremiteOuverte = .aller }
                 }
-                if elements.isEmpty {
+                if elements.isEmpty && hebergementsDuMatin.isEmpty {
                     Text("Rien de prévu ce jour-là pour l'instant.").foregroundStyle(.secondary)
                 }
-                // Le matin : le trajet depuis l'hôtel de la veille (ou la dernière étape de la veille) vers la première étape.
+                // Le matin : l'hébergement où l'on a dormi.
+                ForEach(hebergementsDuMatin) { hotel in
+                    ligne(hotel, estProchaine: false, legende: "Ce matin · hébergement")
+                }
+                // Puis le trajet depuis l'hôtel de la veille (ou la dernière étape de la veille) vers la première étape.
                 if let (depart, arrivee) = trajetDuMatin(jour), let t = depart.transport {
                     ligneTransport(t, depuis: depart, vers: arrivee, jour: jour)
                 }
                 ForEach(elements) { etape in
-                    ligne(etape, estProchaine: etape === prochaine)
+                    ligne(etape, estProchaine: etape === prochaine,
+                          legende: etape.categorie == .hebergement && etape.apresJour ? "Ce soir · hébergement" : nil)
                     // Le transport vers l'élément suivant, entre les deux ; en fin de journée, vers celui du lendemain.
                     if let t = etape.transport, let vers = destination(de: etape, jour: jour) {
                         ligneTransport(t, depuis: etape, vers: vers, jour: jour)
@@ -193,12 +203,13 @@ struct ApercuView: View {
         .padding(.leading, 20)
     }
 
-    private func ligne(_ etape: Etape, estProchaine: Bool) -> some View {
+    private func ligne(_ etape: Etape, estProchaine: Bool, legende: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 12) {
                 Image(systemName: etape.categorie.symbole).foregroundStyle(.white).frame(width: 32, height: 32)
                     .background(Circle().fill(estProchaine ? Color.orange : Color.accentColor))
                 VStack(alignment: .leading, spacing: 1) {
+                    if let legende { Text(legende).font(.caption2.weight(.semibold)).foregroundStyle(.secondary) }
                     Text(etape.titre.isEmpty ? etape.categorie.libelle : etape.titre).fontWeight(.semibold)
                     if !etape.lieu.isEmpty { Text(etape.lieu).font(.footnote).foregroundStyle(.secondary).lineLimit(1) }
                 }

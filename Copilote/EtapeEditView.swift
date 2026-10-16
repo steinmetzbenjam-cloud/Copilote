@@ -403,6 +403,14 @@ struct EtapeEditView: View {
                 let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
                 Text("Nuit du \(jour.formatted(.dateTime.day().month(.wide))) au \(lendemain.formatted(.dateTime.day().month(.wide)))")
                     .font(.footnote).foregroundStyle(.secondary)
+                // Fait partie d'un séjour réservé sur plusieurs nuits : combien, et lesquelles.
+                if let sejour = etape.voyage?.sejour(de: etape), let premiere = sejour.nuits.first, let derniere = sejour.nuits.last,
+                   let depart = Calendar.current.date(byAdding: .day, value: 1, to: derniere) {
+                    let rang = (sejour.nuits.firstIndex { Calendar.current.isDate($0, inSameDayAs: jour) } ?? 0) + 1
+                    Label("Séjour de \(sejour.nuits.count) nuits (nuit \(rang)/\(sejour.nuits.count)), du \(premiere.formatted(.dateTime.day().month(.wide))) au \(depart.formatted(.dateTime.day().month(.wide)))",
+                          systemImage: "moon.zzz")
+                        .font(.footnote.weight(.medium)).foregroundStyle(.indigo)
+                }
             }
             // Durée à la minute près : des heures et des minutes (au-delà de 59 min, elles passent en heures).
             HStack(spacing: 10) {
@@ -453,6 +461,12 @@ struct EtapeEditView: View {
                            adolescent: $etape.prixAdolescent, adolescentMonnaie: $etape.monnaieAdolescent,
                            enfant: $etape.prixEnfant, enfantMonnaie: $etape.monnaieEnfant,
                            exclus: $etape.exclusBudget, bascules: $etape.basculesTarif)
+            }
+            // Séjour de plusieurs nuits : le prix de la réservation est réparti sur chacune.
+            if let voyage = etape.voyage, let sejour = voyage.sejour(de: etape), let total = voyage.montant(de: sejour.reservation) {
+                Label("Réservé pour \(sejour.nuits.count) nuits : \(Monnaies.formater(total.montant, total.devise)), soit \(Monnaies.formater(total.montant / Double(sejour.nuits.count), total.devise)) par nuit dans le Budget.",
+                      systemImage: "moon.zzz")
+                    .font(.footnote.weight(.medium)).foregroundStyle(.indigo)
             }
             piedBudget(etape.voyage).font(.footnote).foregroundStyle(.secondary)
         }

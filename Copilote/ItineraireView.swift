@@ -112,12 +112,19 @@ struct ItineraireView: View {
                 }
             } else {
                 // iPhone : la carte en haut, les jours dessous.
-                VStack(spacing: 0) {
-                    fondDeCarte(margeGauche: 0).frame(height: max(220, geo.size.height * 0.36))
+                // Le panneau des jours a les coins du haut arrondis, comme les cartes des étapes : la limite avec la carte n'est pas
+                // une ligne droite. Il recouvre le bas de la carte de la hauteur de l'arrondi.
+                let arrondi = UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 16,
+                                                     style: .continuous)
+                VStack(spacing: -16) {
+                    fondDeCarte(margeGauche: 0).frame(height: max(220, geo.size.height * 0.36) + 16)
                     DefilementMemorise(cle: cleDefilement(large: false)) { listeDesJours(avecEtapesAPlacer: true).padding(12) }
                         .id(cleDefilement(large: false))
                         .background(FondDePage.couleur)
                         .overlay { cadreEtape.padding(8) }
+                        .clipShape(arrondi)
+                        .shadow(color: .black.opacity(0.12), radius: 6, y: -2)
+                        .zIndex(1)
                 }
                 // Les notes du jour s'ouvrent en haut, par-dessus la carte : le clavier, qui monte du bas, ne les cache pas.
                 // (Les déplacer seulement à l'apparition du clavier recréerait la zone de texte et refermerait le clavier.)

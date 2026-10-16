@@ -141,21 +141,30 @@ extension Voyage {
             var couverts = Set<String>()
             var retenu = false
             for r in reservationsChiffrees(lieesA: cle) {
+                // Un hébergement de plusieurs nuits : le prix du séjour est réparti à parts égales sur chaque nuit.
+                let sejour = nuits(de: r)
+                let parts: [(jour: Date, titre: String)] = sejour.count > 1
+                    ? sejour.enumerated().map { ($0.element, "\(titre) · réservation, nuit \($0.offset + 1)/\(sejour.count)") }
+                    : [(jour, "\(titre) · réservation")]
+                let diviseur = Double(parts.count)
+                let concernes = self.concernes(par: r)
                 // Prix par personne : chaque voyageur concerné paie celui de son tarif.
                 if r.aDesPrixParPersonne {
-                    let concernes = self.concernes(par: r)
                     let p = prix((r.prixAdulte, r.monnaieAdulte), (r.prixEtudiant, r.monnaieEtudiant), (r.prixAdolescent, r.monnaieAdolescent), (r.prixEnfant, r.monnaieEnfant))
-                    resultat.elements.append(ElementBudget(titre: "\(titre) · réservation", jour: jour, poste: poste, prix: p,
-                                                           exclus: Set(membres.map(\.uid)).subtracting(concernes)))
+                    for part in parts {
+                        resultat.elements.append(ElementBudget(titre: part.titre, jour: part.jour, poste: poste, prix: p.mapValues { $0 / diviseur },
+                                                               exclus: Set(membres.map(\.uid)).subtracting(concernes)))
+                    }
                     couverts.formUnion(concernes)
                     retenu = true
                     continue
                 }
                 guard let montant = r.prix else { continue }
                 guard let enEuros = versEuros(montant, code: r.devise) else { resultat.tauxManquants += 1; continue }
-                let concernes = self.concernes(par: r)
-                resultat.elements.append(ElementBudget(titre: "\(titre) · réservation", jour: jour, poste: poste, prix: [:],
-                                                       forfait: enEuros, concernes: concernes))
+                for part in parts {
+                    resultat.elements.append(ElementBudget(titre: part.titre, jour: part.jour, poste: poste, prix: [:],
+                                                           forfait: enEuros / diviseur, concernes: concernes))
+                }
                 couverts.formUnion(concernes)
                 retenu = true
             }

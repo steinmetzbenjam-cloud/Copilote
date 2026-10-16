@@ -144,12 +144,12 @@ extension Voyage {
     /// Transport pour rejoindre la première étape du voyage.
     var transportAller: Transport? {
         get { Self.decoder(transportAllerJSON) }
-        set { transportAllerJSON = Self.encoder(newValue) }
+        set { transportAllerJSON = Self.encoder(newValue); synchroniserEtapeDExtremite(arrivee: true) }
     }
     /// Transport pour rentrer après la dernière étape.
     var transportRetour: Transport? {
         get { Self.decoder(transportRetourJSON) }
-        set { transportRetourJSON = Self.encoder(newValue) }
+        set { transportRetourJSON = Self.encoder(newValue); synchroniserEtapeDExtremite(arrivee: false) }
     }
 
     /// Les étapes et hébergements placés sur un jour, dans l'ordre du voyage.
@@ -298,5 +298,40 @@ extension Transport {
             morceaux.append(CategorieEtape.texteDuree(minutes))
         }
         return morceaux.isEmpty ? nil : morceaux.joined(separator: " · ")
+    }
+}
+
+extension Voyage {
+    /// Identifiant de l'étape créée pour le lieu d'arrivée de l'aller (aéroport, gare…) ou de départ du retour : le même sur tous les appareils.
+    private func uidEtapeDExtremite(arrivee: Bool) -> String { "\(uid)-\(arrivee ? "arrivee-aller" : "depart-retour")" }
+
+    /// L'étape qui ouvre le premier jour (le lieu d'arrivée du transport d'aller) ou ferme le dernier (le lieu de départ du transport de retour).
+    /// Créée quand on enregistre le transport (si elle n'existe pas encore), puis tenue à jour : lieu, position, heure et fuseau.
+    /// Sans lieu précisé, rien n'est créé ; si le transport disparaît, l'étape reste (elle a pu être complétée).
+    func synchroniserEtapeDExtremite(arrivee: Bool) {
+        guard let contexte = modelContext, let t = arrivee ? transportAller : transportRetour,
+              let jour = arrivee ? jours.first : jours.last else { return }
+        let lieu = (arrivee ? (t.arriveeLieu ?? t.vers) : (t.departLieu ?? t.de)).trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !lieu.isEmpty else { return }
+        let coordonnee = arrivee ? t.arriveeCoordonnee : t.departCoordonnee
+        let uidCible = uidEtapeDExtremite(arrivee: arrivee)
+        let etape: Etape
+        if let existante = etapes.first(where: { $0.uid == uidCible }) {
+            etape = existante
+        } else {
+            etape = Etape(titre: lieu, jour: jour, categorie: .transport)
+            etape.uid = uidCible
+            let ordres = etapes(du: jour).map(\.ordre)
+            // La première du premier jour, la dernière du dernier.
+            etape.ordre = arrivee ? (ordres.min() ?? 1) - 1 : (ordres.max() ?? -1) + 1
+            etape.voyage = self
+            contexte.insert(etape)
+        }
+        etape.titre = lieu
+        etape.lieu = lieu
+        etape.latitude = coordonnee?.latitude
+        etape.longitude = coordonnee?.longitude
+        etape.heure = arrivee ? t.arrivee : t.depart
+        etape.fuseauChoisi = arrivee ? t.fuseauArrivee : t.fuseauDepart
     }
 }

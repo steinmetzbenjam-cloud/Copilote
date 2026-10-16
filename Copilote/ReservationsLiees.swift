@@ -76,8 +76,37 @@ extension Voyage {
     }
 
     /// Les réservations liées à une étape, un hébergement ou un transport (parmi celles que je peux voir).
+    /// Pour un hébergement, ce sont aussi celles d'un séjour de plusieurs nuits dont il fait partie : elles sont liées à chacune de ses nuits.
     func reservations(lieesA cle: String) -> [Reservation] {
-        reservationsVisibles.filter { $0.lien == cle }.sorted { $0.debut < $1.debut }
+        let etape = cle.hasPrefix("etape:") ? etapes.first { LienReservation.etape($0) == cle } : nil
+        return reservationsVisibles.filter { r in
+            r.lien == cle || (etape != nil && sejour(de: etape!)?.reservation === r)
+        }.sorted { $0.debut < $1.debut }
+    }
+
+    /// Une nuit d'un séjour réservé : le jour qu'elle suit, et l'hébergement qui l'occupe (nil : pas encore reporté sur cette nuit).
+    struct NuitDeSejour: Identifiable {
+        let nuit: Date
+        let numeroDeJour: Int?
+        let etape: Etape?
+        var id: Date { nuit }
+    }
+
+    /// Chaque nuit d'une réservation d'hébergement de plusieurs nuits, avec l'hébergement qui l'occupe : le même hôtel,
+    /// listé nuit par nuit (jour 1, jour 2, jour 3…). Vide pour une seule nuit ou une réservation qui n'est pas liée à un hébergement.
+    func nuitsDeSejour(de r: Reservation) -> [NuitDeSejour] {
+        let cal = Calendar.current
+        let nuits = self.nuits(de: r)
+        guard nuits.count > 1, let cle = r.lien, let h = etapes.first(where: { LienReservation.etape($0) == cle }),
+              h.categorie == .hebergement else { return [] }
+        func meme(_ e: Etape) -> Bool {
+            e === h || (e.titre.caseInsensitiveCompare(h.titre) == .orderedSame && e.lieu.caseInsensitiveCompare(h.lieu) == .orderedSame)
+        }
+        return nuits.map { nuit in
+            NuitDeSejour(nuit: nuit,
+                         numeroDeJour: jours.firstIndex { cal.isDate($0, inSameDayAs: nuit) }.map { $0 + 1 },
+                         etape: hebergements(apres: nuit).first(where: meme))
+        }
     }
 
     private func prefixeJour(_ e: Etape) -> String {
@@ -238,6 +267,32 @@ extension Voyage {
         let hebergement: Etape
         let nuits: [Date]
         let remplaces: [(nuit: Date, etape: Etape)]
+    }
+
+    /// Les nuits d'une réservation d'hébergement qui tombent dans le voyage (chaque nuit est désignée par le jour qui la précède).
+    /// Vide si ce n'est pas un hébergement ou s'il n'y a pas de date de départ.
+    func nuits(de r: Reservation) -> [Date] {
+        guard r.type == .hebergement, let fin = r.fin else { return [] }
+        let cal = Calendar.current
+        let arrivee = cal.startOfDay(for: r.debut), depart = cal.startOfDay(for: fin)
+        return jours.filter { arrivee <= $0 && $0 < depart }
+    }
+
+    /// Le séjour (réservation de plusieurs nuits) dont fait partie cet hébergement : la réservation liée à l'une de ses nuits,
+    /// pour le même hébergement (même nom et même adresse), et dont les nuits comprennent celle-ci.
+    func sejour(de etape: Etape) -> (reservation: Reservation, nuits: [Date])? {
+        guard etape.categorie == .hebergement, etape.apresJour, let nuit = etape.jour else { return nil }
+        let cal = Calendar.current
+        func meme(_ e: Etape) -> Bool {
+            e === etape || (e.titre.caseInsensitiveCompare(etape.titre) == .orderedSame && e.lieu.caseInsensitiveCompare(etape.lieu) == .orderedSame)
+        }
+        for r in reservations.sorted(by: { $0.debut < $1.debut }) {
+            let n = nuits(de: r)
+            guard n.count > 1, n.contains(where: { cal.isDate($0, inSameDayAs: nuit) }),
+                  let cle = r.lien, let liee = etapes.first(where: { LienReservation.etape($0) == cle }), meme(liee) else { continue }
+            return (r, n)
+        }
+        return nil
     }
 
     /// Une réservation d'hébergement de plusieurs nuits, liée à l'une d'elles : les autres nuits de la réservation (dans le voyage)

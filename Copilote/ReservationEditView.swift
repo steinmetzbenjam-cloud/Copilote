@@ -200,10 +200,24 @@ struct ReservationEditView: View {
                     .fixedSize()
                 }
             }
+            // Un hébergement de plusieurs nuits : le prix saisi est celui de tout le séjour.
+            let nuits = voyage.nuits(de: reservation)
+            if nuits.count > 1, let premiere = nuits.first, let derniere = nuits.last,
+               let depart = Calendar.current.date(byAdding: .day, value: 1, to: derniere) {
+                Label("Prix pour \(nuits.count) nuits, du \(premiere.formatted(.dateTime.day().month(.wide))) au \(depart.formatted(.dateTime.day().month(.wide)))",
+                      systemImage: "moon.zzz")
+                    .font(.subheadline.weight(.medium))
+                if let total = voyage.montant(de: reservation) {
+                    LabeledContent("Par nuit", value: Monnaies.formater(total.montant / Double(nuits.count), total.devise))
+                }
+            }
         } header: {
             EnTeteColore("Budget", symbole: "eurosign.circle", couleur: .green)
         } footer: {
-            Text(reservation.aDesPrixParPersonne
+            Text(voyage.nuits(de: reservation).count > 1
+                 ? "Le Budget répartit le prix du séjour à parts égales sur chaque nuit. "
+                 : "")
+            + Text(reservation.aDesPrixParPersonne
                  ? "Chaque voyageur qui peut voir la réservation compte le prix de son tarif (sans prix étudiant, le prix adulte ; sans prix adolescent, le prix enfant). Efface les prix par personne pour saisir un prix total."
                  : "Saisis le prix par personne, ou un prix total partagé à parts égales entre les voyageurs qui peuvent voir la réservation.")
             + Text(" Liée à une étape, un hébergement ou un transport, la réservation remplace son prix prévu dans le Budget.")
@@ -273,10 +287,31 @@ struct ReservationEditView: View {
                     }
                 }
             }
+            // Un séjour de plusieurs nuits est lié à un hébergement par nuit : la liste complète, même si c'est le même hôtel.
+            let sejour = voyage.nuitsDeSejour(de: reservation)
+            if !sejour.isEmpty {
+                ForEach(sejour) { n in
+                    let fin = Calendar.current.date(byAdding: .day, value: 1, to: n.nuit) ?? n.nuit
+                    HStack(spacing: 10) {
+                        Image(systemName: "bed.double.fill").foregroundStyle(.indigo).frame(width: 22)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("\(n.numeroDeJour.map { "Jour \($0)" } ?? "Nuit") · "
+                                 + (n.etape.map { $0.titre.isEmpty ? $0.categorie.libelle : $0.titre } ?? "Hébergement à ajouter"))
+                                .font(.subheadline.weight(.medium))
+                            Text("Nuit du \(n.nuit.formatted(.dateTime.day().month(.wide))) au \(fin.formatted(.dateTime.day().month(.wide)))")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Spacer(minLength: 0)
+                        if n.etape == nil { Image(systemName: "clock").foregroundStyle(.secondary) }
+                    }
+                }
+            }
         } header: {
             EnTeteColore("Lien avec le voyage", symbole: "link", couleur: .purple)
         } footer: {
-            Text("La fiche de l'étape, de l'hébergement ou du transport choisi affiche alors un bouton pour ouvrir cette réservation.")
+            Text(voyage.nuitsDeSejour(de: reservation).isEmpty
+                 ? "La fiche de l'étape, de l'hébergement ou du transport choisi affiche alors un bouton pour ouvrir cette réservation."
+                 : "La réservation est liée à l'hébergement de chaque nuit du séjour : chacune de leurs fiches affiche un bouton pour l'ouvrir. Les nuits à venir sont ajoutées en validant la réservation.")
         }
         .teinte(.purple)
     }

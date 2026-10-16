@@ -241,4 +241,75 @@ struct CalculsTests {
         v.partager(infos, "XX999", v.jours.first!)
         #expect(v.volPartage("XX999", v.jours.first!) == nil)
     }
+
+    @Test func hebergementDePlusieursNuitsRepartiParNuit() {
+        let cal = Calendar.current
+        let debut = cal.startOfDay(for: .now)
+        func jour(_ n: Int) -> Date { cal.date(byAdding: .day, value: n, to: debut)! }
+        let v = Voyage(titre: "Essai", debut: debut, fin: jour(5))
+        contexte.insert(v)
+        let alex = membre("Alex", dans: v)
+        let hotel = Etape(titre: "Hôtel du Lac", jour: nil, categorie: .hebergement)
+        hotel.voyage = v
+        contexte.insert(hotel)
+        v.placerEntreJours(hotel, apres: jour(1))
+        // 300 € pour trois nuits (jours 1, 2 et 3) : 100 € par nuit, sur chacun de ces jours.
+        let r = Reservation(type: .hebergement, debut: jour(1).addingTimeInterval(15 * 3600))
+        r.fin = jour(4).addingTimeInterval(11 * 3600)
+        r.prix = 300
+        r.lien = LienReservation.etape(hotel)
+        r.voyage = v
+        contexte.insert(r)
+        v.reporterHebergement(de: r, dans: contexte)
+
+        let elements = v.calculerBudget().elements
+        #expect(elements.total(pour: [alex]) == 300)
+        for n in 1...3 {
+            #expect(elements.filter { cal.isDate($0.jour, inSameDayAs: jour(n)) }.total(pour: [alex]) == 100)
+        }
+        #expect(v.nuits(de: r).count == 3)
+        let copie = v.hebergements(apres: jour(3)).first!
+        #expect(v.sejour(de: copie)?.nuits.count == 3)
+        // La réservation est liée à l'hébergement de chaque nuit : jour 2, 3 et 4 (nuits des jours 1, 2 et 3), même hôtel.
+        let liste = v.nuitsDeSejour(de: r)
+        #expect(liste.map(\.numeroDeJour) == [2, 3, 4])
+        #expect(liste.allSatisfy { $0.etape?.titre == "Hôtel du Lac" })
+        #expect(v.reservations(lieesA: LienReservation.etape(copie)).count == 1)
+    }
+
+    @Test func transportsDExtremiteCreentLeurEtapeDArriveeEtDeDepart() {
+        let v = voyage()
+        let premierJour = v.jours.first!, dernierJour = v.jours.last!
+        let musee = Etape(titre: "Musée", jour: premierJour, categorie: .musee)
+        musee.ordre = 3
+        musee.voyage = v
+        contexte.insert(musee)
+        let fin = Etape(titre: "Dîner", jour: dernierJour, categorie: .repas)
+        fin.ordre = 5
+        fin.voyage = v
+        contexte.insert(fin)
+
+        var aller = Transport()
+        aller.mode = .avion
+        aller.arriveeLieu = "Aéroport de San José"
+        aller.arriveeLatitude = 9.99; aller.arriveeLongitude = -84.2
+        v.transportAller = aller
+        var retour = Transport()
+        retour.mode = .avion
+        retour.departLieu = "Aéroport de San José"
+        v.transportRetour = retour
+
+        // L'arrivée ouvre le premier jour, le départ ferme le dernier.
+        #expect(v.etapes(du: premierJour).map(\.titre) == ["Aéroport de San José", "Musée"])
+        #expect(v.etapes(du: dernierJour).map(\.titre) == ["Dîner", "Aéroport de San José"])
+        #expect(v.etapes(du: premierJour).first?.latitude == 9.99)
+        // Enregistrer de nouveau le transport met l'étape à jour, sans en créer une seconde.
+        aller.arriveeLieu = "Aéroport Juan Santamaría"
+        v.transportAller = aller
+        #expect(v.etapes(du: premierJour).map(\.titre) == ["Aéroport Juan Santamaría", "Musée"])
+        // Sans lieu précisé, aucune étape n'est créée.
+        let autre = voyage()
+        autre.transportAller = Transport()
+        #expect(autre.etapes.isEmpty)
+    }
 }
