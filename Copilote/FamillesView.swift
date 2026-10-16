@@ -197,7 +197,9 @@ struct MembreEditView: View {
                             membre.dateNaissance = Calendar.current.date(byAdding: .year, value: -ans, to: Calendar.current.startOfDay(for: voyage.debut))
                         }
                         LabeledContent("Âge") {
-                            TextField("—", text: ageTexte)
+                            // Sans libellé : sur Mac, le titre d'un champ s'affiche à côté de lui (on aurait « — » en plus de « Âge »).
+                            TextField("Âge", text: ageTexte, prompt: Text("—"))
+                                .labelsHidden()
                                 .multilineTextAlignment(.trailing)
                                 #if os(iOS)
                                 .keyboardType(.numberPad)
@@ -206,12 +208,17 @@ struct MembreEditView: View {
                     }
                     LabeledContent("Famille") {
                         HStack(spacing: 6) {
-                            TextField("Aucune", text: familleTexte).multilineTextAlignment(.trailing)
+                            // « Aucune » n'est que l'indication du champ vide : sans libellé, sur Mac, il ne s'affiche plus à côté du nom.
+                            TextField("Famille", text: familleTexte, prompt: Text("Aucune"))
+                                .labelsHidden()
+                                .multilineTextAlignment(.trailing)
                             if !voyage.familles.isEmpty {
                                 Menu {
                                     Button("Aucune") { membre.familleNom = nil }
                                     ForEach(voyage.familles) { f in Button(f.nom) { membre.familleNom = f.nom } }
                                 } label: { Image(systemName: "chevron.up.chevron.down").foregroundStyle(.secondary) }
+                                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                                .help("Choisir une famille existante")
                             }
                         }
                     }

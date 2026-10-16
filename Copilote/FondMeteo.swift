@@ -221,6 +221,22 @@ extension Color {
 }
 
 extension View {
+    /// Sur un ciel, un panneau dépoli et un peu sombre sous le contenu (comme les cadres de l'app Météo) :
+    /// le détail d'une étape reste lisible quel que soit le temps. Sans ciel, rien ne change.
+    @ViewBuilder func cadreSurCiel(_ actif: Bool) -> some View {
+        if actif {
+            self
+                .padding(.horizontal, 8).padding(.vertical, 6)
+                .background {
+                    RoundedRectangle(cornerRadius: 12, style: .continuous)
+                        .fill(.ultraThinMaterial)
+                        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.black.opacity(0.18)))
+                }
+        } else {
+            self
+        }
+    }
+
     /// Pose le ciel du temps prévu sous une carte (aux coins arrondis) et en affiche le contenu en clair, comme l'app Météo.
     /// Sans prévision : la carte reste comme avant.
     @ViewBuilder func cielMeteo(_ meteo: MeteoJour?, rayon: CGFloat = 16) -> some View {

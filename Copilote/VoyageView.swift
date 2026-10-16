@@ -70,15 +70,11 @@ struct VoyageView: View {
         var onglets: [Onglet] { Onglet.allCases.filter { $0.espace == self } }
     }
 
-    /// Les espaces proposés : sur Mac, l'aperçu n'en est pas un (le compte à rebours est dans la barre de titre) ;
-    /// ailleurs, il n'apparaît pas en préparation. Sur iPhone, les infos s'ouvrent depuis le nom du voyage.
+    /// Les espaces proposés : l'aperçu n'apparaît pas en préparation (sur Mac, le compte à rebours est alors dans la barre de titre).
+    /// Sur iPhone, les infos s'ouvrent depuis le nom du voyage.
     private var espaces: [Espace] {
         Espace.allCases.filter { e in
-            #if os(macOS)
-            if e == .apercu { return false }
-            #else
             if e == .apercu && voyage.mode == .preparation { return false }
-            #endif
             if e == .infos && iPhone { return false }
             return true
         }

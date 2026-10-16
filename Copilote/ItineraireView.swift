@@ -675,6 +675,8 @@ struct ItineraireView: View {
                     ForEach(Array(etapes.enumerated()), id: \.element.uid) { i, etape in
                         ligneGlissable(etape, jour: jour, couleur: couleur,
                                        rang: placees.firstIndex { $0 === etape }, incoherence: incoherences[etape.uid], chevauche: chevauchements[etape.uid])
+                            // Sur le ciel de la météo : un cadre plus opaque, pour lire le détail de l'étape.
+                            .cadreSurCiel(temps != nil)
                         // Le transport prévu vers l'étape suivante du jour : une ligne fine entre les deux.
                         if let transport = etape.transport, i + 1 < etapes.count {
                             ligneTransport(transport, depart: etape, arrivee: etapes[i + 1])
