@@ -544,9 +544,9 @@ struct TimingView: View {
             Rectangle().fill(c.opacity(0.10))
             Rectangle().fill(c.opacity(0.10)).frame(height: hauteurHeure * 6)
             Rectangle().fill(c.opacity(0.10)).frame(height: hauteurHeure * 4).offset(y: hauteurHeure * 20)
-            // Le temps prévu ce jour-là, par-dessus la couleur du jour (sous les heures et les activités) :
-            // son symbole en fin de matinée, là où se passe la journée.
-            if let temps { FondMeteo(meteo: temps, hauteurSymbole: hauteurHeure * 9) }
+            // Le ciel prévu ce jour-là, atténué, par-dessus la couleur du jour (sous les heures et les activités) :
+            // le soleil en matinée, là où se passe la journée.
+            if let temps { FondMeteo(meteo: temps, hauteurSymbole: hauteurHeure * 8, intensite: 0.55) }
             // Lignes des heures.
             ForEach(0..<24, id: \.self) { h in
                 Rectangle().fill(c.opacity(h % 6 == 0 ? 0.65 : 0.38)).frame(height: h % 6 == 0 ? 1.5 : 1).offset(y: CGFloat(h) * hauteurHeure)

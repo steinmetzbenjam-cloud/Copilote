@@ -113,6 +113,8 @@ struct CadreInfos<Contenu: View>: View {
     let symbole: String
     var couleur: Color = .accentColor
     var pied: String?
+    /// Le temps prévu : la carte en prend l'aspect (voir `FondMeteo`).
+    var meteo: MeteoJour? = nil
     @ViewBuilder var contenu: Contenu
 
     var body: some View {
@@ -123,6 +125,7 @@ struct CadreInfos<Contenu: View>: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
+        .cielMeteo(meteo)
         .modifier(FondDeCarte())
         .overlay(alignment: .leading) {
             Capsule().fill(couleur).frame(width: 4).padding(.vertical, 14).padding(.leading, 4)

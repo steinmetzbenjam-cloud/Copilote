@@ -615,8 +615,8 @@ struct ItineraireView: View {
         let infos = voyage.infos(du: jour)
         let temps = meteoDuJour(jour)
         let etapes = voyage.etapes(du: jour)
-        // Même couleur et mêmes numéros que le tracé et les repères sur la carte.
-        let couleur = CarteDuVoyage.couleur(du: numero - 1)
+        // Même couleur et mêmes numéros que le tracé et les repères sur la carte ; éclaircie sur un ciel, pour rester lisible.
+        let couleur = temps == nil ? CarteDuVoyage.couleur(du: numero - 1) : CarteDuVoyage.couleur(du: numero - 1).eclaircie(0.72)
         let placees = etapes.filter { $0.coordonnee != nil }
         let incoherences = voyage.etapesAuxHorairesIncoherents(du: jour)
         let chevauchements = voyage.etapesEnChevauchement(du: jour)
@@ -696,12 +696,8 @@ struct ItineraireView: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        // Le temps prévu ce jour-là, en fond (sous les étapes, au-dessus du blanc de la carte).
-        .background {
-            if let temps {
-                FondMeteo(meteo: temps).clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-            }
-        }
+        // Le ciel prévu ce jour-là, en fond, et le contenu en clair par-dessus (comme l'app Météo).
+        .cielMeteo(temps)
         .modifier(FondDeCarte())
         .overlay(alignment: .leading) {
             Capsule().fill(couleur).frame(width: 5).padding(.vertical, 16).padding(.leading, 5)

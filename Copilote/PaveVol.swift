@@ -23,7 +23,9 @@ struct PaveExtremite: View {
     private var numero: String { SourceVols.numeroNettoye(transport?.numero ?? "") }
     private var estUnVol: Bool { transport?.mode == .avion }
     private var aUneCle: Bool { Cles.lire(.aerodatabox) != nil }
-    private let teinte = Color.indigo
+    @Environment(\.colorScheme) private var schema
+    /// Indigo sur fond clair ; plus clair en mode sombre ou sur le ciel d'une carte, pour rester lisible.
+    private var teinte: Color { schema == .dark ? Color(red: 0.72, green: 0.74, blue: 1.0) : .indigo }
 
     var body: some View {
         if let t = transport {

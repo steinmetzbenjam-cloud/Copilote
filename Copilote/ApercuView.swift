@@ -54,6 +54,12 @@ struct ApercuView: View {
             if let lieu { await meteo.actualiser(lieu) }
         }
         .task { rappelsProgrammes = await Rappels.nombreProgramme() }
+        // Prévisions des jours à venir, à l'endroit de chaque jour : le fond du programme suit leurs mises à jour.
+        .task(id: voyage.cleMeteo) {
+            guard voyage.mode != .souvenir, !voyage.joursPrevisibles.isEmpty else { return }
+            if lieu == nil { lieu = await voyage.lieuMeteo() }
+            await meteo.chargerJours(de: voyage, lieuVoyage: lieu)
+        }
     }
 
     // MARK: Compte à rebours
@@ -94,8 +100,10 @@ struct ApercuView: View {
         if let (jour, aujourdhui) = voyage.jourEnAvant {
             let elements = voyage.etapes(du: jour) + voyage.hebergements(apres: jour)
             let prochaine = aujourdhui ? elements.first { ($0.dateHeure ?? .distantPast) > .now } : nil
-            CadreInfos(titre: aujourdhui ? "Aujourd'hui" : "Premier jour", symbole: "sun.horizon.fill", couleur: .orange) {
-                if let m = meteoDuJour(jour) { ligneMeteo(m) }
+            // Le temps prévu là où l'on est ce jour-là : la carte en prend l'aspect.
+            let temps = meteo.prevision(jour, de: voyage, lieuVoyage: lieu) ?? meteoDuJour(jour)
+            CadreInfos(titre: aujourdhui ? "Aujourd'hui" : "Premier jour", symbole: "sun.horizon.fill", couleur: .orange, meteo: temps) {
+                if let temps { ligneMeteo(temps) }
                 // Le vol d'aller le premier jour, celui du retour le dernier, avec terminal, porte et tapis à jour.
                 let cal = Calendar.current
                 let premier = voyage.jours.first.map { cal.isDate($0, inSameDayAs: jour) } ?? false
