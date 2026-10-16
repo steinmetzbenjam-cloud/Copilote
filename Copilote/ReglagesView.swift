@@ -4,6 +4,7 @@ struct ReglagesView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var google = Cles.lire(.google) ?? ""
     @State private var tripadvisor = Cles.lire(.tripadvisor) ?? ""
+    @State private var aerodatabox = Cles.lire(.aerodatabox) ?? ""
     private var cloud = PartageCloud.shared
     @State private var avertissement: String?
     @State private var resultatsTest: [Cles.Service: (ok: Bool, message: String)] = [:]
@@ -64,15 +65,26 @@ struct ReglagesView: View {
                 }
 
                 Section {
+                    SecureField("Clé d'API", text: $aerodatabox)
+                        .autocorrectionDisabled()
+                    Link("Créer une clé AeroDataBox (gratuite)", destination: URL(string: "https://rapidapi.com/aedbx-aedbx/api/aerodatabox")!)
+                } header: {
+                    Text("Vols (AeroDataBox)")
+                } footer: {
+                    Text("Abonne-toi à l'offre gratuite d'AeroDataBox sur RapidAPI, puis copie ta clé « X-RapidAPI-Key ». Terminal, comptoirs, porte, tapis à bagages et horaires à jour des vols d'aller et de retour.\n\(apercu(aerodatabox)) \(texteEtat(etat(.aerodatabox, saisie: aerodatabox)))")
+                }
+
+                Section {
                     Button(testEnCours ? "Test en cours…" : "Tester mes clés", systemImage: "checkmark.shield") {
                         Task {
                             testEnCours = true
                             resultatsTest[.google] = await TestCles.tester(.google, cle: google)
                             resultatsTest[.tripadvisor] = await TestCles.tester(.tripadvisor, cle: tripadvisor, referent: referent)
+                            if !aerodatabox.isEmpty { resultatsTest[.aerodatabox] = await TestCles.tester(.aerodatabox, cle: aerodatabox) }
                             testEnCours = false
                         }
                     }
-                    .disabled(testEnCours || (google.isEmpty && tripadvisor.isEmpty))
+                    .disabled(testEnCours || (google.isEmpty && tripadvisor.isEmpty && aerodatabox.isEmpty))
                     ForEach(Cles.Service.allCases) { service in
                         if let r = resultatsTest[service] {
                             Label("\(service.nom) : \(r.message)", systemImage: r.ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
@@ -80,7 +92,7 @@ struct ReglagesView: View {
                         }
                     }
                 } footer: {
-                    Text("Envoie une requête de test à Google et à Tripadvisor avec les clés saisies ci-dessus, et affiche leur réponse.")
+                    Text("Envoie une requête de test à Google, à Tripadvisor et à AeroDataBox avec les clés saisies ci-dessus, et affiche leur réponse.")
                 }
 
                 #if ICLOUD && DEBUG
@@ -125,7 +137,7 @@ struct ReglagesView: View {
 
                 Section {
                 } footer: {
-                    Text("Les clés sont gardées dans ton trousseau iCloud : saisies une fois, elles apparaissent sur tous tes appareils. Elles ne sont jamais envoyées ailleurs que chez Google et Tripadvisor, ni aux autres voyageurs. Sans clé, les suggestions viennent de Plans, sans notes.")
+                    Text("Les clés sont gardées dans ton trousseau iCloud : saisies une fois, elles apparaissent sur tous tes appareils. Elles ne sont jamais envoyées ailleurs que chez Google, Tripadvisor et AeroDataBox, ni aux autres voyageurs. Sans clé, les suggestions viennent de Plans, sans notes.")
                 }
             }
             .formStyle(.grouped)
@@ -139,8 +151,9 @@ struct ReglagesView: View {
                     Button("OK") {
                         let g = Cles.enregistrer(google, pour: .google)
                         let t = Cles.enregistrer(tripadvisor, pour: .tripadvisor)
+                        let a = Cles.enregistrer(aerodatabox, pour: .aerodatabox)
                         Cles.referentTripadvisor = referent
-                        if g && t { dismiss() } else {
+                        if g && t && a { dismiss() } else {
                             avertissement = "Clés gardées sur cet appareil seulement : le trousseau iCloud n'est pas disponible. Active-le dans Réglages → ton nom → iCloud → Mots de passe et trousseau."
                         }
                     }

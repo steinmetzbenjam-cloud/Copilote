@@ -19,6 +19,7 @@ struct ApercuView: View {
     @State private var enPreparation = false
     /// Étape touchée dans le programme du jour : son détail s'ouvre.
     @State private var etapeOuverte: Etape?
+    @State private var extremiteOuverte: TimingView.ExtremiteTransport?
 
     init(voyage: Voyage) { self.voyage = voyage }
 
@@ -41,6 +42,7 @@ struct ApercuView: View {
         .sheet(item: $etapeOuverte) { etape in
             EtapeEditView(etape: etape, jours: voyage.jours) { contexte.delete(etape) }
         }
+        .sheet(item: $extremiteOuverte) { FicheExtremite(voyage: voyage, extremite: $0) }
         .task {
             guard voyage.mode == .voyage else { return }
             lieu = await voyage.lieuMeteo()
@@ -94,11 +96,21 @@ struct ApercuView: View {
             let prochaine = aujourdhui ? elements.first { ($0.dateHeure ?? .distantPast) > .now } : nil
             CadreInfos(titre: aujourdhui ? "Aujourd'hui" : "Premier jour", symbole: "sun.horizon.fill", couleur: .orange) {
                 if let m = meteoDuJour(jour) { ligneMeteo(m) }
+                // Le vol d'aller le premier jour, celui du retour le dernier, avec terminal, porte et tapis à jour.
+                let cal = Calendar.current
+                let premier = voyage.jours.first.map { cal.isDate($0, inSameDayAs: jour) } ?? false
+                let dernier = voyage.jours.last.map { cal.isDate($0, inSameDayAs: jour) } ?? false
+                if premier, voyage.transportAller != nil {
+                    PaveExtremite(voyage: voyage, extremite: .aller) { extremiteOuverte = .aller }
+                }
                 if elements.isEmpty {
                     Text("Rien de prévu ce jour-là pour l'instant.").foregroundStyle(.secondary)
                 }
                 ForEach(elements) { etape in
                     ligne(etape, estProchaine: etape === prochaine)
+                }
+                if dernier, voyage.transportRetour != nil {
+                    PaveExtremite(voyage: voyage, extremite: .retour) { extremiteOuverte = .retour }
                 }
             }
         }

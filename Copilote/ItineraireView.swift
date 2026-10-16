@@ -10,6 +10,8 @@ struct ItineraireView: View {
     @State private var etapeEnEdition: Etape?
     @State private var nuitEnAjout: NuitAjout?
     @State private var transportDeNuitEnEdition: NuitTransport?
+    /// Transport d'aller ou de retour ouvert depuis son pavé, en tête du premier jour ou en bas du dernier.
+    @State private var extremiteEnEdition: TimingView.ExtremiteTransport?
     @State private var jourEnEdition: JourVoyage?
     /// Étape au-dessus de laquelle on s'apprête à déposer (trait d'insertion), ou jour survolé.
     @State private var etapeVisee: String?
@@ -193,6 +195,7 @@ struct ItineraireView: View {
         .sheet(isPresented: Binding(get: { discussionOuverte && !ecranLarge }, set: { discussionOuverte = $0 })) { CommentairesView(voyage: voyage) }
         .sheet(item: $transportDeNuitEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
         .sheet(item: $nuitEnAjout, onDismiss: { nettoyer(sauf: etapeEnEdition) }) { NuitAjoutView(voyage: voyage, nuit: $0) }
+        .sheet(item: $extremiteEnEdition) { FicheExtremite(voyage: voyage, extremite: $0) }
         .sheet(item: $jourEnEdition, onDismiss: nettoyerJours) { infos in
             JourEditView(jour: infos, voyage: voyage, numero: (voyage.jours.firstIndex { cal.isDate($0, inSameDayAs: infos.date) } ?? 0) + 1)
         }
@@ -657,6 +660,11 @@ struct ItineraireView: View {
 
             Divider()
 
+            // Premier jour : le transport d'aller (et, pour un vol, son terminal, sa porte…) ouvre la journée.
+            if numero == 1 {
+                PaveExtremite(voyage: voyage, extremite: .aller) { extremiteEnEdition = .aller }
+            }
+
             // Transport prévu après l'hôtel de la veille : il ouvre la journée.
             if let t = transportDeLaVeille(avant: jour), let transport = t.depart.transport {
                 ligneTransportDeNuit(transport, depart: t.depart, arrivee: t.arrivee)
@@ -675,6 +683,11 @@ struct ItineraireView: View {
                         }
                     }
                 }
+            }
+
+            // Dernier jour : le transport de retour la termine.
+            if numero == voyage.jours.count {
+                PaveExtremite(voyage: voyage, extremite: .retour) { extremiteEnEdition = .retour }
             }
 
             Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouter(le: jour) }

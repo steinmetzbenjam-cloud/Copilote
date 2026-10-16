@@ -19,6 +19,11 @@ private func messageDuServeur(_ donnees: Data) -> String? {
 
 private func charger(_ requete: URLRequest, service: String) async throws -> Data {
     let (donnees, reponse) = try await URLSession.shared.data(for: requete)
+    return try verifier(donnees, reponse, service: service)
+}
+
+/// Le corps d'une réponse réussie ; sinon une erreur qui dit ce qui ne va pas.
+private func verifier(_ donnees: Data, _ reponse: URLResponse, service: String) throws -> Data {
     guard let http = reponse as? HTTPURLResponse else { throw ErreurService(message: "\(service) : réponse invalide.") }
     let detail = messageDuServeur(donnees).map { " — « \($0) »" } ?? ""
     switch http.statusCode {
@@ -57,6 +62,10 @@ enum TestCles {
                 var requete = URLRequest(url: composants.url!)
                 enteteTripadvisor(&requete, referent: referent)
                 _ = try await charger(requete, service: "Tripadvisor")
+            case .aerodatabox:
+                var requete = URLRequest(url: URL(string: "https://\(SourceVols.hote)/airports/iata/CDG")!)
+                SourceVols.entetes(&requete, cle: cle)
+                _ = try await charger(requete, service: "AeroDataBox")
             }
             return (true, "La clé fonctionne.")
         } catch {
@@ -470,5 +479,161 @@ actor CacheTripadvisor {
         let limite = Date().addingTimeInterval(-duree)
         entrees = entrees.filter { $0.value.date > limite }
         if let encode = try? JSONEncoder().encode(entrees) { try? encode.write(to: fichier) }
+    }
+}
+
+// MARK: - Vols (AeroDataBox, via RapidAPI)
+
+/// Ce que l'on sait d'un vol à une date : terminaux, portes, tapis à bagages, horaires prévus et révisés, avion.
+struct InfosVol: Equatable {
+    struct Escale: Equatable {
+        var aeroport = ""
+        var code = ""
+        var ville = ""
+        var terminal: String?
+        var porte: String?
+        var comptoirs: String?
+        var tapis: String?
+        /// Heure prévue et heure révisée (estimée ou réelle), à l'heure de l'aéroport.
+        var prevue: Date?
+        var revisee: Date?
+        var fuseau: TimeZone?
+    }
+    var numero = ""
+    var compagnie = ""
+    var statut = ""
+    var avion: String?
+    var distanceKm: Double?
+    var depart = Escale()
+    var arrivee = Escale()
+
+    /// Durée prévue, de l'heure de départ à celle d'arrivée.
+    var duree: TimeInterval? {
+        guard let d = depart.prevue, let a = arrivee.prevue, a > d else { return nil }
+        return a.timeIntervalSince(d)
+    }
+}
+
+enum SourceVols {
+    static let hote = "aerodatabox.p.rapidapi.com"
+
+    static func entetes(_ requete: inout URLRequest, cle: String) {
+        requete.setValue(cle, forHTTPHeaderField: "X-RapidAPI-Key")
+        requete.setValue(hote, forHTTPHeaderField: "X-RapidAPI-Host")
+        requete.setValue("application/json", forHTTPHeaderField: "accept")
+    }
+
+    /// « AF 1234 », « af1234 » → « AF1234 ».
+    static func numeroNettoye(_ numero: String) -> String {
+        numero.uppercased().filter { $0.isLetter || $0.isNumber }
+    }
+
+    /// Le vol de ce numéro au départ de ce jour (heure locale du départ). nil : aucun vol trouvé.
+    static func chercher(numero: String, jour: Date) async throws -> InfosVol? {
+        guard let cle = Cles.lire(.aerodatabox), !cle.isEmpty else { throw ErreurService(message: "Aucune clé AeroDataBox.") }
+        let code = numeroNettoye(numero)
+        guard !code.isEmpty else { return nil }
+        let date = jour.formatted(.iso8601.year().month().day())
+        var composants = URLComponents(string: "https://\(hote)/flights/number/\(code)/\(date)")!
+        composants.queryItems = [.init(name: "dateLocalRole", value: "Departure"),
+                                 .init(name: "withAircraftImage", value: "false"), .init(name: "withLocation", value: "false")]
+        var requete = URLRequest(url: composants.url!)
+        entetes(&requete, cle: cle)
+        let (donnees, reponse) = try await URLSession.shared.data(for: requete)
+        // 204 : aucun vol ce jour-là sous ce numéro.
+        if (reponse as? HTTPURLResponse)?.statusCode == 204 || (reponse as? HTTPURLResponse)?.statusCode == 404 { return nil }
+        let corps = try verifier(donnees, reponse, service: "AeroDataBox")
+        guard !corps.isEmpty, let liste = try JSONSerialization.jsonObject(with: corps) as? [[String: Any]], let vol = liste.first else { return nil }
+        return lire(vol)
+    }
+
+    private static func lire(_ vol: [String: Any]) -> InfosVol {
+        func texte(_ d: [String: Any]?, _ cle: String) -> String? {
+            (d?[cle] as? String).flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+        }
+        /// « 2026-10-16 10:30+02:00 » (ou « …Z ») ; anciennes réponses : `scheduledTimeLocal`, nouvelles : `scheduledTime.local`.
+        func heure(_ d: [String: Any], _ nom: String) -> Date? {
+            let brut = (d[nom] as? [String: Any]).flatMap { ($0["utc"] as? String) ?? ($0["local"] as? String) }
+                ?? (d["\(nom)Utc"] as? String) ?? (d["\(nom)Local"] as? String)
+            guard let brut else { return nil }
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            for format in ["yyyy-MM-dd HH:mmXXXXX", "yyyy-MM-dd HH:mmX", "yyyy-MM-dd'T'HH:mm:ssXXXXX"] {
+                f.dateFormat = format
+                if let date = f.date(from: brut) { return date }
+            }
+            return nil
+        }
+        func escale(_ d: [String: Any]?) -> InfosVol.Escale {
+            guard let d else { return .init() }
+            let aeroport = d["airport"] as? [String: Any]
+            var e = InfosVol.Escale()
+            e.aeroport = texte(aeroport, "shortName") ?? texte(aeroport, "name") ?? ""
+            e.code = texte(aeroport, "iata") ?? texte(aeroport, "icao") ?? ""
+            e.ville = texte(aeroport, "municipalityName") ?? ""
+            e.fuseau = texte(aeroport, "timeZone").flatMap(TimeZone.init(identifier:))
+            e.terminal = texte(d, "terminal")
+            e.porte = texte(d, "gate")
+            e.comptoirs = texte(d, "checkInDesk")
+            e.tapis = texte(d, "baggageBelt")
+            e.prevue = heure(d, "scheduledTime")
+            e.revisee = heure(d, "revisedTime") ?? heure(d, "predictedTime") ?? heure(d, "runwayTime")
+            return e
+        }
+        var infos = InfosVol()
+        infos.numero = texte(vol, "number") ?? ""
+        infos.compagnie = texte(vol["airline"] as? [String: Any], "name") ?? ""
+        infos.statut = statut(texte(vol, "status") ?? "")
+        infos.avion = texte(vol["aircraft"] as? [String: Any], "model")
+        infos.distanceKm = (vol["greatCircleDistance"] as? [String: Any])?["km"] as? Double
+        infos.depart = escale(vol["departure"] as? [String: Any])
+        infos.arrivee = escale(vol["arrival"] as? [String: Any])
+        return infos
+    }
+
+    private static func statut(_ s: String) -> String {
+        switch s {
+        case "Expected": "Prévu"
+        case "CheckIn": "Enregistrement"
+        case "Boarding": "Embarquement"
+        case "GateClosed": "Porte fermée"
+        case "Departed": "Parti"
+        case "EnRoute": "En vol"
+        case "Approaching": "En approche"
+        case "Arrived": "Arrivé"
+        case "Delayed": "Retardé"
+        case "Diverted": "Dérouté"
+        case "Canceled": "Annulé"
+        case "CanceledUncertain": "Annulation possible"
+        default: ""
+        }
+    }
+}
+
+/// Les vols déjà cherchés : gardés quelques minutes, pour ne pas épuiser le quota gratuit à chaque affichage.
+@MainActor @Observable
+final class Vols {
+    static let shared = Vols()
+    enum Etat: Equatable { case enCours, trouve(InfosVol), introuvable, erreur(String) }
+    private(set) var etats: [String: Etat] = [:]
+    private var misAJour: [String: Date] = [:]
+
+    static func cle(_ numero: String, _ jour: Date) -> String {
+        "\(SourceVols.numeroNettoye(numero))|\(jour.formatted(.iso8601.year().month().day()))"
+    }
+
+    func etat(_ numero: String, _ jour: Date) -> Etat? { etats[Self.cle(numero, jour)] }
+
+    func actualiser(_ numero: String, _ jour: Date, forcer: Bool = false) async {
+        let cle = Self.cle(numero, jour)
+        if etats[cle] == .enCours { return }
+        if !forcer, let date = misAJour[cle], Date.now.timeIntervalSince(date) < 600 { return }
+        if etats[cle] == nil { etats[cle] = .enCours }
+        do {
+            etats[cle] = try await SourceVols.chercher(numero: numero, jour: jour).map(Etat.trouve) ?? .introuvable
+        } catch {
+            etats[cle] = .erreur(error.localizedDescription)
+        }
+        misAJour[cle] = .now
     }
 }

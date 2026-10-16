@@ -1,15 +1,22 @@
 import Foundation
 import Security
 
-/// Clés d'API (Google Places, Tripadvisor) gardées dans le trousseau, jamais dans le code ni sur GitHub.
+/// Clés d'API (Google Places, Tripadvisor, AeroDataBox) gardées dans le trousseau, jamais dans le code ni sur GitHub.
 /// Elles passent par le **trousseau iCloud** : saisies sur un appareil, elles apparaissent sur les autres
 /// appareils du même compte iCloud, chiffrées de bout en bout. Elles ne sont jamais envoyées aux autres voyageurs.
 enum Cles {
     enum Service: String, CaseIterable, Identifiable {
         case google = "fr.steinmetz.Copilote.google-places"
         case tripadvisor = "fr.steinmetz.Copilote.tripadvisor"
+        case aerodatabox = "fr.steinmetz.Copilote.aerodatabox"
         var id: String { rawValue }
-        var nom: String { self == .google ? "Google Places" : "Tripadvisor" }
+        var nom: String {
+            switch self {
+            case .google: "Google Places"
+            case .tripadvisor: "Tripadvisor"
+            case .aerodatabox: "AeroDataBox"
+            }
+        }
     }
 
     /// Adresse du site déclaré chez Tripadvisor : à renseigner si la clé y est restreinte à un site (en-tête Referer).
