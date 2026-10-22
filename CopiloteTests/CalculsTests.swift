@@ -356,4 +356,38 @@ struct CalculsTests {
         #expect(v.varianteBudget == nil)
         #expect(v.variantes.isEmpty)
     }
+
+    @Test func etapeGlisseeEntreItinerairePrincipalBisEtAPlacer() {
+        let v = voyage()
+        func etape(_ titre: String, jour: Date?, ordre: Double) -> Etape {
+            let e = Etape(titre: titre, jour: jour)
+            e.ordre = ordre
+            e.voyage = v
+            contexte.insert(e)
+            return e
+        }
+        let a = etape("A", jour: v.debut, ordre: 0)
+        let b = etape("B", jour: v.debut, ordre: 1)
+        let c = etape("C", jour: v.debut, ordre: 2)
+        let libre = etape("Libre", jour: nil, ordre: 0)
+        let bis = v.creerVariante(depuis: a)
+
+        // Du principal vers le bis, puis des étapes à placer vers le bis, avant B.
+        #expect(v.placer(b, dansVariante: bis, avant: nil))
+        #expect(v.placer(libre, dansVariante: bis, avant: b))
+        #expect(v.etapes(du: v.debut).map(\.titre) == ["A", "C"])
+        #expect(v.etapes(deVariante: bis.id).map(\.titre) == ["Libre", "B"])
+        #expect(v.etapesSansJour.isEmpty)
+        // L'étape de départ reste sur le principal.
+        #expect(!v.placer(a, dansVariante: bis, avant: nil))
+        #expect(v.resteEnPlace(b, dansVariante: bis, avant: nil))
+
+        // Du bis vers le principal (avant C), puis du bis vers les étapes à placer.
+        #expect(v.deplacer(b, vers: v.debut, avant: c))
+        #expect(v.etapes(du: v.debut).map(\.titre) == ["A", "B", "C"])
+        #expect(v.retirerDuJour(libre))
+        #expect(libre.variante == nil)
+        #expect(v.etapes(deVariante: bis.id).isEmpty)
+        #expect(v.etapesSansJour.map(\.titre) == ["Libre"])
+    }
 }

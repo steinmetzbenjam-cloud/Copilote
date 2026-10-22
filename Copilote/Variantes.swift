@@ -93,9 +93,9 @@ extension Voyage {
         if varianteBudget == id { varianteBudget = nil }
     }
 
-    /// Jour d'une nouvelle étape de l'itinéraire bis : celui de sa dernière étape, ou celui de son départ (le lendemain d'un hôtel).
-    private func jourPourNouvelleEtape(de v: Variante) -> Date? {
-        guard let reference = etapes(deVariante: v.id).last ?? depart(de: v), let jour = reference.jour else { return jours.first }
+    /// Jour d'une nouvelle étape de l'itinéraire bis : celui de sa dernière étape (hors `sauf`), ou celui de son départ (le lendemain d'un hôtel).
+    private func jourPourNouvelleEtape(de v: Variante, sauf: Etape? = nil) -> Date? {
+        guard let reference = etapes(deVariante: v.id).last(where: { $0 !== sauf }) ?? depart(de: v), let jour = reference.jour else { return jours.first }
         guard reference.apresJour else { return jour }
         let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
         return min(lendemain, jours.last ?? lendemain)
@@ -109,6 +109,52 @@ extension Voyage {
         etape.voyage = self
         contexte.insert(etape)
         return etape
+    }
+
+    /// Place l'étape (de l'itinéraire principal, à placer, ou d'un itinéraire bis) dans l'itinéraire bis `v`, juste avant `cible`
+    /// (une de ses étapes) ou à la fin, puis renumérote ses étapes. Elle prend le jour de `cible`, ou celui de la fin de l'itinéraire bis.
+    /// Refusé pour l'étape d'où part un itinéraire bis : elle doit rester sur l'itinéraire principal. Renvoie false si rien ne change.
+    @discardableResult
+    func placer(_ etape: Etape, dansVariante v: Variante, avant cible: Etape?) -> Bool {
+        guard cible !== etape, etapes.contains(where: { $0 === etape }), variantes(partantDe: etape).isEmpty else { return false }
+        // Un jour de l'itinéraire principal que l'étape quitte : ses étapes sont renumérotées.
+        let ancienJour = etape.variante == nil && !etape.apresJour ? etape.jour : nil
+        let jour = cible?.jour ?? jourPourNouvelleEtape(de: v, sauf: etape)
+        etape.variante = v.id
+        etape.apresJour = false
+        etape.jour = jour.map { Calendar.current.startOfDay(for: $0) }
+        var liste = etapes(deVariante: v.id).filter { $0 !== etape }
+        let index = cible.flatMap { c in liste.firstIndex { $0 === c } } ?? liste.count
+        liste.insert(etape, at: index)
+        for (i, e) in liste.enumerated() { e.ordre = Double(i) }
+        if let ancienJour { for (i, e) in etapes(du: ancienJour).enumerated() { e.ordre = Double(i) } }
+        return true
+    }
+
+    /// Vrai si déposer l'étape avant `cible` (ou à la fin) la laisse à la même place dans son itinéraire bis.
+    func resteEnPlace(_ etape: Etape, dansVariante v: Variante, avant cible: Etape?) -> Bool {
+        guard etape.variante == v.id else { return false }
+        let liste = etapes(deVariante: v.id)
+        guard let i = liste.firstIndex(where: { $0 === etape }) else { return false }
+        return cible === etape || (i + 1 < liste.count ? liste[i + 1] : nil) === cible
+    }
+
+    /// Étapes des itinéraires bis dont le transport ne mènerait plus au même endroit si l'étape quittait sa place
+    /// et, avec `v`, entrait dans cet itinéraire bis avant `cible` (ou à la fin) : elle-même, l'étape d'avant à l'ancienne place,
+    /// et celle d'avant à la nouvelle. Les transports de l'itinéraire principal relèvent de `transportsPerdus`.
+    func transportsPerdusBis(deplacant etape: Etape, vers v: Variante?, avant cible: Etape?) -> [Etape] {
+        var touchees: [Etape] = []
+        if etape.variante != nil {
+            touchees.append(etape)
+            if let p = precedente(de: etape) { touchees.append(p) }
+        }
+        if let v {
+            let liste = etapes(deVariante: v.id).filter { $0 !== etape }
+            let index = cible.flatMap { c in liste.firstIndex { $0 === c } } ?? liste.count
+            if index > 0 { touchees.append(liste[index - 1]) }
+        }
+        var vues = Set<String>()
+        return touchees.filter { $0.transport != nil && vues.insert($0.uid).inserted }
     }
 
     /// Le transport prévu pour arriver à l'étape : celui de l'élément qui la précède, ou celui du départ de son itinéraire bis.

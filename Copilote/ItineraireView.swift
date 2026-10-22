@@ -54,6 +54,8 @@ struct ItineraireView: View {
     @State private var nomVariante = ""
     /// Itinéraire bis dont la suppression attend confirmation.
     @State private var varianteASupprimer: Variante?
+    /// Itinéraire bis survolé par une étape qu'on glisse.
+    @State private var varianteVisee: String?
 
     private struct DeplacementEnAttente: Identifiable {
         let id = UUID()
@@ -62,6 +64,8 @@ struct ItineraireView: View {
         let cible: Etape?
         let perdus: [Etape]
         var nuit = false
+        /// Itinéraire bis où l'on dépose l'étape (avant `cible`, ou à la fin).
+        var variante: Variante? = nil
     }
 
     private let cal = Calendar.current
@@ -891,7 +895,8 @@ struct ItineraireView: View {
     /// Déplace tout de suite, ou demande confirmation si des transports entre étapes seraient effacés.
     private func demander(_ etape: Etape, vers jour: Date?, avant cible: Etape?) -> Bool {
         if cible === etape { return false }
-        let perdus = voyage.transportsPerdus(deplacant: etape, vers: jour, avant: cible)
+        let perdus = sansDoublons(voyage.transportsPerdus(deplacant: etape, vers: jour, avant: cible)
+                                  + voyage.transportsPerdusBis(deplacant: etape, vers: nil, avant: nil))
         if perdus.isEmpty {
             return appliquer(DeplacementEnAttente(etape: etape, jour: jour, cible: cible, perdus: []))
         }
@@ -899,8 +904,15 @@ struct ItineraireView: View {
         return true
     }
 
+    /// Une étape peut perdre son transport à la fois dans l'itinéraire principal et dans un itinéraire bis : comptée une fois.
+    private func sansDoublons(_ etapes: [Etape]) -> [Etape] {
+        var vues = Set<String>()
+        return etapes.filter { vues.insert($0.uid).inserted }
+    }
+
     private func demanderNuit(_ etape: Etape, apres jour: Date) -> Bool {
-        let perdus = voyage.transportsPerdus(deplacant: etape, vers: jour, avant: nil, nuit: true)
+        let perdus = sansDoublons(voyage.transportsPerdus(deplacant: etape, vers: jour, avant: nil, nuit: true)
+                                  + voyage.transportsPerdusBis(deplacant: etape, vers: nil, avant: nil))
         let d = DeplacementEnAttente(etape: etape, jour: jour, cible: nil, perdus: perdus, nuit: true)
         if perdus.isEmpty { return appliquer(d) }
         deplacementEnAttente = d
@@ -911,7 +923,10 @@ struct ItineraireView: View {
     private func appliquer(_ d: DeplacementEnAttente) -> Bool {
         withAnimation {
             for e in d.perdus { e.transport = nil }
+            if let v = d.variante { return voyage.placer(d.etape, dansVariante: v, avant: d.cible) }
             if d.nuit, let jour = d.jour {
+                // L'étape quitte son éventuel itinéraire bis : elle devient l'hôtel de la nuit de l'itinéraire principal.
+                d.etape.variante = nil
                 d.etape.categorie = .hebergement
                 voyage.placerEntreJours(d.etape, apres: jour)
                 return true
@@ -919,6 +934,25 @@ struct ItineraireView: View {
             if let jour = d.jour { return voyage.deplacer(d.etape, vers: jour, avant: d.cible) }
             return voyage.retirerDuJour(d.etape)
         }
+    }
+
+    /// Une étape lâchée dans un itinéraire bis (avant `cible`, ou à la fin) : venue du principal, des étapes à placer ou d'un itinéraire bis.
+    private func recevoir(_ elements: [String], dansVariante v: Variante, avant cible: Etape?) -> Bool {
+        defer { etapeVisee = nil; varianteVisee = nil; jourVise = nil }
+        guard let etape = etapeGlissee(elements) else { return false }
+        return demander(etape, dansVariante: v, avant: cible)
+    }
+
+    private func demander(_ etape: Etape, dansVariante v: Variante, avant cible: Etape?) -> Bool {
+        // L'étape d'où part un itinéraire bis reste sur l'itinéraire principal.
+        guard voyage.variantes(partantDe: etape).isEmpty, !voyage.resteEnPlace(etape, dansVariante: v, avant: cible) else { return false }
+        // Venue de l'itinéraire principal, elle le quitte : comme si on la retirait de son jour.
+        let principal = etape.variante == nil && etape.jour != nil ? voyage.transportsPerdus(deplacant: etape, vers: nil, avant: nil) : []
+        let perdus = sansDoublons(principal + voyage.transportsPerdusBis(deplacant: etape, vers: v, avant: cible))
+        let d = DeplacementEnAttente(etape: etape, jour: nil, cible: cible, perdus: perdus, variante: v)
+        if perdus.isEmpty { return appliquer(d) }
+        deplacementEnAttente = d
+        return true
     }
 
     private func trierParHeure(_ jour: Date) {
@@ -1087,7 +1121,7 @@ struct ItineraireView: View {
                     Text(premiereLettreEnMajuscule(jour.formatted(.dateTime.weekday(.wide).day().month(.wide))))
                         .font(.caption2.bold()).foregroundStyle(.secondary)
                 }
-                ligne(e, couleur: couleur)
+                ligneBis(e, variante: v, couleur: couleur)
                 if let suivante = i + 1 < propres.count ? propres[i + 1] : raccord {
                     lienBis(e.transport, depart: e, arrivee: suivante, couleur: couleur) {
                         transportDeNuitEnEdition = NuitTransport(depart: e, arrivee: suivante)
@@ -1116,8 +1150,36 @@ struct ItineraireView: View {
             RoundedRectangle(cornerRadius: 12, style: .continuous).fill(couleur.opacity(0.07))
         }
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(couleur.opacity(0.6), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4])))
+            .strokeBorder(couleur.opacity(0.6), style: StrokeStyle(lineWidth: varianteVisee == v.id ? 2.5 : 1.2, dash: [5, 4])))
+        // Une étape lâchée sur le cadre va à la fin de l'itinéraire bis.
+        .dropDestination(for: String.self) { elements, _ in
+            guard !voyage.lectureSeule else { return false }
+            return recevoir(elements, dansVariante: v, avant: nil)
+        } isTargeted: { visee in
+            if visee { varianteVisee = v.id } else if varianteVisee == v.id { varianteVisee = nil }
+        }
         .padding(.leading, enRetrait ? 22 : 0)
+    }
+
+    /// Une étape de l'itinéraire bis : on la glisse vers l'itinéraire principal, les étapes à placer ou un autre itinéraire bis,
+    /// et on lâche une étape dessus pour la placer juste avant.
+    private func ligneBis(_ etape: Etape, variante v: Variante, couleur: Color) -> some View {
+        ligne(etape, couleur: couleur)
+            .draggable(Self.prefixe + etape.uid) {
+                Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
+                    .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+            .overlay(alignment: .top) {
+                if etapeVisee == etape.uid {
+                    Capsule().fill(couleur).frame(height: 3).offset(y: -6)
+                }
+            }
+            .dropDestination(for: String.self) { elements, _ in
+                guard !voyage.lectureSeule else { return false }
+                return recevoir(elements, dansVariante: v, avant: etape)
+            } isTargeted: { visee in
+                if visee { etapeVisee = etape.uid } else if etapeVisee == etape.uid { etapeVisee = nil }
+            }
     }
 
     /// Un transport d'un itinéraire bis : sa ligne s'il est prévu, sinon un petit bouton pour l'ajouter.
