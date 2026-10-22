@@ -203,3 +203,125 @@ extension Voyage {
         return parcours
     }
 }
+
+// MARK: Déroulé côte à côte
+
+/// Un itinéraire bis dans une partie du jour où il avance à côté du principal : ses étapes de ce jour-là.
+struct ColonneBis: Identifiable {
+    let variante: Variante
+    let etapes: [Etape]
+    /// L'itinéraire bis part dans cette partie (son premier transport s'y affiche).
+    let debut: Bool
+    /// Dernière partie où il apparaît (on y ajoute ses étapes et on y choisit son raccord).
+    let fin: Bool
+    var id: String { variante.id }
+}
+
+/// Une partie du déroulé d'un jour : une étape de l'itinéraire principal seule, ou une partie où les étapes du principal
+/// (`principal`, éventuellement aucune) et celles d'un ou plusieurs itinéraires bis (`bis`) avancent côte à côte.
+struct MorceauDuJour: Identifiable {
+    let principal: [Etape]
+    let bis: [ColonneBis]
+    var id: String { bis.isEmpty ? "e-\(principal.first?.uid ?? "")" : "bis-\(bis.map(\.id).joined(separator: "-"))" }
+}
+
+extension Voyage {
+    /// Les jours où un itinéraire bis avance à côté du principal, et la partie du principal qu'il contourne
+    /// (positions dans `elementsDuVoyage`, départ exclu, fin exclue).
+    private struct Etendue {
+        let variante: Variante
+        let premierJour: Date
+        let dernierJour: Date
+        let depart: Int
+        let fin: Int
+        let etapes: [Etape]
+    }
+
+    private func etendue(de v: Variante, dans liste: [Etape], positions: [String: Int]) -> Etendue? {
+        let cal = Calendar.current
+        guard let a = depart(de: v), let iA = positions[a.uid], let jourA = a.jour else { return nil }
+        let propres = etapes(deVariante: v.id)
+        let joursPropres = propres.compactMap(\.jour)
+        // Depuis l'hôtel d'une nuit, l'itinéraire bis commence le lendemain.
+        var premier = a.apresJour ? (cal.date(byAdding: .day, value: 1, to: jourA) ?? jourA) : jourA
+        // Un départ de l'hôtel de la dernière nuit : l'itinéraire bis s'affiche dans le dernier jour.
+        premier = min(cal.startOfDay(for: premier), joursPropres.min() ?? premier, jours.last ?? premier)
+        let iR = raccord(de: v).flatMap { positions[$0.uid] }.flatMap { $0 > iA ? $0 : nil }
+        var dernier = iR.flatMap { liste[$0].jour } ?? premier
+        dernier = max(dernier, joursPropres.max() ?? dernier)
+        // Sans raccord, la partie contournée s'arrête à la fin du dernier jour de l'itinéraire bis.
+        let fin = iR ?? (liste.indices.first { $0 > iA && (liste[$0].jour ?? .distantPast) > dernier } ?? liste.count)
+        return Etendue(variante: v, premierJour: premier, dernierJour: dernier, depart: iA, fin: fin, etapes: propres)
+    }
+
+    /// Dans un jour, la place d'un itinéraire bis parmi les étapes `duJour` du principal : l'intervalle des étapes qu'il contourne
+    /// (vide s'il n'en contourne aucune ce jour-là : il se place alors juste après son départ), et ses étapes du jour.
+    /// nil : il n'apparaît pas ce jour-là.
+    private func place(de e: Etendue, jour: Date, duJour: [Etape], positions: [String: Int]) -> (debut: Int, fin: Int, etapes: [Etape])? {
+        let cal = Calendar.current
+        let j = cal.startOfDay(for: jour)
+        guard e.premierJour <= j, j <= e.dernierJour else { return nil }
+        let siennes = e.etapes.filter { $0.jour.map { cal.isDate($0, inSameDayAs: j) } ?? false }
+        let contournees = duJour.indices.filter { k in positions[duJour[k].uid].map { $0 > e.depart && $0 < e.fin } ?? false }
+        let actif = !contournees.isEmpty || !siennes.isEmpty || j == e.premierJour || (e.premierJour < j && j < e.dernierJour)
+        guard actif else { return nil }
+        if let premiere = contournees.first, let derniere = contournees.last { return (premiere, derniere + 1, siennes) }
+        let p = duJour.filter { (positions[$0.uid] ?? 0) <= e.depart }.count
+        return (p, p, siennes)
+    }
+
+    /// Le déroulé d'un jour de l'itinéraire : ses étapes, et, du départ d'un itinéraire bis jusqu'à son raccord,
+    /// les parties où il avance en colonne à côté de l'itinéraire principal.
+    func deroule(du jour: Date) -> [MorceauDuJour] {
+        let cal = Calendar.current
+        let duJour = etapes(du: jour)
+        let liste = elementsDuVoyage
+        let positions = Dictionary(liste.enumerated().map { ($0.element.uid, $0.offset) }, uniquingKeysWith: { a, _ in a })
+        let etendues = variantes.compactMap { etendue(de: $0, dans: liste, positions: positions) }
+
+        var places: [(debut: Int, fin: Int, colonnes: [ColonneBis])] = []
+        for e in etendues {
+            guard let p = place(de: e, jour: jour, duJour: duJour, positions: positions) else { continue }
+            // Dernière partie : aucun jour suivant où il apparaît encore.
+            var fin = true
+            var suivant = cal.date(byAdding: .day, value: 1, to: cal.startOfDay(for: jour)) ?? jour
+            while suivant <= e.dernierJour {
+                if place(de: e, jour: suivant, duJour: etapes(du: suivant), positions: positions) != nil { fin = false; break }
+                suivant = cal.date(byAdding: .day, value: 1, to: suivant) ?? e.dernierJour.addingTimeInterval(86_400)
+            }
+            let colonne = ColonneBis(variante: e.variante, etapes: p.etapes, debut: cal.isDate(jour, inSameDayAs: e.premierJour), fin: fin)
+            places.append((p.debut, p.fin, [colonne]))
+        }
+
+        // Les itinéraires bis qui contournent les mêmes étapes (ou partent au même endroit) partagent la même partie.
+        places.sort { ($0.debut, $0.fin) < ($1.debut, $1.fin) }
+        var fusionnees: [(debut: Int, fin: Int, colonnes: [ColonneBis])] = []
+        for p in places {
+            if var derniere = fusionnees.last,
+               p.debut < derniere.fin || (p.debut == derniere.fin && (p.debut == p.fin || derniere.debut == derniere.fin)) || p.debut == derniere.debut {
+                derniere.fin = max(derniere.fin, p.fin)
+                derniere.colonnes += p.colonnes
+                fusionnees[fusionnees.count - 1] = derniere
+            } else {
+                fusionnees.append(p)
+            }
+        }
+
+        var morceaux: [MorceauDuJour] = []
+        var k = 0
+        var prochaine = 0
+        while k <= duJour.count {
+            if prochaine < fusionnees.count, fusionnees[prochaine].debut == k {
+                let f = fusionnees[prochaine]
+                morceaux.append(MorceauDuJour(principal: Array(duJour[f.debut..<f.fin]), bis: f.colonnes))
+                prochaine += 1
+                // Une partie sans étape du principal ne fait pas avancer : l'étape qui la suit vient ensuite.
+                k = f.fin
+                continue
+            }
+            if k < duJour.count { morceaux.append(MorceauDuJour(principal: [duJour[k]], bis: [])) }
+            k += 1
+        }
+        return morceaux
+    }
+}

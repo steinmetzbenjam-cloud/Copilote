@@ -390,4 +390,45 @@ struct CalculsTests {
         #expect(v.etapes(deVariante: bis.id).isEmpty)
         #expect(v.etapesSansJour.map(\.titre) == ["Libre"])
     }
+
+    @Test func itineraireBisDerouleACoteDuPrincipalJusquAuRaccord() {
+        let v = voyage()
+        let j1 = v.jours[0], j2 = v.jours[1]
+        func etape(_ titre: String, jour: Date, ordre: Double) -> Etape {
+            let e = Etape(titre: titre, jour: jour)
+            e.ordre = ordre
+            e.voyage = v
+            contexte.insert(e)
+            return e
+        }
+        func titres(_ m: [MorceauDuJour]) -> [String] {
+            m.map { m in m.principal.map(\.titre).joined(separator: "+") + (m.bis.isEmpty ? "" : " | " + m.bis.map { $0.etapes.map(\.titre).joined(separator: "+") }.joined(separator: " | ")) }
+        }
+        let a = etape("A", jour: j1, ordre: 0)
+        _ = etape("B", jour: j1, ordre: 1)
+        let hotel = Etape(titre: "Hôtel", jour: j1, categorie: .hebergement)
+        hotel.voyage = v
+        contexte.insert(hotel)
+        v.placerEntreJours(hotel, apres: j1)
+        _ = etape("C", jour: j2, ordre: 0)
+        _ = etape("D", jour: j2, ordre: 1)
+        let e = etape("E", jour: j2, ordre: 2)
+
+        // Depuis l'hôtel : le lendemain, X et Y à côté de C et D, puis E en commun.
+        let bis = v.creerVariante(depuis: hotel)
+        v.ajouterEtape(a: bis, dans: contexte).titre = "X"
+        v.ajouterEtape(a: bis, dans: contexte).titre = "Y"
+        v.modifierVariante(bis.id) { $0.raccordUID = e.uid }
+        #expect(titres(v.deroule(du: j1)) == ["A", "B"])
+        #expect(titres(v.deroule(du: j2)) == ["C+D | X+Y", "E"])
+        #expect(v.deroule(du: j2)[0].bis.first.map { $0.debut && $0.fin } == true)
+
+        // Depuis A, sans étape, raccord à E : B à côté d'une colonne vide le premier jour, puis C et D le lendemain.
+        v.supprimerVariante(bis.id, dans: contexte)
+        let autre = v.creerVariante(depuis: a)
+        v.modifierVariante(autre.id) { $0.raccordUID = e.uid }
+        #expect(titres(v.deroule(du: j1)) == ["A", "B | "])
+        #expect(titres(v.deroule(du: j2)) == ["C+D | ", "E"])
+        #expect(v.deroule(du: j1)[1].bis.first.map { $0.debut && !$0.fin } == true)
+    }
 }

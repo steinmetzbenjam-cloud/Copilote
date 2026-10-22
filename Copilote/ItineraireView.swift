@@ -436,7 +436,7 @@ struct ItineraireView: View {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Itinéraires bis détachés").font(.headline)
                     Text("Leur étape de départ a été supprimée ou remise « à placer ».").font(.footnote).foregroundStyle(.secondary)
-                    ForEach(voyage.variantesDetachees) { blocVariante($0, couleur: .gray, enRetrait: false) }
+                    ForEach(voyage.variantesDetachees) { blocVariante($0, couleur: .gray) }
                     ForEach(etapesBisSansItineraire) { ligne($0, couleur: .gray) }
                 }
                 .padding(16)
@@ -547,8 +547,6 @@ struct ItineraireView: View {
                     Label(h.titre.isEmpty ? "Hébergement" : h.titre, systemImage: h.categorie.symbole)
                         .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
-                // Les itinéraires bis qui partent de l'hôtel, le lendemain matin.
-                ForEach(voyage.variantes(partantDe: h)) { blocVariante($0, couleur: couleurNuit) }
             }
             if hebergements.isEmpty, let t = voyage.transportDeNuit(apres: jour), let transport = t.depart.transport {
                 ligneTransportDeNuit(transport, depart: t.depart, arrivee: t.arrivee)
@@ -722,20 +720,19 @@ struct ItineraireView: View {
                 ligneTransportDeNuit(transport, depart: t.depart, arrivee: t.arrivee)
             }
 
-            if etapes.isEmpty {
+            // Les étapes, et, du départ d'un itinéraire bis jusqu'à son raccord, le principal et l'itinéraire bis côte à côte.
+            let morceaux = voyage.deroule(du: jour)
+            if morceaux.isEmpty {
                 Text("Aucune étape").font(.footnote).foregroundStyle(.tertiary)
             } else {
+                let contexteJour = ContexteJour(jour: jour, etapes: etapes, couleur: couleur, placees: placees,
+                                                incoherences: incoherences, chevauchements: chevauchements, ciel: temps != nil)
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(Array(etapes.enumerated()), id: \.element.uid) { i, etape in
-                        ligneGlissable(etape, jour: jour, couleur: couleur,
-                                       rang: placees.firstIndex { $0 === etape }, incoherence: incoherences[etape.uid], chevauche: chevauchements[etape.uid])
-                            // Sur le ciel de la météo : un cadre plus opaque, pour lire le détail de l'étape.
-                            .cadreSurCiel(temps != nil)
-                        // Les itinéraires bis qui partent de cette étape, juste dessous.
-                        ForEach(voyage.variantes(partantDe: etape)) { blocVariante($0, couleur: couleur) }
-                        // Le transport prévu vers l'étape suivante du jour : une ligne fine entre les deux.
-                        if let transport = etape.transport, i + 1 < etapes.count {
-                            ligneTransport(transport, depart: etape, arrivee: etapes[i + 1])
+                    ForEach(morceaux) { m in
+                        if m.bis.isEmpty, let etape = m.principal.first {
+                            etapePrincipale(etape, contexteJour)
+                        } else {
+                            partieCoteACote(m, contexteJour)
                         }
                     }
                 }
@@ -788,8 +785,15 @@ struct ItineraireView: View {
 
     private static let prefixe = "copilote-etape:"
 
-    private func ligneGlissable(_ etape: Etape, jour: Date, couleur: Color, rang: Int?, incoherence: Date?, chevauche: Etape? = nil) -> some View {
-        ligne(etape, couleur: couleur, rang: rang, incoherence: incoherence, chevauche: chevauche, bis: true)
+    private func ligneGlissable(_ etape: Etape, jour: Date, couleur: Color, rang: Int?, incoherence: Date?, chevauche: Etape? = nil,
+                                compacte: Bool = false) -> some View {
+        Group {
+            if compacte {
+                ligneCompacte(etape, couleur: couleur, rang: rang, alerte: incoherence != nil || chevauche != nil, bis: true)
+            } else {
+                ligne(etape, couleur: couleur, rang: rang, incoherence: incoherence, chevauche: chevauche, bis: true)
+            }
+        }
             .draggable(Self.prefixe + etape.uid) {
                 Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
                     .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -959,43 +963,48 @@ struct ItineraireView: View {
         withAnimation { voyage.trierParHeure(jour) }
     }
 
+    /// Le repère d'une étape, comme sur la carte : son numéro (assiette pour un repas, lit pour un hébergement), sinon l'icône de sa catégorie.
+    private func repere(_ etape: Etape, couleur: Color, rang: Int?) -> some View {
+        Group {
+            if let rang, etape.categorie == .repas {
+                // Un repas : l'assiette numérotée entre la fourchette et le couteau, comme sur la carte.
+                PionRepas(numero: rang + 1, couleur: couleur, taille: 22)
+            } else if let rang, etape.categorie == .hebergement {
+                // Un hébergement : un lit de la couleur du jour, son numéro dans une pastille.
+                Image(systemName: "bed.double.fill")
+                    .font(.system(size: 20))
+                    .foregroundStyle(couleur)
+                    .frame(width: 34, height: 24)
+                    .overlay(alignment: .topTrailing) {
+                        Text("\(rang + 1)")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.white)
+                            .frame(minWidth: 15, minHeight: 15)
+                            .background(couleur, in: Circle())
+                            .overlay(Circle().stroke(FondDePage.carte, lineWidth: 1.5))
+                            .offset(x: 4, y: -7)
+                    }
+            } else if let rang {
+                Text("\(rang + 1)")
+                    .font(.caption.bold())
+                    .foregroundStyle(.white)
+                    .frame(width: 24, height: 24)
+                    .background(couleur, in: Circle())
+            } else {
+                Image(systemName: etape.categorie.symbole)
+                    .frame(width: 24, height: 24)
+                    .foregroundStyle(couleur)
+            }
+        }
+    }
+
     /// `rang` : numéro du repère sur la carte (étapes placées seulement) ; sinon l'icône de la catégorie.
     /// `incoherence` : heure de l'étape précédente qui contredit celle-ci (l'étape est placée après une étape plus tardive).
     /// `bis` : étape de l'itinéraire principal, avec le petit bouton qui crée un itinéraire bis partant d'elle.
     private func ligne(_ etape: Etape, couleur: Color = .accentColor, rang: Int? = nil, incoherence: Date? = nil, chevauche: Etape? = nil,
                        bis: Bool = false) -> some View {
         HStack(spacing: 12) {
-                Group {
-                    if let rang, etape.categorie == .repas {
-                        // Un repas : l'assiette numérotée entre la fourchette et le couteau, comme sur la carte.
-                        PionRepas(numero: rang + 1, couleur: couleur, taille: 22)
-                    } else if let rang, etape.categorie == .hebergement {
-                        // Un hébergement : un lit de la couleur du jour, son numéro dans une pastille.
-                        Image(systemName: "bed.double.fill")
-                            .font(.system(size: 20))
-                            .foregroundStyle(couleur)
-                            .frame(width: 34, height: 24)
-                            .overlay(alignment: .topTrailing) {
-                                Text("\(rang + 1)")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundStyle(.white)
-                                    .frame(minWidth: 15, minHeight: 15)
-                                    .background(couleur, in: Circle())
-                                    .overlay(Circle().stroke(FondDePage.carte, lineWidth: 1.5))
-                                    .offset(x: 4, y: -7)
-                            }
-                    } else if let rang {
-                        Text("\(rang + 1)")
-                            .font(.caption.bold())
-                            .foregroundStyle(.white)
-                            .frame(width: 24, height: 24)
-                            .background(couleur, in: Circle())
-                    } else {
-                        Image(systemName: etape.categorie.symbole)
-                            .frame(width: 24, height: 24)
-                            .foregroundStyle(couleur)
-                    }
-                }
+                repere(etape, couleur: couleur, rang: rang)
                 // Même largeur pour tous les repères : les titres restent alignés d'une ligne à l'autre.
                 .frame(width: 44)
                 VStack(alignment: .leading, spacing: 2) {
@@ -1067,6 +1076,157 @@ struct ItineraireView: View {
 
     private func nomEtape(_ e: Etape) -> String { e.titre.isEmpty ? e.categorie.libelle : e.titre }
 
+    /// Ce que la carte d'un jour sait de ses étapes : de quoi dessiner chacune, seule ou dans une colonne.
+    private struct ContexteJour {
+        let jour: Date
+        let etapes: [Etape]
+        let couleur: Color
+        let placees: [Etape]
+        let incoherences: [String: Date]
+        let chevauchements: [String: Etape]
+        /// Fond de ciel (météo) : les étapes ont un cadre plus opaque.
+        let ciel: Bool
+    }
+
+    /// Une étape de l'itinéraire principal, précédée du transport prévu depuis l'étape d'avant du jour (une ligne fine entre les deux).
+    @ViewBuilder private func etapePrincipale(_ etape: Etape, _ c: ContexteJour, compacte: Bool = false) -> some View {
+        if let i = c.etapes.firstIndex(where: { $0 === etape }), i > 0, let transport = c.etapes[i - 1].transport {
+            ligneTransport(transport, depart: c.etapes[i - 1], arrivee: etape)
+        }
+        ligneGlissable(etape, jour: c.jour, couleur: c.couleur, rang: c.placees.firstIndex { $0 === etape },
+                       incoherence: c.incoherences[etape.uid], chevauche: c.chevauchements[etape.uid], compacte: compacte)
+            // Sur le ciel de la météo : un cadre plus opaque, pour lire le détail de l'étape.
+            .cadreSurCiel(c.ciel)
+    }
+
+    /// Du départ d'un itinéraire bis jusqu'à son raccord : les étapes du principal à gauche, celles de chaque itinéraire bis
+    /// dans une colonne à droite, au même niveau.
+    private func partieCoteACote(_ m: MorceauDuJour, _ c: ContexteJour) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            VStack(alignment: .leading, spacing: 8) {
+                Label("Principal", systemImage: "arrow.down")
+                    .font(.caption.bold()).foregroundStyle(c.couleur)
+                    .padding(.top, 10)
+                if m.principal.isEmpty {
+                    Text("Pas d'étape").font(.footnote).foregroundStyle(.tertiary)
+                }
+                ForEach(m.principal) { etapePrincipale($0, c, compacte: true) }
+            }
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            ForEach(m.bis) { colonneBis($0, couleur: c.couleur) }
+        }
+    }
+
+    /// Un itinéraire bis dans une partie côte à côte : son premier transport là où il part, ses étapes du jour avec leurs transports,
+    /// et, dans sa dernière partie, l'ajout d'étapes et l'étape où il rejoint le principal.
+    private func colonneBis(_ colonne: ColonneBis, couleur: Color) -> some View {
+        let v = colonne.variante
+        let depart = voyage.depart(de: v)
+        let propres = voyage.etapes(deVariante: v.id)
+        let raccord = voyage.raccord(de: v)
+        let modifiable = !voyage.lectureSeule
+        return VStack(alignment: .leading, spacing: 8) {
+            enTeteBis(v, couleur: couleur, suite: !colonne.debut)
+            if colonne.debut, let depart, let premiere = propres.first ?? raccord {
+                lienBis(v.transportDepart, depart: depart, arrivee: premiere, couleur: couleur) {
+                    transportBisEnEdition = TransportBis(variante: v, depart: depart, arrivee: premiere)
+                }
+            }
+            if colonne.etapes.isEmpty && !colonne.fin {
+                Text("Pas d'étape").font(.footnote).foregroundStyle(.tertiary)
+            }
+            ForEach(colonne.etapes) { e in
+                ligneBis(e, variante: v, couleur: couleur, compacte: true)
+                if let i = propres.firstIndex(where: { $0 === e }), let suivante = i + 1 < propres.count ? propres[i + 1] : raccord {
+                    lienBis(e.transport, depart: e, arrivee: suivante, couleur: couleur) {
+                        transportDeNuitEnEdition = NuitTransport(depart: e, arrivee: suivante)
+                    }
+                }
+            }
+            if colonne.fin {
+                if modifiable {
+                    Button("Étape", systemImage: "plus.circle.fill") { ajouterEtapeBis(v) }
+                        .buttonStyle(.borderless).tint(couleur).font(.footnote)
+                        .help("Ajouter une étape à l'itinéraire bis")
+                }
+                menuRaccord(v, raccord: raccord, couleur: couleur)
+            }
+        }
+        .modifier(CadreBis(couleur: couleur, vise: varianteVisee == v.id))
+        // Une étape lâchée sur la colonne va à la fin de l'itinéraire bis.
+        .dropDestination(for: String.self) { elements, _ in
+            guard !voyage.lectureSeule else { return false }
+            return recevoir(elements, dansVariante: v, avant: nil)
+        } isTargeted: { visee in
+            if visee { varianteVisee = v.id } else if varianteVisee == v.id { varianteVisee = nil }
+        }
+    }
+
+    /// Le nom de l'itinéraire bis (« suite » les jours d'après), le rappel du Budget s'il le suit, et le menu de ses actions.
+    private func enTeteBis(_ v: Variante, couleur: Color, suite: Bool = false) -> some View {
+        HStack(spacing: 6) {
+            Label(suite ? "\(v.nom) (suite)" : v.nom, systemImage: "arrow.triangle.branch")
+                .font(.caption.bold()).foregroundStyle(couleur)
+                .lineLimit(1)
+                .help(voyage.depart(de: v).map { "Part de « \(nomEtape($0)) »" } ?? v.nom)
+            if voyage.varianteBudget == v.id {
+                Image(systemName: "eurosign.circle.fill")
+                    .font(.caption).foregroundStyle(.green)
+                    .help("Le Budget suit cet itinéraire")
+                    .accessibilityLabel("Suivi par le Budget")
+            }
+            Spacer(minLength: 0)
+            if !voyage.lectureSeule {
+                Menu { actionsVariante(v) } label: { Image(systemName: "ellipsis.circle").foregroundStyle(couleur) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                    .accessibilityLabel("Actions de l'itinéraire bis")
+            }
+        }
+    }
+
+    /// L'étape commune où l'itinéraire bis rejoint le principal (une étape, ou l'hôtel d'une nuit).
+    private func menuRaccord(_ v: Variante, raccord: Etape?, couleur: Color) -> some View {
+        Menu { choixRaccord(v) } label: {
+            Label(raccord.map { "Rejoint « \(nomEtape($0)) »" } ?? "Rejoindre le principal…", systemImage: "arrow.triangle.merge")
+                .font(.footnote.weight(.medium))
+                .lineLimit(2)
+                .multilineTextAlignment(.leading)
+        }
+        .menuStyle(.borderlessButton).menuIndicator(.hidden)
+        .tint(couleur)
+        .disabled(voyage.lectureSeule)
+    }
+
+    /// Une étape en version étroite, pour les colonnes côte à côte : son repère, son titre et son horaire dessous.
+    private func ligneCompacte(_ etape: Etape, couleur: Color, rang: Int?, alerte: Bool = false, bis: Bool = false) -> some View {
+        HStack(alignment: .top, spacing: 6) {
+            repere(etape, couleur: couleur, rang: rang)
+                .frame(width: 34)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(etape.titre.isEmpty ? "Sans titre" : etape.titre)
+                    .font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                    .lineLimit(2)
+                if let horaire = horaireCourt(etape) {
+                    Text(horaire).font(.caption.monospacedDigit()).foregroundStyle(alerte ? Color.orange : Color.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+            if bis && voyage.mode == .preparation && !voyage.lectureSeule { boutonBis(etape, couleur: couleur) }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { ouvrir(etape) }
+        .accessibilityAddTraits(.isButton)
+    }
+
+    /// L'horaire d'une étape en peu de place : « 10:00 – 11:30 », « → 18:00 » ou sa durée.
+    private func horaireCourt(_ etape: Etape) -> String? {
+        if let heure = etape.heure {
+            return etape.heureFin.map { "\(etape.heureAffichee(heure)) – \(etape.heureAffichee($0))" } ?? etape.heureAffichee(heure)
+        }
+        if let fin = etape.heureFin { return "→ \(etape.heureAffichee(fin))" }
+        return etape.duree.map(CategorieEtape.texteDuree)
+    }
+
     /// Le petit bouton d'une étape de l'itinéraire principal : il crée un itinéraire bis qui part d'elle.
     private func boutonBis(_ etape: Etape, couleur: Color) -> some View {
         Button { creerVariante(depuis: etape) } label: {
@@ -1082,9 +1242,9 @@ struct ItineraireView: View {
         .accessibilityLabel("Créer un itinéraire bis depuis « \(nomEtape(etape)) »")
     }
 
-    /// Un itinéraire bis, sous l'étape d'où il part, dans un cadre en pointillés : son premier transport, ses étapes avec leurs
-    /// transports, et l'étape où il rejoint l'itinéraire principal. `enRetrait` : décalé vers la droite, comme une branche.
-    private func blocVariante(_ v: Variante, couleur: Color, enRetrait: Bool = true) -> some View {
+    /// Un itinéraire bis entier dans un cadre en pointillés (un itinéraire bis détaché : son étape de départ n'est plus dans les jours) :
+    /// son premier transport, ses étapes avec leurs transports, et l'étape où il rejoint l'itinéraire principal.
+    private func blocVariante(_ v: Variante, couleur: Color) -> some View {
         let depart = voyage.depart(de: v)
         let propres = voyage.etapes(deVariante: v.id)
         let raccord = voyage.raccord(de: v)
@@ -1092,23 +1252,7 @@ struct ItineraireView: View {
         // Jour où l'on part : le lendemain pour un départ de l'hôtel de la nuit.
         let jourDepart = depart.flatMap { d in d.jour.map { d.apresJour ? (cal.date(byAdding: .day, value: 1, to: $0) ?? $0) : $0 } }
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 6) {
-                Label(depart.map { "\(v.nom) · depuis « \(nomEtape($0)) »" } ?? v.nom, systemImage: "arrow.triangle.branch")
-                    .font(.caption.bold()).foregroundStyle(couleur)
-                    .lineLimit(1)
-                if voyage.varianteBudget == v.id {
-                    Image(systemName: "eurosign.circle.fill")
-                        .font(.caption).foregroundStyle(.green)
-                        .help("Le Budget suit cet itinéraire")
-                        .accessibilityLabel("Suivi par le Budget")
-                }
-                Spacer(minLength: 0)
-                if modifiable {
-                    Menu { actionsVariante(v) } label: { Image(systemName: "ellipsis.circle").foregroundStyle(couleur) }
-                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                        .accessibilityLabel("Actions de l'itinéraire bis")
-                }
-            }
+            enTeteBis(v, couleur: couleur)
             // Du départ à la première étape (au raccord s'il n'y en a pas encore) : le transport propre à l'itinéraire bis.
             if let depart, let premiere = propres.first ?? raccord {
                 lienBis(v.transportDepart, depart: depart, arrivee: premiere, couleur: couleur) {
@@ -1132,25 +1276,9 @@ struct ItineraireView: View {
                 Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouterEtapeBis(v) }
                     .buttonStyle(.borderless).tint(couleur).font(.footnote)
             }
-            // L'étape commune où l'itinéraire bis rejoint le principal (une étape, ou l'hôtel d'une nuit).
-            if depart != nil {
-                Menu { choixRaccord(v) } label: {
-                    Label(raccord.map { "Rejoint « \(nomEtape($0)) »" } ?? "Rejoindre l'itinéraire principal…", systemImage: "arrow.triangle.merge")
-                        .font(.footnote.weight(.medium))
-                }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
-                .tint(couleur)
-                .disabled(!modifiable)
-            }
+            if depart != nil { menuRaccord(v, raccord: raccord, couleur: couleur) }
         }
-        .padding(10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background {
-            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.regularMaterial)
-            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(couleur.opacity(0.07))
-        }
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .strokeBorder(couleur.opacity(0.6), style: StrokeStyle(lineWidth: varianteVisee == v.id ? 2.5 : 1.2, dash: [5, 4])))
+        .modifier(CadreBis(couleur: couleur, vise: varianteVisee == v.id))
         // Une étape lâchée sur le cadre va à la fin de l'itinéraire bis.
         .dropDestination(for: String.self) { elements, _ in
             guard !voyage.lectureSeule else { return false }
@@ -1158,13 +1286,14 @@ struct ItineraireView: View {
         } isTargeted: { visee in
             if visee { varianteVisee = v.id } else if varianteVisee == v.id { varianteVisee = nil }
         }
-        .padding(.leading, enRetrait ? 22 : 0)
     }
 
     /// Une étape de l'itinéraire bis : on la glisse vers l'itinéraire principal, les étapes à placer ou un autre itinéraire bis,
     /// et on lâche une étape dessus pour la placer juste avant.
-    private func ligneBis(_ etape: Etape, variante v: Variante, couleur: Color) -> some View {
-        ligne(etape, couleur: couleur)
+    private func ligneBis(_ etape: Etape, variante v: Variante, couleur: Color, compacte: Bool = false) -> some View {
+        Group {
+            if compacte { ligneCompacte(etape, couleur: couleur, rang: nil) } else { ligne(etape, couleur: couleur) }
+        }
             .draggable(Self.prefixe + etape.uid) {
                 Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
                     .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -1280,4 +1409,22 @@ struct ItineraireView: View {
 private struct HautCarteNotes: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// Le cadre d'un itinéraire bis : fond dépoli à peine teinté, contour en pointillés (plus épais quand on y glisse une étape).
+private struct CadreBis: ViewModifier {
+    let couleur: Color
+    let vise: Bool
+
+    func body(content: Content) -> some View {
+        content
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
+            .background {
+                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.regularMaterial)
+                RoundedRectangle(cornerRadius: 12, style: .continuous).fill(couleur.opacity(0.07))
+            }
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(couleur.opacity(0.6), style: StrokeStyle(lineWidth: vise ? 2.5 : 1.2, dash: [5, 4])))
+    }
 }
