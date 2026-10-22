@@ -243,6 +243,7 @@ struct CarteDuVoyage: View {
             // Lu ici pour que la carte soit redessinée dès qu'un itinéraire arrive (le contenu de la carte n'est pas observé seul).
             let _ = Itineraires.shared.trajets.count
             MapReader { proxy in
+                // Vue d'ensemble : les repères se superposent ; un jour choisi : les siens qui se chevauchent se rangent côte à côte.
                 carte(proxy, ecarts: ecartsDesReperes(taille: geo.size))
                     .mapStyle(fond.style)
                     .mapControls {
@@ -427,19 +428,19 @@ struct CarteDuVoyage: View {
 
     // MARK: Repères superposés
 
-    /// Les repères de la carte (étapes, hébergements, lieux de référence), chacun avec sa clé et son emplacement.
+    /// Les repères du jour choisi (ses étapes, ses lieux de référence, les hôtels de la veille et du soir), chacun avec sa clé et son emplacement.
+    /// Ceux des autres jours, estompés, restent à leur place.
     private var reperes: [(cle: String, coordonnee: CLLocationCoordinate2D)] {
-        var liste = voyage.etapesSansJour.compactMap { e in e.coordonnee.map { (cle: "e-\(e.uid)", coordonnee: $0) } }
-        for (index, jour) in joursDessines {
-            liste += (voyage.infos(du: jour)?.lieux ?? []).map { (cle: "l-\(index)-\($0.id)", coordonnee: $0.coordonnee) }
-            liste += hebergementsAffiches(pour: jour).compactMap { h in h.coordonnee.map { (cle: "h-\(h.uid)", coordonnee: $0) } }
-            liste += voyage.etapes(du: jour).compactMap { e in e.coordonnee.map { (cle: "e-\(e.uid)", coordonnee: $0) } }
-        }
-        return liste
+        guard let jourFocus, let index = voyage.jours.firstIndex(where: { Calendar.current.isDate($0, inSameDayAs: jourFocus) }) else { return [] }
+        let jour = voyage.jours[index]
+        return (voyage.infos(du: jour)?.lieux ?? []).map { (cle: "l-\(index)-\($0.id)", coordonnee: $0.coordonnee) }
+            + hotelsAutour(de: jour).compactMap { h in h.coordonnee.map { (cle: "h-\(h.uid)", coordonnee: $0) } }
+            + voyage.etapes(du: jour).compactMap { e in e.coordonnee.map { (cle: "e-\(e.uid)", coordonnee: $0) } }
     }
 
     /// Décalage à l'écran des repères qui se chevauchent : ils se rangent côte à côte (par rangées de quatre) autour de leur centre commun.
     /// Suit le zoom : deux repères proches se séparent vus de loin et retrouvent leur place quand on s'approche.
+    /// Seulement pour un jour choisi (voir `reperes`) : en vue d'ensemble, rien ne bouge.
     private func ecartsDesReperes(taille: CGSize) -> [String: CGSize] {
         let liste = reperes
         guard liste.count > 1 else { return [:] }
