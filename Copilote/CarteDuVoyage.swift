@@ -243,7 +243,7 @@ struct CarteDuVoyage: View {
             // Lu ici pour que la carte soit redessinée dès qu'un itinéraire arrive (le contenu de la carte n'est pas observé seul).
             let _ = Itineraires.shared.trajets.count
             MapReader { proxy in
-                carte(proxy)
+                carte(proxy, ecarts: ecartsDesReperes(taille: geo.size))
                     .mapStyle(fond.style)
                     .mapControls {
                         MapCompass()
@@ -287,14 +287,14 @@ struct CarteDuVoyage: View {
         }
     }
 
-    @ViewBuilder private func carte(_ proxy: MapProxy) -> some View {
+    @ViewBuilder private func carte(_ proxy: MapProxy, ecarts: [String: CGSize]) -> some View {
         #if os(iOS)
-        Map(position: $position, selection: $pointSelectionne) { contenu }
+        Map(position: $position, selection: $pointSelectionne) { contenu(ecarts) }
             .mapFeatureSelectionDisabled { _ in onLieu == nil }
             .onChange(of: pointSelectionne) { _, f in lieuChoisi = f.map(LieuCarte.init(feature:)) }
         #else
         // Sur Mac, Plans ne laisse pas choisir ses points d'intérêt : on cherche le plus proche de l'endroit cliqué.
-        Map(position: $position) { contenu }
+        Map(position: $position) { contenu(ecarts) }
             .onTapGesture { point in
                 guard onLieu != nil, let c = proxy.convert(point, from: .local) else { return }
                 let voisin = proxy.convert(CGPoint(x: point.x + 24, y: point.y), from: .local)
@@ -305,7 +305,8 @@ struct CarteDuVoyage: View {
         #endif
     }
 
-    @MapContentBuilder private var contenu: some MapContent {
+    /// `ecarts` : décalage à l'écran des repères qui se chevauchent (voir `ecartsDesReperes`).
+    @MapContentBuilder private func contenu(_ ecarts: [String: CGSize]) -> some MapContent {
         if fond == .transports {
             ForEach(stations) { station in
                 Annotation(station.nom, coordinate: station.coordonnee) {
@@ -328,6 +329,7 @@ struct CarteDuVoyage: View {
                         .scaleEffect(estEtapeFocus(etape) ? 1.4 : 1)
                 }
                 .buttonStyle(.plain)
+                .offset(ecarts["e-\(etape.uid)"] ?? .zero)
             }
         }
         ForEach(joursDessines, id: \.jour) { index, jour in
@@ -342,6 +344,7 @@ struct CarteDuVoyage: View {
                         .background(.background, in: Circle())
                         .overlay(Circle().stroke(Self.couleur(du: index), lineWidth: 1.5))
                         .opacity(attenue ? 0.35 : 1)
+                        .offset(ecarts["l-\(index)-\(lieu.id)"] ?? .zero)
                 }
             }
             let etapes = voyage.etapes(du: jour).filter { $0.coordonnee != nil }
@@ -357,6 +360,7 @@ struct CarteDuVoyage: View {
                             .scaleEffect(estEtapeFocus(h) ? 1.4 : 1)
                     }
                     .buttonStyle(.plain)
+                    .offset(ecarts["h-\(h.uid)"] ?? .zero)
                 }
             }
             let traits = segments(du: jour)
@@ -415,9 +419,77 @@ struct CarteDuVoyage: View {
                             .shadow(color: .black.opacity(estEtapeFocus(etape) ? 0.35 : 0), radius: 4, y: 2)
                     }
                     .buttonStyle(.plain)
+                    .offset(ecarts["e-\(etape.uid)"] ?? .zero)
                 }
             }
         }
+    }
+
+    // MARK: Repères superposés
+
+    /// Les repères de la carte (étapes, hébergements, lieux de référence), chacun avec sa clé et son emplacement.
+    private var reperes: [(cle: String, coordonnee: CLLocationCoordinate2D)] {
+        var liste = voyage.etapesSansJour.compactMap { e in e.coordonnee.map { (cle: "e-\(e.uid)", coordonnee: $0) } }
+        for (index, jour) in joursDessines {
+            liste += (voyage.infos(du: jour)?.lieux ?? []).map { (cle: "l-\(index)-\($0.id)", coordonnee: $0.coordonnee) }
+            liste += hebergementsAffiches(pour: jour).compactMap { h in h.coordonnee.map { (cle: "h-\(h.uid)", coordonnee: $0) } }
+            liste += voyage.etapes(du: jour).compactMap { e in e.coordonnee.map { (cle: "e-\(e.uid)", coordonnee: $0) } }
+        }
+        return liste
+    }
+
+    /// Décalage à l'écran des repères qui se chevauchent : ils se rangent côte à côte (par rangées de quatre) autour de leur centre commun.
+    /// Suit le zoom : deux repères proches se séparent vus de loin et retrouvent leur place quand on s'approche.
+    private func ecartsDesReperes(taille: CGSize) -> [String: CGSize] {
+        let liste = reperes
+        guard liste.count > 1 else { return [:] }
+        // Écart entre deux repères voisins : un repère et un peu d'air.
+        let pas: Double = 28
+        // Points de carte par point d'écran ; sans zone affichée connue, seuls les repères à quelques mètres l'un de l'autre sont écartés.
+        let echelle: Double
+        if let r = regionVisible, taille.width > 0 {
+            echelle = Self.rectangle(r).width / Double(taille.width)
+        } else {
+            echelle = 5 * MKMapPointsPerMeterAtLatitude(liste[0].coordonnee.latitude) / pas
+        }
+        guard echelle > 0 else { return [:] }
+        let ecran = liste.map { r -> CGPoint in
+            let m = MKMapPoint(r.coordonnee)
+            return CGPoint(x: m.x / echelle, y: m.y / echelle)
+        }
+
+        // Groupes de repères qui se touchent, de proche en proche.
+        var parent = Array(liste.indices)
+        func racine(_ i: Int) -> Int {
+            var i = i
+            while parent[i] != i { parent[i] = parent[parent[i]]; i = parent[i] }
+            return i
+        }
+        for i in liste.indices {
+            for j in liste.indices where j > i && hypot(ecran[i].x - ecran[j].x, ecran[i].y - ecran[j].y) < pas - 4 {
+                parent[racine(j)] = racine(i)
+            }
+        }
+
+        var ecarts: [String: CGSize] = [:]
+        for groupe in Dictionary(grouping: liste.indices, by: racine).values where groupe.count > 1 {
+            let centre = CGPoint(x: groupe.map { ecran[$0].x }.reduce(0, +) / Double(groupe.count),
+                                 y: groupe.map { ecran[$0].y }.reduce(0, +) / Double(groupe.count))
+            // Rangées de haut en bas, chacune de gauche à droite, pour garder à peu près la disposition réelle.
+            let colonnes = min(groupe.count, 4)
+            let parHauteur = groupe.sorted { (ecran[$0].y, ecran[$0].x) < (ecran[$1].y, ecran[$1].x) }
+            let rangees = stride(from: 0, to: parHauteur.count, by: colonnes).map { debut in
+                parHauteur[debut..<min(debut + colonnes, parHauteur.count)].sorted { ecran[$0].x < ecran[$1].x }
+            }
+            for (r, rangee) in rangees.enumerated() {
+                for (c, i) in rangee.enumerated() {
+                    let x = centre.x + (Double(c) - Double(rangee.count - 1) / 2) * pas
+                    let y = centre.y + (Double(r) - Double(rangees.count - 1) / 2) * pas
+                    ecarts[liste[i].cle] = CGSize(width: x - ecran[i].x, height: y - ecran[i].y)
+                }
+            }
+        }
+        return ecarts
     }
 
     // MARK: Fond de carte
