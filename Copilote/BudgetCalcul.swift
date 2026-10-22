@@ -110,7 +110,6 @@ struct BudgetCalcule {
 extension Voyage {
     /// Tout ce qui est prévu au budget, jour par jour. Le coût d'un hébergement va au jour qui le précède ;
     /// celui du transport qui suit un hébergement va au lendemain ; l'aller et le retour au premier et au dernier jour.
-    /// Seules comptent les étapes et les transports de l'itinéraire choisi (`varianteBudget`), et les réservations qui leur sont liées.
     func calculerBudget() -> BudgetCalcule {
         var resultat = BudgetCalcule()
         let jours = self.jours
@@ -187,15 +186,7 @@ extension Voyage {
         ajouter(transportAller, cle: LienReservation.aller, titre: "Aller", jour: premier)
         ajouter(transportRetour, cle: LienReservation.retour, titre: "Retour", jour: dernier)
 
-        let parcours = parcoursDuBudget
-        // Le transport du départ d'un itinéraire bis vers sa première étape : il remplace celui de l'étape de départ.
-        if let v = parcours.variante, parcours.avecTransportDepart, let depart = self.depart(de: v), let jour = depart.jour {
-            let lendemain = depart.apresJour ? cal.date(byAdding: .day, value: 1, to: jour).map { min($0, dernier) } : nil
-            ajouter(v.transportDepart, cle: LienReservation.variante(v), titre: "\(v.nom) · \(depart.titre.isEmpty ? depart.categorie.libelle : depart.titre)",
-                    jour: lendemain ?? jour)
-        }
-
-        for etape in etapes where parcours.compte(etape) {
+        for etape in etapes {
             let titre = etape.titre.isEmpty ? etape.categorie.libelle : etape.titre
             guard let jour = etape.jour else {
                 if etape.aUnBudget || (etape.transport.map { $0.prixAdulte != nil || $0.prixEtudiant != nil || $0.prixAdolescent != nil || $0.prixEnfant != nil } ?? false) {
@@ -215,7 +206,7 @@ extension Voyage {
             if etape.apresJour, let lendemain = cal.date(byAdding: .day, value: 1, to: jour) {
                 jourDuTransport = min(lendemain, dernier)
             }
-            ajouter(parcours.transport(de: etape), cle: LienReservation.transport(depart: etape), titre: titre, jour: jourDuTransport)
+            ajouter(etape.transport, cle: LienReservation.transport(depart: etape), titre: titre, jour: jourDuTransport)
         }
         return resultat
     }

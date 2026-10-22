@@ -112,44 +112,10 @@ struct BudgetView: View {
                 }
                 .pickerStyle(.menu)
             }
-            if !voyage.variantes.isEmpty { choixItineraire }
         }
         .padding(14)
         .frame(maxWidth: .infinity)
         .modifier(FondDeCarte())
-    }
-
-    /// L'itinéraire compté : le principal, ou un itinéraire bis à la place de la partie du principal qu'il contourne.
-    private var choixItineraire: some View {
-        let choisie = voyage.variante(voyage.varianteBudget)
-        return VStack(alignment: .leading, spacing: 6) {
-            Divider()
-            LabeledContent {
-                Picker("Itinéraire", selection: Binding(get: { choisie?.id ?? "" }, set: { voyage.varianteBudget = $0.isEmpty ? nil : $0 })) {
-                    Text("Principal").tag("")
-                    ForEach(voyage.variantes) { Text($0.nom).tag($0.id) }
-                }
-                .pickerStyle(.menu)
-                .labelsHidden()
-                .fixedSize()
-            } label: {
-                Label("Itinéraire", systemImage: "arrow.triangle.branch")
-            }
-            .disabled(voyage.lectureSeule)
-            Text(texteItineraire(choisie)).font(.footnote).foregroundStyle(.secondary)
-        }
-    }
-
-    private func texteItineraire(_ v: Variante?) -> String {
-        guard let v else { return "Seules les étapes, les transports et les réservations de l'itinéraire principal comptent." }
-        let nom: (Etape) -> String = { $0.titre.isEmpty ? $0.categorie.libelle : $0.titre }
-        guard let depart = voyage.depart(de: v) else {
-            return "L'étape de départ de « \(v.nom) » n'est plus dans le voyage : c'est l'itinéraire principal qui compte."
-        }
-        if let raccord = voyage.raccord(de: v) {
-            return "« \(v.nom) » remplace l'itinéraire principal entre « \(nom(depart)) » et « \(nom(raccord)) » : seules ses étapes, ses transports et leurs réservations comptent."
-        }
-        return "« \(v.nom) » remplace l'itinéraire principal après « \(nom(depart)) » : seules ses étapes, ses transports et leurs réservations comptent."
     }
 
     /// Une famille : sa photo (ou une icône) et son nom dessous. Toucher affiche ses prix.

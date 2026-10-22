@@ -211,7 +211,7 @@ struct ContentView: View {
     /// Change quand une date, une heure ou un transport change : les rappels sont alors reprogrammés.
     private var signatureRappels: String {
         voyages.map { v in
-            "\(v.uid)\(v.debut.timeIntervalSince1970)\(v.etapes.map { "\($0.uid)\($0.jour?.timeIntervalSince1970 ?? 0)\($0.heure?.timeIntervalSince1970 ?? 0)\($0.apresJour)\($0.variante ?? "")\($0.transportJSON ?? "")" }.joined())\(v.transportAllerJSON ?? "")\(v.transportRetourJSON ?? "")"
+            "\(v.uid)\(v.debut.timeIntervalSince1970)\(v.etapes.map { "\($0.uid)\($0.jour?.timeIntervalSince1970 ?? 0)\($0.heure?.timeIntervalSince1970 ?? 0)\($0.apresJour)\($0.transportJSON ?? "")" }.joined())\(v.transportAllerJSON ?? "")\(v.transportRetourJSON ?? "")"
         }.joined(separator: "|")
     }
 

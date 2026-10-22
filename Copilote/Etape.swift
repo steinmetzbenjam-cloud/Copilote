@@ -180,8 +180,6 @@ final class Etape {
     var uid: String = ""
     /// Transport vers l'étape suivante, en JSON (voir Transport).
     var transportJSON: String?
-    /// Identifiant de l'itinéraire bis (`Variante`) dont fait partie l'étape ; nil : itinéraire principal.
-    var variante: String?
     /// Position dans la journée (réglée en glissant les étapes).
     var ordre: Double = 0
     var voyage: Voyage?

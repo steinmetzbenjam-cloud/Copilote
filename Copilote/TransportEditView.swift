@@ -57,19 +57,6 @@ struct TransportEditView: View {
         self.etapeArrivee = arrivee
     }
 
-    /// Transport du départ d'un itinéraire bis vers sa première étape : il est gardé avec l'itinéraire bis,
-    /// celui de l'étape de départ restant celui de l'itinéraire principal.
-    init(variante v: Variante, depart: Etape, arrivee: Etape) {
-        let titre: (Etape) -> String = { $0.titre.isEmpty ? "Étape" : $0.titre }
-        let voyage = depart.voyage
-        self.init(trajet: "\(titre(depart)) → \(titre(arrivee)) (\(v.nom))", jour: depart.jour ?? .now,
-                  coordonnees: depart.coordonnee.flatMap { a in arrivee.coordonnee.map { (a, $0) } },
-                  existant: v.transportDepart, voyage: voyage, cleLien: LienReservation.variante(v),
-                  enregistrer: { t in voyage?.modifierVariante(v.id) { $0.transportDepart = t } })
-        self.etapeDepart = depart
-        self.etapeArrivee = arrivee
-    }
-
     var body: some View {
         NavigationStack {
             Form {

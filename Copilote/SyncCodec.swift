@@ -163,7 +163,6 @@ enum Codec {
             r["pays"] = v.pays; r["creeLe"] = v.creeLe
             r["transportAller"] = v.transportAllerJSON; r["transportRetour"] = v.transportRetourJSON
             r["infosVols"] = v.infosVolsJSON
-            r["variantes"] = v.variantesJSON; r["varianteBudget"] = v.varianteBudget
             r["deviseLocale"] = v.deviseLocale; r["tauxChange"] = v.tauxChange; r["deviseTierce"] = v.deviseTierce; r["tauxTierce"] = v.tauxTierce; r["fuseauRef"] = v.fuseauReferenceId
             return r
         case let j as JourVoyage:
@@ -208,7 +207,6 @@ enum Codec {
         case let e as Etape:
             let r = base(.etape, e.uid, zone, systeme)
             r["titre"] = e.titre; r["lieu"] = e.lieu; r["jour"] = e.jour; r["heure"] = e.heure; r["heureFin"] = e.heureFin; r["duree"] = e.duree; r["fuseau"] = e.fuseauChoisi; r["apresJour"] = e.apresJour ? 1 : 0; r["transportJSON"] = e.transportJSON
-            r["variante"] = e.variante
             r["categorie"] = e.categorie.rawValue; r["notes"] = e.notes
             r["latitude"] = e.latitude; r["longitude"] = e.longitude
             r["ordre"] = e.ordre
@@ -335,7 +333,6 @@ enum Codec {
             v.pays = r["pays"] as? [String] ?? []; v.creeLe = date("creeLe") ?? v.creeLe
             v.transportAllerJSON = r["transportAller"] as? String; v.transportRetourJSON = r["transportRetour"] as? String
             v.infosVolsJSON = r["infosVols"] as? String
-            v.variantesJSON = r["variantes"] as? String; v.varianteBudget = r["varianteBudget"] as? String
             v.deviseLocale = r["deviseLocale"] as? String; v.tauxChange = nombre("tauxChange"); v.deviseTierce = r["deviseTierce"] as? String; v.tauxTierce = nombre("tauxTierce"); v.fuseauReferenceId = r["fuseauRef"] as? String
             let proprietaire = r.recordID.zoneID.ownerName
             v.zoneProprietaire = proprietaire == CKCurrentUserDefaultName ? "" : proprietaire
@@ -388,7 +385,6 @@ enum Codec {
                 let nouveau = Etape(titre: "", jour: .now); nouveau.uid = uid; contexte.insert(nouveau); return nouveau
             }()
             e.titre = texte("titre"); e.lieu = texte("lieu"); e.jour = date("jour"); e.heure = date("heure"); e.heureFin = date("heureFin"); e.duree = nombre("duree"); e.fuseauChoisi = r["fuseau"] as? String; e.apresJour = nombre("apresJour") == 1; e.transportJSON = r["transportJSON"] as? String
-            e.variante = r["variante"] as? String
             e.categorie = CategorieEtape(rawValue: texte("categorie")) ?? .autre; e.notes = texte("notes")
             e.latitude = nombre("latitude"); e.longitude = nombre("longitude"); e.ordre = nombre("ordre") ?? 0
             e.resume = r["resume"] as? String; e.horaires = r["horaires"] as? String; e.photoURL = r["photoURL"] as? String

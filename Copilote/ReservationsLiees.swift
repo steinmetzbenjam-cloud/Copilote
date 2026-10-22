@@ -122,30 +122,16 @@ extension Voyage {
         if let t = transportAller {
             cibles.append(CibleReservation(cle: LienReservation.aller, libelle: "Aller · \(t.descriptif(avecHoraires: false))", symbole: t.mode.symbole, groupe: .transports))
         }
-        // `bis` : nom de l'itinéraire bis de l'élément, en tête de son libellé.
-        func ajouter(_ e: Etape, bis: String = "") {
+        for e in elementsDuVoyage {
             if e.categorie == .hebergement {
-                cibles.append(CibleReservation(cle: LienReservation.etape(e), libelle: prefixeJour(e) + bis + nom(e), symbole: "bed.double.fill", groupe: .hebergements))
+                cibles.append(CibleReservation(cle: LienReservation.etape(e), libelle: prefixeJour(e) + nom(e), symbole: "bed.double.fill", groupe: .hebergements))
             } else {
-                cibles.append(CibleReservation(cle: LienReservation.etape(e), libelle: prefixeJour(e) + bis + nom(e), symbole: e.categorie.symbole, groupe: .etapes))
+                cibles.append(CibleReservation(cle: LienReservation.etape(e), libelle: prefixeJour(e) + nom(e), symbole: e.categorie.symbole, groupe: .etapes))
             }
             if let t = e.transport {
                 let vers = suivante(de: e).map { " → \(nom($0))" } ?? ""
-                cibles.append(CibleReservation(cle: LienReservation.transport(depart: e), libelle: prefixeJour(e) + bis + "\(t.descriptif(avecHoraires: false)) · \(nom(e))\(vers)",
+                cibles.append(CibleReservation(cle: LienReservation.transport(depart: e), libelle: prefixeJour(e) + "\(t.descriptif(avecHoraires: false)) · \(nom(e))\(vers)",
                                                symbole: t.mode.symbole, groupe: .transports))
-            }
-        }
-        for e in elementsDuVoyage {
-            ajouter(e)
-            // Les itinéraires bis qui partent de cet élément : leur premier transport, puis leurs étapes.
-            for v in variantes(partantDe: e) {
-                let propres = etapes(deVariante: v.id)
-                if let t = v.transportDepart {
-                    let vers = (propres.first ?? raccord(de: v)).map { " → \(nom($0))" } ?? ""
-                    cibles.append(CibleReservation(cle: LienReservation.variante(v), libelle: prefixeJour(e) + "\(v.nom) · \(t.descriptif(avecHoraires: false)) · \(nom(e))\(vers)",
-                                                   symbole: t.mode.symbole, groupe: .transports))
-                }
-                for b in propres { ajouter(b, bis: "\(v.nom) · ") }
             }
         }
         if let t = transportRetour {
@@ -247,11 +233,6 @@ extension Voyage {
             // Un transport qui part d'un hébergement a lieu le lendemain matin.
             let jourTransport = e.apresJour ? (cal.date(byAdding: .day, value: 1, to: jour) ?? jour) : jour
             return transport(t, jour: jourTransport, de: nom(e), vers: suivante(de: e).map(nom) ?? "")
-        }
-        if cle.hasPrefix("variante:"), let v = variantes.first(where: { LienReservation.variante($0) == cle }),
-           let t = v.transportDepart, let e = depart(de: v), let jour = e.jour {
-            let jourTransport = e.apresJour ? (cal.date(byAdding: .day, value: 1, to: jour) ?? jour) : jour
-            return transport(t, jour: jourTransport, de: nom(e), vers: (etapes(deVariante: v.id).first ?? raccord(de: v)).map(nom) ?? "")
         }
         if cle.hasPrefix("etape:"), let e = etapes.first(where: { LienReservation.etape($0) == cle }) {
             let jour = e.jour ?? debut
