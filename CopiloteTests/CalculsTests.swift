@@ -312,4 +312,48 @@ struct CalculsTests {
         autre.transportAller = Transport()
         #expect(autre.etapes.isEmpty)
     }
+
+    // MARK: Itinéraires bis
+
+    @Test func itineraireBisRemplaceLaPartieContourneeDansLeBudget() {
+        let v = voyage()
+        membre("Alex", tarif: .adulte, dans: v)
+        func etape(_ titre: String, prix: Double, ordre: Double) -> Etape {
+            let e = Etape(titre: titre, jour: v.debut)
+            e.prixAdulte = prix
+            e.ordre = ordre
+            e.voyage = v
+            contexte.insert(e)
+            return e
+        }
+        let a = etape("A", prix: 1, ordre: 0)
+        _ = etape("B", prix: 10, ordre: 1)
+        let c = etape("C", prix: 100, ordre: 2)
+        var trajet = Transport()
+        trajet.prixAdulte = 1000
+        a.transport = trajet
+
+        // Bis : A → X → C, à la place de B. Son premier transport est gardé avec lui, pas sur A.
+        let bis = v.creerVariante(depuis: a)
+        let x = v.ajouterEtape(a: bis, dans: contexte)
+        x.prixAdulte = 20
+        v.modifierVariante(bis.id) { $0.raccordUID = c.uid; $0.transportDepart = { var t = Transport(); t.prixAdulte = 2000; return t }() }
+
+        #expect(v.etapes(du: v.debut).map(\.titre) == ["A", "B", "C"])
+        #expect(v.suivante(de: x) === c)
+        #expect(v.precedente(de: x) == nil)
+        #expect(v.transportPourArriver(a: x)?.prixAdulte == 2000)
+        // Itinéraire principal : A, B, C et le transport de A.
+        #expect(v.calculerBudget().elements.total(pour: v.membresTries) == 1111)
+        // Itinéraire bis : A, X, C et le transport du bis ; B et le transport de A ne comptent plus.
+        v.varianteBudget = bis.id
+        #expect(v.calculerBudget().elements.total(pour: v.membresTries) == 2121)
+        // Sans raccord, la suite de l'itinéraire principal ne compte plus.
+        v.modifierVariante(bis.id) { $0.raccordUID = nil }
+        #expect(v.calculerBudget().elements.total(pour: v.membresTries) == 2021)
+
+        v.supprimerVariante(bis.id, dans: contexte)
+        #expect(v.varianteBudget == nil)
+        #expect(v.variantes.isEmpty)
+    }
 }

@@ -33,6 +33,9 @@ final class Voyage {
     /// Ce que l'on sait des vols d'aller et de retour (`VolPartage`, par numéro et date), trouvé par un voyageur qui a une clé
     /// AeroDataBox : partagé avec le groupe, qui le voit sans clé.
     var infosVolsJSON: String?
+    /// Itinéraires bis (JSON de `[Variante]`), et celui que suit le Budget (nil : l'itinéraire principal).
+    var variantesJSON: String?
+    var varianteBudget: String?
     @Relationship(deleteRule: .cascade, inverse: \Membre.voyage)
     var membres: [Membre] = []
     @Relationship(deleteRule: .cascade, inverse: \Etape.voyage)
@@ -88,16 +91,17 @@ final class Voyage {
 
 extension Voyage {
     /// Étapes d'un jour dans l'ordre choisi en les glissant ; à défaut, par heure puis par ordre de création.
+    /// Celles des itinéraires bis n'en font pas partie (voir `etapes(deVariante:)`).
     func etapes(du jour: Date) -> [Etape] {
         etapes
-            .filter { !$0.apresJour && ($0.jour.map { Calendar.current.isDate($0, inSameDayAs: jour) } ?? false) }
+            .filter { !$0.apresJour && $0.variante == nil && ($0.jour.map { Calendar.current.isDate($0, inSameDayAs: jour) } ?? false) }
             .sorted { ($0.ordre, $0.heure ?? .distantFuture, $0.creeLe) < ($1.ordre, $1.heure ?? .distantFuture, $1.creeLe) }
     }
 
     /// Hébergements de la nuit qui suit `jour` (entre ce jour et le suivant).
     func hebergements(apres jour: Date) -> [Etape] {
         etapes
-            .filter { $0.apresJour && ($0.jour.map { Calendar.current.isDate($0, inSameDayAs: jour) } ?? false) }
+            .filter { $0.apresJour && $0.variante == nil && ($0.jour.map { Calendar.current.isDate($0, inSameDayAs: jour) } ?? false) }
             .sorted { ($0.ordre, $0.creeLe) < ($1.ordre, $1.creeLe) }
     }
 
@@ -111,6 +115,12 @@ extension Voyage {
 
     /// Place l'étape (un hébergement) entre `jour` et le suivant.
     func placerEntreJours(_ etape: Etape, apres jour: Date) {
+        // Un hébergement d'un itinéraire bis ne prend pas la place de celui de l'itinéraire principal.
+        if etape.variante != nil {
+            etape.apresJour = true
+            etape.jour = Calendar.current.startOfDay(for: jour)
+            return
+        }
         let ancien = etape.apresJour ? nil : etape.jour
         // Un seul hébergement par nuit : l'éventuel occupant repart dans « Étapes à placer ».
         for autre in hebergements(apres: jour) where autre !== etape { retirerDuJour(autre) }
@@ -143,9 +153,15 @@ extension Voyage {
     }
 
     /// Étape suivante pour le transport : la suivante du jour, l'hébergement après la dernière, la première du lendemain après l'hébergement.
+    /// Dans un itinéraire bis : sa suivante, puis l'étape où il rejoint l'itinéraire principal.
     func suivante(de etape: Etape) -> Etape? {
         guard let jour = etape.jour else { return nil }
         let cal = Calendar.current
+        if let id = etape.variante {
+            let liste = etapes(deVariante: id)
+            guard let i = liste.firstIndex(where: { $0 === etape }) else { return nil }
+            return i + 1 < liste.count ? liste[i + 1] : variante(id).flatMap(raccord(de:))
+        }
         if etape.apresJour {
             let lendemain = cal.date(byAdding: .day, value: 1, to: jour) ?? jour
             return etapes(du: lendemain).first
@@ -156,7 +172,16 @@ extension Voyage {
     }
 
     /// Place `etape` juste après `reference` dans les étapes du jour, et renumérote le jour.
+    /// Dans un itinéraire bis, `etape` y entre à son tour, juste après `reference`.
     func inserer(_ etape: Etape, apres reference: Etape, du jour: Date) {
+        if let id = reference.variante {
+            etape.variante = id
+            var liste = etapes(deVariante: id).filter { $0 !== etape }
+            let index = (liste.firstIndex { $0 === reference } ?? liste.count - 1) + 1
+            liste.insert(etape, at: min(index, liste.count))
+            for (i, e) in liste.enumerated() { e.ordre = Double(i) }
+            return
+        }
         var liste = etapes(du: jour).filter { $0 !== etape }
         let index = (liste.firstIndex { $0 === reference } ?? liste.count - 1) + 1
         liste.insert(etape, at: min(index, liste.count))
@@ -164,10 +189,16 @@ extension Voyage {
     }
 
     /// Élément qui précède `etape` pour le transport (celui qui porte le transport pour y arriver) : l'inverse de `suivante(de:)`,
-    /// avec en plus, sans hôtel la veille, la dernière étape de la veille.
+    /// avec en plus, sans hôtel la veille, la dernière étape de la veille. Dans un itinéraire bis : l'étape d'avant
+    /// (nil pour la première, dont le transport est gardé avec l'itinéraire bis).
     func precedente(de etape: Etape) -> Etape? {
         guard let jour = etape.jour else { return nil }
         let cal = Calendar.current
+        if let id = etape.variante {
+            let liste = etapes(deVariante: id)
+            guard let i = liste.firstIndex(where: { $0 === etape }), i > 0 else { return nil }
+            return liste[i - 1]
+        }
         if etape.apresJour { return etapes(du: jour).last }
         let liste = etapes(du: jour)
         guard let i = liste.firstIndex(where: { $0 === etape }) else { return nil }
@@ -204,6 +235,7 @@ extension Voyage {
         guard let ancienJour = etape.jour, etapes.contains(where: { $0 === etape }) else { return false }
         etape.jour = nil
         etape.apresJour = false
+        etape.variante = nil
         etape.transport = nil
         etape.heure = nil
         etape.heureFin = nil
@@ -228,7 +260,9 @@ extension Voyage {
     func deplacer(_ etape: Etape, vers jour: Date, avant cible: Etape?) -> Bool {
         guard cible !== etape, etapes.contains(where: { $0 === etape }) else { return false }
         let cal = Calendar.current
-        let ancienJour = etape.jour
+        let ancienJour = etape.variante == nil ? etape.jour : nil
+        // Une étape d'un itinéraire bis déposée dans un jour rejoint l'itinéraire principal.
+        etape.variante = nil
         var liste = etapes(du: jour).filter { $0 !== etape }
         let index = cible.flatMap { c in liste.firstIndex { $0 === c } } ?? liste.count
         liste.insert(etape, at: index)

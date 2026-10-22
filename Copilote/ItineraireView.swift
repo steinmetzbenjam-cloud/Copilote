@@ -47,6 +47,13 @@ struct ItineraireView: View {
     @State private var notesOuvertes: Date?
     /// Haut de la carte du jour aux notes ouvertes, pour y aligner le cadre.
     @State private var hautNotes: CGFloat = 0
+    /// Transport du départ d'un itinéraire bis vers sa première étape, ouvert depuis sa ligne.
+    @State private var transportBisEnEdition: TransportBis?
+    /// Itinéraire bis à renommer, avec le nom en cours de saisie.
+    @State private var varianteARenommer: Variante?
+    @State private var nomVariante = ""
+    /// Itinéraire bis dont la suppression attend confirmation.
+    @State private var varianteASupprimer: Variante?
 
     private struct DeplacementEnAttente: Identifiable {
         let id = UUID()
@@ -64,6 +71,12 @@ struct ItineraireView: View {
             guard let jour = e.jour else { return false }
             return !voyage.jours.contains { cal.isDate($0, inSameDayAs: jour) }
         }
+    }
+
+    /// Étapes d'un itinéraire bis qui n'existe plus (supprimé sur un autre appareil pendant qu'on les modifiait ici).
+    private var etapesBisSansItineraire: [Etape] {
+        let ids = Set(voyage.variantes.map(\.id))
+        return voyage.etapes.filter { e in e.variante.map { !ids.contains($0) } ?? false }
     }
 
     var body: some View {
@@ -209,6 +222,22 @@ struct ItineraireView: View {
         .sheet(item: $membreAffiche) { ProfilMembreView(membre: $0) }
         .sheet(isPresented: Binding(get: { discussionOuverte && !ecranLarge }, set: { discussionOuverte = $0 })) { CommentairesView(voyage: voyage) }
         .sheet(item: $transportDeNuitEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
+        .sheet(item: $transportBisEnEdition) { TransportEditView(variante: $0.variante, depart: $0.depart, arrivee: $0.arrivee) }
+        .alert("Renommer l'itinéraire bis", isPresented: Binding(get: { varianteARenommer != nil }, set: { if !$0 { varianteARenommer = nil } })) {
+            TextField("Nom", text: $nomVariante)
+            Button("OK") {
+                let nom = nomVariante.trimmingCharacters(in: .whitespaces)
+                if let v = varianteARenommer, !nom.isEmpty { voyage.modifierVariante(v.id) { $0.nom = nom } }
+            }
+            Button("Annuler", role: .cancel) {}
+        }
+        .confirmationDialog("Supprimer l'itinéraire bis ?", isPresented: Binding(get: { varianteASupprimer != nil }, set: { if !$0 { varianteASupprimer = nil } }),
+                            titleVisibility: .visible, presenting: varianteASupprimer) { v in
+            Button("Supprimer « \(v.nom) » et ses étapes", role: .destructive) { supprimer(v) }
+            Button("Annuler", role: .cancel) {}
+        } message: { v in
+            Text("L'itinéraire principal ne change pas.")
+        }
         .sheet(item: $nuitEnAjout, onDismiss: { nettoyer(sauf: etapeEnEdition) }) { NuitAjoutView(voyage: voyage, nuit: $0) }
         .sheet(item: $extremiteEnEdition) { FicheExtremite(voyage: voyage, extremite: $0) }
         .sheet(item: $jourEnEdition, onDismiss: nettoyerJours) { infos in
@@ -399,6 +428,17 @@ struct ItineraireView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .modifier(FondDeCarte())
             }
+            if !voyage.variantesDetachees.isEmpty || !etapesBisSansItineraire.isEmpty {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Itinéraires bis détachés").font(.headline)
+                    Text("Leur étape de départ a été supprimée ou remise « à placer ».").font(.footnote).foregroundStyle(.secondary)
+                    ForEach(voyage.variantesDetachees) { blocVariante($0, couleur: .gray, enRetrait: false) }
+                    ForEach(etapesBisSansItineraire) { ligne($0, couleur: .gray) }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .modifier(FondDeCarte())
+            }
         }
     }
 
@@ -497,12 +537,14 @@ struct ItineraireView: View {
             }
             ForEach(hebergements) { h in
                 VStack(alignment: .leading, spacing: 2) {
-                    ligne(h)
+                    ligne(h, bis: true)
                 }
                 .draggable(Self.prefixe + h.uid) {
                     Label(h.titre.isEmpty ? "Hébergement" : h.titre, systemImage: h.categorie.symbole)
                         .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
                 }
+                // Les itinéraires bis qui partent de l'hôtel, le lendemain matin.
+                ForEach(voyage.variantes(partantDe: h)) { blocVariante($0, couleur: couleurNuit) }
             }
             if hebergements.isEmpty, let t = voyage.transportDeNuit(apres: jour), let transport = t.depart.transport {
                 ligneTransportDeNuit(transport, depart: t.depart, arrivee: t.arrivee)
@@ -539,9 +581,10 @@ struct ItineraireView: View {
         var id: String { depart.uid }
     }
 
-    /// Le transport entre deux étapes du jour, en une ligne fine : le mode, la distance et le temps. Un appui ouvre sa fiche.
-    private func ligneTransport(_ t: Transport, depart: Etape, arrivee: Etape) -> some View {
-        Button { transportDeNuitEnEdition = NuitTransport(depart: depart, arrivee: arrivee) } label: {
+    /// Le transport entre deux étapes du jour, en une ligne fine : le mode, la distance et le temps. Un appui ouvre sa fiche
+    /// (`ouvrir` : une autre fiche que celle du transport gardé sur l'étape de départ).
+    private func ligneTransport(_ t: Transport, depart: Etape, arrivee: Etape, ouvrir: (() -> Void)? = nil) -> some View {
+        Button { if let ouvrir { ouvrir() } else { transportDeNuitEnEdition = NuitTransport(depart: depart, arrivee: arrivee) } } label: {
             HStack(spacing: 6) {
                 Image(systemName: t.mode.symbole).font(.caption).frame(width: 24)
                 Text(t.mode == .commun && !t.sousType.isEmpty ? t.sousType : t.mode.libelleCourt).font(.caption.weight(.medium))
@@ -684,6 +727,8 @@ struct ItineraireView: View {
                                        rang: placees.firstIndex { $0 === etape }, incoherence: incoherences[etape.uid], chevauche: chevauchements[etape.uid])
                             // Sur le ciel de la météo : un cadre plus opaque, pour lire le détail de l'étape.
                             .cadreSurCiel(temps != nil)
+                        // Les itinéraires bis qui partent de cette étape, juste dessous.
+                        ForEach(voyage.variantes(partantDe: etape)) { blocVariante($0, couleur: couleur) }
                         // Le transport prévu vers l'étape suivante du jour : une ligne fine entre les deux.
                         if let transport = etape.transport, i + 1 < etapes.count {
                             ligneTransport(transport, depart: etape, arrivee: etapes[i + 1])
@@ -740,7 +785,7 @@ struct ItineraireView: View {
     private static let prefixe = "copilote-etape:"
 
     private func ligneGlissable(_ etape: Etape, jour: Date, couleur: Color, rang: Int?, incoherence: Date?, chevauche: Etape? = nil) -> some View {
-        ligne(etape, couleur: couleur, rang: rang, incoherence: incoherence, chevauche: chevauche)
+        ligne(etape, couleur: couleur, rang: rang, incoherence: incoherence, chevauche: chevauche, bis: true)
             .draggable(Self.prefixe + etape.uid) {
                 Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
                     .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
@@ -882,7 +927,9 @@ struct ItineraireView: View {
 
     /// `rang` : numéro du repère sur la carte (étapes placées seulement) ; sinon l'icône de la catégorie.
     /// `incoherence` : heure de l'étape précédente qui contredit celle-ci (l'étape est placée après une étape plus tardive).
-    private func ligne(_ etape: Etape, couleur: Color = .accentColor, rang: Int? = nil, incoherence: Date? = nil, chevauche: Etape? = nil) -> some View {
+    /// `bis` : étape de l'itinéraire principal, avec le petit bouton qui crée un itinéraire bis partant d'elle.
+    private func ligne(_ etape: Etape, couleur: Color = .accentColor, rang: Int? = nil, incoherence: Date? = nil, chevauche: Etape? = nil,
+                       bis: Bool = false) -> some View {
         HStack(spacing: 12) {
                 Group {
                     if let rang, etape.categorie == .repas {
@@ -969,11 +1016,169 @@ struct ItineraireView: View {
                          ?? etape.heureAffichee(heure))
                         .font(.subheadline.monospacedDigit()).foregroundStyle(incoherence == nil && chevauche == nil ? Color.secondary : Color.orange)
                 }
+                if bis && voyage.mode == .preparation && !voyage.lectureSeule { boutonBis(etape, couleur: couleur) }
             }
             .contentShape(Rectangle())
         // Pas de Button : sur Mac, un bouton capte le clic et empêche de démarrer un glissé à la souris.
         .onTapGesture { ouvrir(etape) }
         .accessibilityAddTraits(.isButton)
+    }
+
+    // MARK: Itinéraires bis
+
+    private struct TransportBis: Identifiable {
+        let variante: Variante, depart: Etape, arrivee: Etape
+        var id: String { variante.id }
+    }
+
+    private func nomEtape(_ e: Etape) -> String { e.titre.isEmpty ? e.categorie.libelle : e.titre }
+
+    /// Le petit bouton d'une étape de l'itinéraire principal : il crée un itinéraire bis qui part d'elle.
+    private func boutonBis(_ etape: Etape, couleur: Color) -> some View {
+        Button { creerVariante(depuis: etape) } label: {
+            Image(systemName: "arrow.triangle.branch")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(couleur)
+                .frame(width: 24, height: 24)
+                .background(couleur.opacity(0.12), in: Circle())
+                .contentShape(Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Créer un itinéraire bis qui part de cette étape")
+        .accessibilityLabel("Créer un itinéraire bis depuis « \(nomEtape(etape)) »")
+    }
+
+    /// Un itinéraire bis, sous l'étape d'où il part, dans un cadre en pointillés : son premier transport, ses étapes avec leurs
+    /// transports, et l'étape où il rejoint l'itinéraire principal. `enRetrait` : décalé vers la droite, comme une branche.
+    private func blocVariante(_ v: Variante, couleur: Color, enRetrait: Bool = true) -> some View {
+        let depart = voyage.depart(de: v)
+        let propres = voyage.etapes(deVariante: v.id)
+        let raccord = voyage.raccord(de: v)
+        let modifiable = !voyage.lectureSeule
+        // Jour où l'on part : le lendemain pour un départ de l'hôtel de la nuit.
+        let jourDepart = depart.flatMap { d in d.jour.map { d.apresJour ? (cal.date(byAdding: .day, value: 1, to: $0) ?? $0) : $0 } }
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                Label(depart.map { "\(v.nom) · depuis « \(nomEtape($0)) »" } ?? v.nom, systemImage: "arrow.triangle.branch")
+                    .font(.caption.bold()).foregroundStyle(couleur)
+                    .lineLimit(1)
+                if voyage.varianteBudget == v.id {
+                    Image(systemName: "eurosign.circle.fill")
+                        .font(.caption).foregroundStyle(.green)
+                        .help("Le Budget suit cet itinéraire")
+                        .accessibilityLabel("Suivi par le Budget")
+                }
+                Spacer(minLength: 0)
+                if modifiable {
+                    Menu { actionsVariante(v) } label: { Image(systemName: "ellipsis.circle").foregroundStyle(couleur) }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        .accessibilityLabel("Actions de l'itinéraire bis")
+                }
+            }
+            // Du départ à la première étape (au raccord s'il n'y en a pas encore) : le transport propre à l'itinéraire bis.
+            if let depart, let premiere = propres.first ?? raccord {
+                lienBis(v.transportDepart, depart: depart, arrivee: premiere, couleur: couleur) {
+                    transportBisEnEdition = TransportBis(variante: v, depart: depart, arrivee: premiere)
+                }
+            }
+            ForEach(Array(propres.enumerated()), id: \.element.uid) { i, e in
+                // Un nouveau jour dans l'itinéraire bis : sa date, au-dessus de sa première étape.
+                if let jour = e.jour, !((i == 0 ? jourDepart : propres[i - 1].jour).map({ cal.isDate($0, inSameDayAs: jour) }) ?? false) {
+                    Text(premiereLettreEnMajuscule(jour.formatted(.dateTime.weekday(.wide).day().month(.wide))))
+                        .font(.caption2.bold()).foregroundStyle(.secondary)
+                }
+                ligne(e, couleur: couleur)
+                if let suivante = i + 1 < propres.count ? propres[i + 1] : raccord {
+                    lienBis(e.transport, depart: e, arrivee: suivante, couleur: couleur) {
+                        transportDeNuitEnEdition = NuitTransport(depart: e, arrivee: suivante)
+                    }
+                }
+            }
+            if modifiable {
+                Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouterEtapeBis(v) }
+                    .buttonStyle(.borderless).tint(couleur).font(.footnote)
+            }
+            // L'étape commune où l'itinéraire bis rejoint le principal (une étape, ou l'hôtel d'une nuit).
+            if depart != nil {
+                Menu { choixRaccord(v) } label: {
+                    Label(raccord.map { "Rejoint « \(nomEtape($0)) »" } ?? "Rejoindre l'itinéraire principal…", systemImage: "arrow.triangle.merge")
+                        .font(.footnote.weight(.medium))
+                }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                .tint(couleur)
+                .disabled(!modifiable)
+            }
+        }
+        .padding(10)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background {
+            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(.regularMaterial)
+            RoundedRectangle(cornerRadius: 12, style: .continuous).fill(couleur.opacity(0.07))
+        }
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
+            .strokeBorder(couleur.opacity(0.6), style: StrokeStyle(lineWidth: 1.2, dash: [5, 4])))
+        .padding(.leading, enRetrait ? 22 : 0)
+    }
+
+    /// Un transport d'un itinéraire bis : sa ligne s'il est prévu, sinon un petit bouton pour l'ajouter.
+    @ViewBuilder private func lienBis(_ t: Transport?, depart: Etape, arrivee: Etape, couleur: Color, ouvrir: @escaping () -> Void) -> some View {
+        if let t {
+            ligneTransport(t, depart: depart, arrivee: arrivee, ouvrir: ouvrir)
+        } else if !voyage.lectureSeule {
+            Button(action: ouvrir) {
+                Label("Transport vers « \(nomEtape(arrivee)) »", systemImage: "plus")
+                    .font(.caption).foregroundStyle(couleur)
+                    .padding(.leading, 6)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    @ViewBuilder private func actionsVariante(_ v: Variante) -> some View {
+        Button("Ajouter une étape", systemImage: "plus") { ajouterEtapeBis(v) }
+        Button("Renommer", systemImage: "pencil") { nomVariante = v.nom; varianteARenommer = v }
+        Button(voyage.varianteBudget == v.id ? "Budget : revenir à l'itinéraire principal" : "Suivre dans le Budget", systemImage: "eurosign.circle") {
+            voyage.varianteBudget = voyage.varianteBudget == v.id ? nil : v.id
+        }
+        Divider()
+        Button("Supprimer l'itinéraire bis", systemImage: "trash", role: .destructive) { varianteASupprimer = v }
+    }
+
+    /// Les étapes où l'itinéraire bis peut rejoindre le principal, rangées par jour ; l'hôtel d'une nuit compte avec le jour qui la précède.
+    @ViewBuilder private func choixRaccord(_ v: Variante) -> some View {
+        let possibles = voyage.raccordsPossibles(pour: v)
+        Button { voyage.modifierVariante(v.id) { $0.raccordUID = nil } } label: {
+            Label("Ne le rejoint pas", systemImage: v.raccordUID == nil ? "checkmark" : "xmark.circle")
+        }
+        ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
+            let duJour = possibles.filter { $0.jour.map { cal.isDate($0, inSameDayAs: jour) } ?? false }
+            if !duJour.isEmpty {
+                Section("Jour \(index + 1)") {
+                    ForEach(duJour) { e in
+                        Button { voyage.modifierVariante(v.id) { $0.raccordUID = e.uid } } label: {
+                            Label(e.apresJour ? "Nuit · \(nomEtape(e))" : nomEtape(e),
+                                  systemImage: v.raccordUID == e.uid ? "checkmark" : (e.apresJour ? "bed.double.fill" : e.categorie.symbole))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Crée l'itinéraire bis et lui ajoute tout de suite une première étape, dont la fiche s'ouvre.
+    private func creerVariante(depuis etape: Etape) {
+        let v = withAnimation(.snappy) { voyage.creerVariante(depuis: etape) }
+        ajouterEtapeBis(v)
+    }
+
+    private func ajouterEtapeBis(_ v: Variante) {
+        ouvrir(voyage.ajouterEtape(a: v, dans: contexte))
+    }
+
+    private func supprimer(_ v: Variante) {
+        if etapeEnEdition?.variante == v.id { withAnimation(.snappy) { etapeEnEdition = nil } }
+        withAnimation { voyage.supprimerVariante(v.id, dans: contexte) }
     }
 
     private func premiereLettreEnMajuscule(_ texte: String) -> String {

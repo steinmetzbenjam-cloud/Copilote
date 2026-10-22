@@ -63,7 +63,8 @@ enum Rappels {
                 rappels.append(Rappel(id: "\(voyage.uid)-depart", quand: matin, titre: "C'est aujourd'hui !", corps: "Départ pour \(nom). Bon voyage !"))
             }
 
-            for etape in voyage.etapes {
+            // Les itinéraires bis ne sont que des possibilités : pas de rappel pour leurs étapes.
+            for etape in voyage.etapes where etape.variante == nil {
                 guard let jour = etape.jour else { continue }
                 let titre = etape.titre.isEmpty ? etape.categorie.libelle : etape.titre
                 if !etape.apresJour, let heure = etape.dateHeure {

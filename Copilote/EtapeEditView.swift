@@ -53,7 +53,8 @@ struct EtapeEditView: View {
                     let dansUnJour = etape.jour != nil && !etape.apresJour
                     etape.jour = $0
                     if let jour = $0, etape.categorie == .hebergement, !dansUnJour, let voyage = etape.voyage { voyage.placerEntreJours(etape, apres: jour) }
-                    if $0 == nil { etape.heure = nil; etape.heureFin = nil; etape.apresJour = false; horaireOuvert = false }
+                    // Sans jour, l'étape quitte aussi son itinéraire bis : elle redevient « à placer ».
+                    if $0 == nil { etape.heure = nil; etape.heureFin = nil; etape.apresJour = false; etape.variante = nil; horaireOuvert = false }
                 })
     }
 
@@ -276,6 +277,11 @@ struct EtapeEditView: View {
         if let depart = voyage.precedente(de: etape) {
             return (depart.transport, TransportEditView(depart: depart, arrivee: etape))
         }
+        // Première étape d'un itinéraire bis : le transport depuis son étape de départ, gardé avec l'itinéraire bis.
+        if let v = voyage.variante(de: etape) {
+            guard voyage.etapes(deVariante: v.id).first === etape, let depart = voyage.depart(de: v) else { return nil }
+            return (v.transportDepart, TransportEditView(variante: v, depart: depart, arrivee: etape))
+        }
         guard voyage.elementsDuVoyage.first === etape else { return nil }
         let vue = TransportEditView(trajet: "Départ → \(nom)", jour: etape.jour ?? .now, coordonnees: nil,
                                     existant: voyage.transportAller, lieuxExtremites: true, voyage: voyage,
@@ -293,7 +299,8 @@ struct EtapeEditView: View {
         withAnimation(.snappy) {
             etape.categorie = c
             if c != .hebergement, etape.apresJour, let jour = etape.jour, let voyage = etape.voyage {
-                _ = voyage.deplacer(etape, vers: jour, avant: nil)
+                // Dans un itinéraire bis, elle reste à sa place, en fin de journée.
+                if etape.variante != nil { etape.apresJour = false } else { _ = voyage.deplacer(etape, vers: jour, avant: nil) }
             }
         }
     }
@@ -398,6 +405,10 @@ struct EtapeEditView: View {
                 }
                 .labelsHidden()
                 .fixedSize()
+            }
+            if let v = etape.voyage?.variante(de: etape) {
+                Label("Étape de l'itinéraire bis « \(v.nom) »", systemImage: "arrow.triangle.branch")
+                    .font(.footnote).foregroundStyle(.secondary)
             }
             if etape.jour != nil, etape.categorie == .hebergement, etape.apresJour, let jour = etape.jour {
                 let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
@@ -776,7 +787,7 @@ struct BoutonYAller: View {
     /// Le transport prévu pour arriver à l'étape : celui de l'étape précédente, ou l'aller pour la toute première.
     private var modeDeTransport: ModeTransport? {
         guard let voyage = etape.voyage else { return nil }
-        if let depart = voyage.precedente(de: etape) { return depart.transport?.mode }
+        if voyage.precedente(de: etape) != nil || etape.variante != nil { return voyage.transportPourArriver(a: etape)?.mode }
         return voyage.elementsDuVoyage.first === etape ? voyage.transportAller?.mode : nil
     }
 

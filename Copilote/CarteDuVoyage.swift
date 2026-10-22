@@ -55,9 +55,13 @@ struct CarteDuVoyage: View {
     /// Tout ce qui est placé sur la carte pour un jour : étapes localisées et lieux de référence.
     private func points(du jour: Date?) -> [CLLocationCoordinate2D] {
         let jours = voyage.jours.filter { jour == nil || Calendar.current.isDate($0, inSameDayAs: jour!) }
-        return jours.flatMap { j in
-            voyage.etapes(du: j).compactMap(\.coordonnee) + (voyage.infos(du: j)?.lieux ?? []).map(\.coordonnee)
-                + (jour == nil ? [] : hotelsAutour(de: j).compactMap(\.coordonnee))
+        let etapesBis = bis.flatMap(\.etapes)
+        return jours.flatMap { j -> [CLLocationCoordinate2D] in
+            let duJour = voyage.etapes(du: j).compactMap(\.coordonnee) + (voyage.infos(du: j)?.lieux ?? []).map(\.coordonnee)
+            let hotels = jour == nil ? [] : hotelsAutour(de: j).compactMap(\.coordonnee)
+            // Les étapes des itinéraires bis de ce jour entrent aussi dans le cadrage.
+            let bisDuJour = etapesBis.filter { $0.jour.map { Calendar.current.isDate($0, inSameDayAs: j) } ?? false }.compactMap(\.coordonnee)
+            return duJour + hotels + bisDuJour
         }
     }
 
@@ -101,7 +105,7 @@ struct CarteDuVoyage: View {
     private struct Segment: Identifiable {
         let id: String
         let points: [CLLocationCoordinate2D]
-        let tirets: [CGFloat]
+        var tirets: [CGFloat]
         var avion = false
         /// Couleur propre au trait (ligne de métro, par exemple) ; sinon celle du jour.
         var couleur: Color?
@@ -120,12 +124,57 @@ struct CarteDuVoyage: View {
     }
 
     /// Couples d'éléments consécutifs d'un jour, hébergement compris, avec le transport prévu entre eux.
+    /// Les liens des itinéraires bis en font partie, avec leur propre transport.
     private var paires: [(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] {
-        voyage.jours.flatMap { jour -> [(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] in
+        let duJour = voyage.jours.flatMap { jour -> [(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] in
             (liens(du: jour) + departDeLaVeille(pour: jour)).compactMap { d, a in
                 guard let mode = d.transport?.mode, let ca = d.coordonnee, let cb = a.coordonnee else { return nil }
                 return (ca, cb, mode)
             }
+        }
+        let desBis = bis.flatMap(\.liens).compactMap { l -> (a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)? in
+            guard let mode = l.transport?.mode, let ca = l.depart.coordonnee, let cb = l.arrivee.coordonnee else { return nil }
+            return (ca, cb, mode)
+        }
+        return duJour + desBis
+    }
+
+    // MARK: Itinéraires bis
+
+    /// Un itinéraire bis à dessiner : ses étapes et ses liens, du départ jusqu'au raccord, dans la couleur du jour de son départ.
+    private struct Bis: Identifiable {
+        let variante: Variante
+        let index: Int
+        let jour: Date
+        let etapes: [Etape]
+        let liens: [(depart: Etape, arrivee: Etape, transport: Transport?)]
+        var id: String { variante.id }
+    }
+
+    /// Les itinéraires bis dont l'étape de départ est placée dans un jour du voyage.
+    private var bis: [Bis] {
+        let cal = Calendar.current
+        return voyage.variantes.compactMap { v in
+            guard let depart = voyage.depart(de: v), let jour = depart.jour,
+                  let index = voyage.jours.firstIndex(where: { cal.isDate($0, inSameDayAs: jour) }) else { return nil }
+            let propres = voyage.etapes(deVariante: v.id)
+            let chaine = [depart] + propres + (voyage.raccord(de: v).map { [$0] } ?? [])
+            // Le premier lien porte le transport gardé avec l'itinéraire bis ; les suivants, celui de leur étape de départ.
+            let liens = zip(chaine, chaine.dropFirst()).enumerated().map { i, p in
+                (depart: p.0, arrivee: p.1, transport: i == 0 ? v.transportDepart : p.0.transport)
+            }
+            return Bis(variante: v, index: index, jour: voyage.jours[index], etapes: propres, liens: liens)
+        }
+    }
+
+    private var bisDessines: [Bis] { bis.filter { b in joursDessines.contains { $0.index == b.index } } }
+
+    /// Les traits d'un itinéraire bis, comme ceux des jours mais toujours en pointillés : on les distingue de l'itinéraire principal.
+    private func segmentsBis(_ b: Bis) -> [Segment] {
+        b.liens.flatMap { l -> [Segment] in
+            guard let a = l.depart.coordonnee, let c = l.arrivee.coordonnee else { return [] }
+            return segment("bis-\(b.id)-\(l.depart.uid)-\(l.arrivee.uid)", a, c, l.transport?.mode, transport: l.transport)
+                .map { var trait = $0; if trait.tirets.isEmpty { trait.tirets = [6, 5] }; return trait }
         }
     }
 
@@ -423,6 +472,32 @@ struct CarteDuVoyage: View {
                 }
             }
         }
+        // Les itinéraires bis : traits en pointillés, plus pâles, et repères cerclés de tirets.
+        ForEach(bisDessines) { b in
+            let attenue = jourFocus != nil && !estJourFocus(b.jour)
+            let couleur = Self.couleur(du: b.index)
+            ForEach(segmentsBis(b)) { s in
+                MapPolyline(coordinates: s.points)
+                    .stroke((s.couleur ?? couleur).opacity(attenue ? 0.15 : 0.5),
+                            style: StrokeStyle(lineWidth: 3, lineCap: .round, dash: s.tirets))
+            }
+            ForEach(b.etapes.filter { $0.coordonnee != nil }) { etape in
+                Annotation(etape.titre, coordinate: etape.coordonnee!) {
+                    Button { onEtape(etape) } label: {
+                        Image(systemName: etape.categorie.symbole)
+                            .font(.caption2.weight(.semibold)).foregroundStyle(couleur)
+                            .frame(width: 24, height: 24)
+                            .background(.background, in: Circle())
+                            .overlay(Circle().strokeBorder(couleur, style: StrokeStyle(lineWidth: 2, dash: [3, 2])))
+                            .opacity(attenue && !estEtapeFocus(etape) ? 0.4 : 1)
+                            .scaleEffect(estEtapeFocus(etape) ? 1.4 : 1)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("\(b.variante.nom) · \(etape.titre)")
+                    .offset(ecarts["e-\(etape.uid)"] ?? .zero)
+                }
+            }
+        }
     }
 
     // MARK: Repères superposés
@@ -435,6 +510,7 @@ struct CarteDuVoyage: View {
             liste += hebergementsAffiches(pour: jour).compactMap { h in h.coordonnee.map { (cle: "h-\(h.uid)", coordonnee: $0) } }
             liste += voyage.etapes(du: jour).compactMap { e in e.coordonnee.map { (cle: "e-\(e.uid)", coordonnee: $0) } }
         }
+        liste += bisDessines.flatMap(\.etapes).compactMap { e in e.coordonnee.map { (cle: "e-\(e.uid)", coordonnee: $0) } }
         return liste
     }
 
