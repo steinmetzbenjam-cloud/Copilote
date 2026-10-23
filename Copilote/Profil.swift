@@ -253,6 +253,7 @@ struct ProfilEditView: View {
     var body: some View {
         NavigationStack {
             Form {
+                if premiereFois { sectionDejaInscrit }
                 Section {
                     VStack(spacing: 10) {
                         AvatarView(initiales: Profil.initiales(prenom: prenom, nom: nom), donnees: avatar, taille: 96)
@@ -282,8 +283,9 @@ struct ProfilEditView: View {
                 } header: {
                     Text(premiereFois ? "Bienvenue ! Qui es-tu ?" : "Mes informations")
                 } footer: {
-                    Text("Ton prénom, ton nom, ton e-mail et ta photo sont visibles des autres voyageurs de tes voyages partagés. Ton prénom sert aussi à te reconnaître dans les voyages.")
+                    Text("Ton prénom, ton nom, ton e-mail et ta photo sont visibles des autres voyageurs de tes voyages partagés. Ton e-mail, puis ton prénom, servent aussi à te reconnaître dans les voyages.")
                 }
+                if !premiereFois { sectionDejaInscrit }
             }
             .formStyle(.grouped)
             .navigationTitle("Mon profil")
@@ -311,6 +313,20 @@ struct ProfilEditView: View {
         #if os(macOS)
         .frame(minWidth: 420, minHeight: 460)
         #endif
+    }
+
+    /// Sur un nouvel appareil : se retrouver parmi les voyageurs plutôt que de créer une deuxième personne.
+    private var sectionDejaInscrit: some View {
+        Section {
+            NavigationLink {
+                RetrouverProfilView { dismiss() }
+            } label: {
+                Label("Je suis déjà inscrit", systemImage: "person.crop.circle.badge.checkmark")
+            }
+        } footer: {
+            Text(premiereFois ? "Tu utilises déjà Copilote sur un autre appareil ? Retrouve-toi par ton nom ou ton e-mail, pour ne pas apparaître deux fois dans tes voyages."
+                              : "Pour relier cet appareil à ton voyageur d'un autre appareil, par ton nom ou ton e-mail.")
+        }
     }
 
     private func enregistrer() {
