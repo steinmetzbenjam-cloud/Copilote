@@ -204,7 +204,7 @@ final class Itineraires {
         trajets[Self.cle(a, b, mode)]
     }
 
-    /// Cherche l'itinéraire le plus court. En cas d'échec, rien n'est mémorisé et la carte garde une ligne droite.
+    /// Cherche l'itinéraire le plus rapide. En cas d'échec, rien n'est mémorisé et la carte garde une ligne droite.
     func charger(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, _ mode: ModeTransport) async {
         guard mode.aUnItineraire else { return }
         let cle = Self.cle(a, b, mode)
@@ -237,14 +237,15 @@ final class Itineraires {
         // Plans n'a pas de mode vélo : on suit les chemins piétons, avec une durée à 15 km/h.
         requete.transportType = mode == .voiture ? .automobile : .walking
         requete.requestsAlternateRoutes = true
+        func duree(_ route: MKRoute) -> TimeInterval { mode == .velo ? route.distance / (15_000.0 / 3600) : route.expectedTravelTime }
         for tentative in 1...4 {
+            // Parmi les itinéraires proposés, le plus rapide (pas le plus court en distance).
             if let reponse = try? await MKDirections(request: requete).calculate(),
-               let route = reponse.routes.min(by: { $0.distance < $1.distance }) {
+               let route = reponse.routes.min(by: { duree($0) < duree($1) }) {
                 let n = route.polyline.pointCount
                 var points = [CLLocationCoordinate2D](repeating: .init(), count: n)
                 route.polyline.getCoordinates(&points, range: NSRange(location: 0, length: n))
-                let duree = mode == .velo ? route.distance / (15_000.0 / 3600) : route.expectedTravelTime
-                return Trajet(points: points, distance: route.distance, duree: duree)
+                return Trajet(points: points, distance: route.distance, duree: duree(route))
             }
             try? await Task.sleep(for: .seconds(Double(tentative) * 1.5))
         }
