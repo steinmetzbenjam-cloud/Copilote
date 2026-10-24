@@ -40,31 +40,14 @@ struct APlacerView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    ForEach(voyage.etapesSansJour) { e in
-                        HStack(spacing: 10) {
-                            Image(systemName: e.categorie.symbole).foregroundStyle(.tint).frame(width: 24)
-                            VStack(alignment: .leading) {
-                                Text(e.titre.isEmpty ? "Sans titre" : e.titre)
-                                if !e.lieu.isEmpty { Text(e.lieu).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
-                            }
-                            .contentShape(Rectangle())
-                            .onTapGesture { etape = e }
-                            Spacer()
-                            Menu("Placer…") {
-                                ForEach(Array(voyage.jours.enumerated()), id: \.offset) { i, jour in
-                                    Button("Jour \(i + 1) · \(jour.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))") {
-                                        _ = voyage.deplacer(e, vers: jour, avant: nil)
-                                    }
-                                }
-                            }
-                            .menuStyle(.borderlessButton).fixedSize()
-                            .disabled(voyage.lectureSeule)
-                        }
+                // Une section par catégorie : hébergements, repas, puis les autres.
+                ForEach(voyage.etapesSansJourParCategorie, id: \.categorie) { groupe in
+                    Section {
+                        ForEach(groupe.etapes) { ligne($0) }
+                            .onDelete { for i in $0 { contexte.delete(groupe.etapes[i]) } }
+                    } header: {
+                        Label(groupe.categorie.libelle, systemImage: groupe.categorie.symbole)
                     }
-                    .onDelete { for i in $0 { contexte.delete(voyage.etapesSansJour[i]) } }
-                } footer: {
-                    Text(voyage.etapesSansJour.isEmpty ? "Aucune étape en attente. Prépare ici des idées, puis place-les sur un jour." : "Choisis un jour : l'étape apparaît dans l'agenda, à l'heure que tu règles ensuite.")
                 }
                 Section {
                     Button("Ajouter une idée", systemImage: "plus.circle.fill") {
@@ -75,6 +58,8 @@ struct APlacerView: View {
                         etape = e
                     }
                     .disabled(voyage.lectureSeule)
+                } footer: {
+                    Text(voyage.etapesSansJour.isEmpty ? "Aucune étape en attente. Prépare ici des idées, puis place-les sur un jour." : "Choisis un jour : l'étape apparaît dans l'agenda, à l'heure que tu règles ensuite.")
                 }
             }
             .navigationTitle("À placer")
@@ -91,5 +76,28 @@ struct APlacerView: View {
         #if os(macOS)
         .frame(minWidth: 460, minHeight: 440)
         #endif
+    }
+
+    /// Une étape en attente : un appui ouvre sa fiche, « Placer… » la range sur un jour.
+    private func ligne(_ e: Etape) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: e.categorie.symbole).foregroundStyle(.tint).frame(width: 24)
+            VStack(alignment: .leading) {
+                Text(e.titre.isEmpty ? "Sans titre" : e.titre)
+                if !e.lieu.isEmpty { Text(e.lieu).font(.caption).foregroundStyle(.secondary).lineLimit(1) }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { etape = e }
+            Spacer()
+            Menu("Placer…") {
+                ForEach(Array(voyage.jours.enumerated()), id: \.offset) { i, jour in
+                    Button("Jour \(i + 1) · \(jour.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated)))") {
+                        _ = voyage.deplacer(e, vers: jour, avant: nil)
+                    }
+                }
+            }
+            .menuStyle(.borderlessButton).fixedSize()
+            .disabled(voyage.lectureSeule)
+        }
     }
 }

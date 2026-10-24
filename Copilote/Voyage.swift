@@ -125,6 +125,16 @@ extension Voyage {
         etapes.filter { $0.jour == nil }.sorted { ($0.ordre, $0.creeLe) < ($1.ordre, $1.creeLe) }
     }
 
+    /// Les étapes sans jour rangées par catégorie : hébergements, repas, puis les autres ; seules les catégories présentes.
+    var etapesSansJourParCategorie: [(categorie: CategorieEtape, etapes: [Etape])] {
+        let sansJour = etapesSansJour
+        let ordre: [CategorieEtape] = [.hebergement, .repas] + CategorieEtape.allCases.filter { $0 != .hebergement && $0 != .repas }
+        return ordre.compactMap { c in
+            let liste = sansJour.filter { $0.categorie == c }
+            return liste.isEmpty ? nil : (c, liste)
+        }
+    }
+
     /// Les étapes de chaque jour, puis l'hébergement de la nuit qui suit : la chaîne le long de laquelle on se déplace.
     /// Les transports relient deux éléments consécutifs, et l'hébergement à la première étape du lendemain.
     private struct Chaine {

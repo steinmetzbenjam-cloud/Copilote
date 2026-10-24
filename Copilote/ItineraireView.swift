@@ -408,12 +408,18 @@ struct ItineraireView: View {
             Label("Étapes à placer", systemImage: "tray.full").font(.headline)
             Text("Glisse une étape sur un jour.").font(.footnote).foregroundStyle(.secondary)
             Divider()
-            ForEach(voyage.etapesSansJour) { etape in
-                ligne(etape)
-                    .draggable(Self.prefixe + etape.uid) {
-                        Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
-                            .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
-                    }
+            ForEach(voyage.etapesSansJourParCategorie, id: \.categorie) { groupe in
+                Label(groupe.categorie.libelle, systemImage: groupe.categorie.symbole)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .padding(.top, 4)
+                ForEach(groupe.etapes) { etape in
+                    ligne(etape)
+                        .draggable(Self.prefixe + etape.uid) {
+                            Label(etape.titre.isEmpty ? "Étape" : etape.titre, systemImage: etape.categorie.symbole)
+                                .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+                        }
+                }
             }
             Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouterSansJour() }
                 .disabled(voyage.lectureSeule)
@@ -687,6 +693,9 @@ struct ItineraireView: View {
                         // Le transport prévu vers l'étape suivante du jour : une ligne fine entre les deux.
                         if let transport = etape.transport, i + 1 < etapes.count {
                             ligneTransport(transport, depart: etape, arrivee: etapes[i + 1])
+                        } else if let transport = etape.transport, let hebergement = voyage.hebergements(apres: jour).first {
+                            // Après la dernière étape : le trajet jusqu'à l'hébergement de la nuit.
+                            ligneTransport(transport, depart: etape, arrivee: hebergement)
                         }
                     }
                 }
@@ -919,9 +928,8 @@ struct ItineraireView: View {
                 .frame(width: 44)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(etape.titre.isEmpty ? "Sans titre" : etape.titre).font(.headline).foregroundStyle(.primary)
-                    if etape.noteGoogle != nil || etape.noteTripadvisor != nil {
-                        NotesView(google: etape.noteGoogle.flatMap { n in etape.avisGoogle.map { (n, $0) } },
-                                  tripadvisor: etape.noteTripadvisor.flatMap { n in etape.avisTripadvisor.map { (n, $0) } })
+                    if let note = etape.noteTripadvisor, let avis = etape.avisTripadvisor {
+                        NotesView(tripadvisor: (note, avis))
                     }
                     if !etape.lieu.isEmpty {
                         Text(etape.lieu).lineLimit(1).font(.subheadline).foregroundStyle(.secondary)
@@ -968,6 +976,12 @@ struct ItineraireView: View {
                     Text(etape.heureFin.map { "\(etape.heureAffichee(heure)) – \(etape.heureAffichee($0))" }
                          ?? etape.heureAffichee(heure))
                         .font(.subheadline.monospacedDigit()).foregroundStyle(incoherence == nil && chevauche == nil ? Color.secondary : Color.orange)
+                }
+                // La première photo enregistrée du lieu, en vignette.
+                if let photo = etape.photos.min(by: { $0.nom < $1.nom }) {
+                    ImageDonnees(donnees: photo.donnees)
+                        .frame(width: 48, height: 48)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
                 }
             }
             .contentShape(Rectangle())
