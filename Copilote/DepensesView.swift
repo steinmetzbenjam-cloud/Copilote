@@ -81,7 +81,7 @@ struct DepensesView: View {
         .overlay(alignment: .bottom) {
             if ongletAffiche == .depenses && membres.count >= 2 && !voyage.lectureSeule { boutonAjouter }
         }
-        .confirmerSuppression($aSupprimer, titre: { "Supprimer « \($0.titre.isEmpty ? "cette dépense" : $0.titre) » ?" }) { contexte.delete($0) }
+        .confirmerSuppression($aSupprimer, titre: { $0.titre.isEmpty && $0.titreDeLEtape == nil ? "Supprimer cette dépense ?" : "Supprimer « \($0.titreAffiche) » ?" }) { contexte.delete($0) }
         .sheet(isPresented: $declaration) { DepenseAssistantView(voyage: voyage, moi: moi) }
         .sheet(item: $enEdition, onDismiss: nettoyer) { d in
             DepenseEditView(depense: d, voyage: voyage, moi: moi) { contexte.delete(d) }
@@ -193,7 +193,7 @@ struct DepensesView: View {
                 .frame(width: 40, height: 40)
                 .background(couleur.opacity(0.16), in: RoundedRectangle(cornerRadius: 10))
             VStack(alignment: .leading, spacing: 2) {
-                Text(d.titre.isEmpty ? (d.estRemboursement ? "Remboursement" : "Sans titre") : d.titre)
+                Text(d.titreAffiche)
                     .font(.body).foregroundStyle(.primary).lineLimit(1)
                 sousTitre(d).font(.subheadline).foregroundStyle(.secondary).lineLimit(1)
             }

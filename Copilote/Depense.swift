@@ -71,6 +71,24 @@ final class Depense {
     }
 
     var estVide: Bool { titre.trimmingCharacters(in: .whitespaces).isEmpty && montant == 0 }
+
+    /// Le titre de l'étape choisie, s'il y en a une et qu'elle a un titre.
+    var titreDeLEtape: String? {
+        guard let etapeUID, let etape = voyage?.etapes.first(where: { $0.uid == etapeUID }) else { return nil }
+        let t = etape.titre.trimmingCharacters(in: .whitespaces)
+        return t.isEmpty ? nil : t
+    }
+
+    /// Sans titre saisi, la dépense prend celui de son étape.
+    func completerTitre() {
+        if titre.trimmingCharacters(in: .whitespaces).isEmpty, let t = titreDeLEtape { titre = t }
+    }
+
+    /// Le titre affiché : celui saisi, sinon celui de l'étape, sinon « Remboursement » ou « Sans titre ».
+    var titreAffiche: String {
+        let t = titre.trimmingCharacters(in: .whitespaces)
+        return t.isEmpty ? (titreDeLEtape ?? (estRemboursement ? "Remboursement" : "Sans titre")) : t
+    }
 }
 
 extension Voyage {

@@ -26,6 +26,7 @@ struct DepenseAssistantView: View {
     @State private var devise: String
     @State private var repartition = Repartition.famille
     @State private var montantsUnite: [String: String] = [:]
+    @FocusState private var titreActif: Bool
 
     init(voyage: Voyage, moi: String) {
         self.voyage = voyage
@@ -237,7 +238,8 @@ struct DepenseAssistantView: View {
     private var pageDetails: some View {
         Form {
             Section {
-                TextField("Qu'est-ce qui a été payé ?", text: $titre)
+                // Le libellé à gauche et l'invite dans la case : sur Mac, la case vide se voit et se clique.
+                TextField("Titre", text: $titre, prompt: Text("Qu'est-ce qui a été payé ?")).focused($titreActif)
                 DatePicker("Date", selection: $date, displayedComponents: .date)
                 Picker("Type", selection: $categorie) {
                     ForEach(CategorieDepense.allCases) { Label($0.libelle, systemImage: $0.symbole).tag($0) }
@@ -247,10 +249,15 @@ struct DepenseAssistantView: View {
                     ForEach(etapes) { Text($0.titre.isEmpty ? $0.categorie.libelle : $0.titre).tag($0.uid) }
                 }
             } footer: {
-                Text("L'étape est facultative : elle sert à retrouver à quoi se rapporte la dépense.")
+                Text("L'étape est facultative : elle sert à retrouver à quoi se rapporte la dépense. Sans titre, la dépense prend celui de l'étape.")
             }
         }
         .formStyle(.grouped)
+        // Le curseur est dans le titre dès l'arrivée sur la page (après le glissement).
+        .task {
+            try? await Task.sleep(for: .milliseconds(350))
+            if titre.isEmpty { titreActif = true }
+        }
     }
 
     // MARK: Page 3 : combien
@@ -339,6 +346,7 @@ struct DepenseAssistantView: View {
         depense.repartitionPrecise = repartition == .precis
         depense.parts = parts
         depense.voyage = voyage
+        depense.completerTitre()
         contexte.insert(depense)
         dismiss()
     }

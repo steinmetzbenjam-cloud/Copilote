@@ -102,7 +102,7 @@ struct TicketDepense: View {
             .background(couleur)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text(depense.titre.isEmpty ? (depense.estRemboursement ? "Remboursement" : "Sans titre") : depense.titre)
+                Text(depense.titreAffiche)
                     .font(.system(.subheadline, design: .monospaced).weight(.bold)).foregroundStyle(.primary)
                     .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
                 Pointilles()

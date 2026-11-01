@@ -36,7 +36,7 @@ struct DepenseEditView: View {
         NavigationStack {
             Form {
                 Section {
-                    TextField("Qu'est-ce qui a été payé ?", text: $depense.titre).focused($titreActif)
+                    TextField("Titre", text: $depense.titre, prompt: Text("Qu'est-ce qui a été payé ?")).focused($titreActif)
                     HStack {
                         TextField("Montant", text: $montantTexte)
                             #if os(iOS)
@@ -138,6 +138,7 @@ struct DepenseEditView: View {
         depense.devise = depense.devise.trimmingCharacters(in: .whitespaces).uppercased()
         if depense.devise.isEmpty { depense.devise = "EUR" }
         UserDefaults.standard.set(depense.devise, forKey: "derniereDevise")
+        depense.completerTitre()
         depense.repartitionPrecise = precise
         if precise {
             depense.parts = choisis.map { uid in

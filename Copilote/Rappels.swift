@@ -135,7 +135,7 @@ enum Rappels {
         let concerne = depense.parts.contains { voyage.representant(de: $0.membreUID, moi: moi) == mienne }
         guard concerne, depense.date > Date.now.addingTimeInterval(-30 * 86_400) else { return }
         let payeur = voyage.membre(uid: depense.payeurUID)?.nom ?? "Quelqu'un"
-        let titre = depense.titre.isEmpty ? "une dépense" : depense.titre
+        let titre = depense.titre.isEmpty ? (depense.titreDeLEtape ?? "une dépense") : depense.titre
         let contenu = UNMutableNotificationContent()
         contenu.title = "Nouvelle dépense · \(voyage.titre)"
         contenu.body = "\(payeur) a payé \(titre) : \(depense.montant.formatted(.currency(code: depense.devise)))."
