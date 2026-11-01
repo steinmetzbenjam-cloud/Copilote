@@ -110,10 +110,24 @@ extension Voyage {
 
     /// Le fuseau d'un jour : celui du pays visité. Un voyage dans plusieurs pays prend le pays indiqué dans les lieux du jour,
     /// sinon le premier pays du voyage. Sans pays (ou tant que son fuseau n'est pas trouvé), le fuseau d'enregistrement du voyage.
+    /// Le jour du retour suit le lieu de départ du transport retour, quand son fuseau est connu.
     @MainActor func fuseau(du jour: Date) -> TimeZone {
+        if let dernier = jours.last, Calendar.current.isDate(dernier, inSameDayAs: jour), let zone = fuseauDepartRetour { return zone }
         let paysDuJour = (infos(du: jour)?.lieux ?? []).compactMap(\.codePays).filter { pays.contains($0) }
         let cache = FuseauxHoraires.shared
         return (paysDuJour + pays).lazy.compactMap { cache.fuseau(pays: $0) }.first ?? .current
+    }
+
+    /// Le fuseau du lieu d'où l'on part pour rentrer : celui choisi pour le départ du retour, sinon celui de son lieu,
+    /// sinon celui de la dernière étape du voyage (choisi, ou de son lieu). Rien tant qu'aucun n'est connu.
+    @MainActor var fuseauDepartRetour: TimeZone? {
+        guard let t = transportRetour else { return nil }
+        let cache = FuseauxHoraires.shared
+        let derniere = elementsDuVoyage.last
+        return t.fuseauDepart.flatMap(TimeZone.init(identifier:))
+            ?? t.departCoordonnee.flatMap(cache.fuseau)
+            ?? derniere?.fuseauChoisi.flatMap(TimeZone.init(identifier:))
+            ?? derniere?.coordonnee.flatMap(cache.fuseau)
     }
 }
 

@@ -208,7 +208,7 @@ extension Voyage {
             let type: TypeReservation = switch t.mode {
             case .avion: .vol
             case .voiture: .voiture
-            case .commun: .train
+            case .commun, .bateau: .train
             case .pied, .velo: .autre
             }
             let debut = moment(jour, t.depart, defaut: 9)

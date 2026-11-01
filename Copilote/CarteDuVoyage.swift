@@ -221,6 +221,9 @@ struct CarteDuVoyage: View {
         case .voiture, .pied, .velo:
             let trajet = transport?.itineraireGoogle(a, b)?.trajet ?? Itineraires.shared.trajet(a, b, mode!)
             return [Segment(id: id, points: trajet?.points ?? [a, b], tirets: mode == .voiture ? [] : [1, 6])]
+        case .bateau:
+            // Route par la mer, le long des côtes ; tant qu'elle n'est pas calculée, une ligne droite.
+            return [Segment(id: id, points: Itineraires.shared.trajet(a, b, .bateau)?.points ?? [a, b], tirets: [6, 4])]
         case .commun:
             // Itinéraire enregistré : un trait par tronçon, à la couleur de la ligne (marche en pointillés).
             if let it = transport?.itineraireCommun, !it.etapes.isEmpty {

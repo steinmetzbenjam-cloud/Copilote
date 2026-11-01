@@ -107,6 +107,7 @@ struct TimingView: View {
         case .voiture: return (30, true)
         case .pied, .velo: return (20, true)
         case .commun: return (30, true)
+        case .bateau: return (60, true)
         }
     }
 

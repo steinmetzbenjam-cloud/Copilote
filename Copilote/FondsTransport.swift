@@ -13,6 +13,7 @@ struct FondTransport: View {
         case .voiture: .route
         case .pied: .sentier
         case .velo: .piste
+        case .bateau: .mer
         case .commun:
             switch sousType {
             case "Bus": .voieBus

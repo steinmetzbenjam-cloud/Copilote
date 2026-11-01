@@ -320,6 +320,12 @@ struct VoyageView: View {
         .task(id: voyage.pays) {
             for code in voyage.pays { await FuseauxHoraires.shared.chargerPays(code) }
         }
+        // Le fuseau du lieu de départ du retour : il règle l'heure locale du dernier jour.
+        .task(id: voyage.transportRetourJSON) {
+            for c in [voyage.transportRetour?.departCoordonnee, voyage.elementsDuVoyage.last?.coordonnee].compactMap({ $0 }) {
+                await FuseauxHoraires.shared.charger(c)
+            }
+        }
         // L'aperçu disparaît en préparation (et les infos passent sous le nom sur iPhone) : on revient alors au programme.
         .onChange(of: voyage.mode) { _, _ in if !espaces.contains(espace) { onglet = .itineraire } }
         .onChange(of: iPhone) { _, _ in if !espaces.contains(espace) { onglet = .itineraire } }

@@ -3,7 +3,7 @@ import MapKit
 import Observation
 
 enum ModeTransport: String, Codable, CaseIterable, Identifiable {
-    case avion, voiture, pied, velo, commun
+    case avion, voiture, pied, velo, commun, bateau
 
     var id: String { rawValue }
 
@@ -14,6 +14,7 @@ enum ModeTransport: String, Codable, CaseIterable, Identifiable {
         case .pied: "À pied"
         case .velo: "Vélo"
         case .commun: "Transports en commun"
+        case .bateau: "Bateau"
         }
     }
 
@@ -31,6 +32,7 @@ enum ModeTransport: String, Codable, CaseIterable, Identifiable {
         case .pied: "figure.walk"
         case .velo: "bicycle"
         case .commun: "tram.fill"
+        case .bateau: "ferry.fill"
         }
     }
 
@@ -42,19 +44,23 @@ enum ModeTransport: String, Codable, CaseIterable, Identifiable {
         case .pied: []
         case .velo: ["Vélo personnel", "Location", "Libre-service"]
         case .commun: ["Train", "Bus", "Métro", "Tram", "Ferry"]
+        case .bateau: ["Ferry", "Navette", "Voilier", "Bateau à moteur", "Croisière"]
         }
     }
 
     var titreSousType: String {
         switch self {
         case .avion: "Classe"
-        case .commun: "Type"
+        case .commun, .bateau: "Type"
         default: "Véhicule"
         }
     }
 
-    /// Un itinéraire est calculé et tracé sur la carte.
-    var aUnItineraire: Bool { self == .voiture || self == .pied || self == .velo }
+    /// Un itinéraire est calculé et tracé sur la carte (en bateau : par la mer, le long des côtes).
+    var aUnItineraire: Bool { self == .voiture || self == .pied || self == .velo || self == .bateau }
+
+    /// Google Maps peut calculer l'itinéraire (il n'a pas de route maritime).
+    var calculableAvecGoogle: Bool { self == .voiture || self == .pied || self == .velo }
 }
 
 /// Le trajet qui mène d'une étape à la suivante.
@@ -231,6 +237,7 @@ final class Itineraires {
 
     /// Plans refuse parfois les premières demandes (trop de requêtes d'un coup à l'ouverture d'un voyage) : on réessaie.
     private nonisolated static func calculer(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, _ mode: ModeTransport) async -> Trajet? {
+        if mode == .bateau { return await RouteMaritime.trajet(a, b) }
         let requete = MKDirections.Request()
         requete.source = MKMapItem(placemark: MKPlacemark(coordinate: a))
         requete.destination = MKMapItem(placemark: MKPlacemark(coordinate: b))

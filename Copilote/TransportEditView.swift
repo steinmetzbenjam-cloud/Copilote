@@ -92,6 +92,7 @@ struct TransportEditView: View {
                 case .pied: pied
                 case .velo: velo
                 case .commun: commun
+                case .bateau: bateau
                 }
 
                 SectionBudgetTransport(voyage: voyageDuTransport, transport: $transport, cleLien: cleLien)
@@ -259,6 +260,17 @@ struct TransportEditView: View {
         }
     }
 
+    private var bateau: some View {
+        Section("Bateau") {
+            choix(.bateau)
+            champ("Compagnie", $transport.compagnie)
+            champ("Port de départ", $transport.de)
+            champ("Port d'arrivée", $transport.vers)
+            horaires()
+            infoItineraire
+        }
+    }
+
     // MARK: Itinéraire en transports en commun
 
     /// Les lieux entre lesquels chercher : ceux de l'aller ou du retour, sinon ceux des deux étapes.
@@ -381,7 +393,7 @@ struct LigneItineraire: View {
 
     var body: some View {
         let trajet = googleValide?.trajet ?? itineraires.trajet(a, b, mode)
-        LabeledContent(googleValide != nil ? "Itinéraire Google Maps" : "Itinéraire le plus court (Plans)") {
+        LabeledContent(googleValide != nil ? "Itinéraire Google Maps" : mode == .bateau ? "Route par la mer" : "Itinéraire le plus court (Plans)") {
             Text(trajet?.resume ?? "Calcul…").foregroundStyle(.secondary)
         }
         .task(id: Itineraires.cle(a, b, mode)) { await itineraires.charger(a, b, mode) }
@@ -401,13 +413,18 @@ struct LigneItineraire: View {
                 }
             }
             .disabled(recalcul || calculGoogle)
-            Button(calculGoogle ? "Calcul…" : "Calculer avec Google Maps", systemImage: "g.circle") {
-                Task { await calculerAvecGoogle() }
+            if mode.calculableAvecGoogle {
+                Button(calculGoogle ? "Calcul…" : "Calculer avec Google Maps", systemImage: "g.circle") {
+                    Task { await calculerAvecGoogle() }
+                }
+                .disabled(recalcul || calculGoogle)
             }
-            .disabled(recalcul || calculGoogle)
         }
         .buttonStyle(.borderless)
-        if let g = googleValide {
+        if mode == .bateau {
+            Text("Tracé par la mer en suivant les côtes, sans couper par les terres. Durée estimée à 30 km/h (vitesse d'un ferry) : corrige-la ou saisis les horaires si besoin.")
+                .font(.footnote).foregroundStyle(.secondary)
+        } else if let g = googleValide {
             Text("Tracé de Google Maps enregistré avec le transport et affiché sur la carte. Calculé \(g.calculeLe.formatted(.relative(presentation: .named))). « Recalculer l'itinéraire » revient à Plans.")
                 .font(.footnote).foregroundStyle(.secondary)
         } else if Cles.lire(.google) == nil {
