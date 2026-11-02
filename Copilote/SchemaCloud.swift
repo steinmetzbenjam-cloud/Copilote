@@ -57,13 +57,14 @@ extension PartageCloud {
         etape.noteTripadvisor = 1; etape.avisTripadvisor = 1; etape.lienTripadvisor = "x"; etape.siteWeb = "x"
         etape.prixAdulte = 1; etape.prixEnfant = 1; etape.prixEtudiant = 1
         etape.prixAdulteLocal = true; etape.prixEnfantLocal = true; etape.prixEtudiantLocal = true
-        etape.prixAdulteTierce = true; etape.prixEnfantTierce = true; etape.prixEtudiantTierce = true; etape.exclusBudget = ["x"]; etape.basculesTarif = ["x"]
+        etape.prixAdulteTierce = true; etape.prixEnfantTierce = true; etape.prixEtudiantTierce = true; etape.exclusBudget = ["x"]; etape.basculesTarif = ["x"]; etape.categoriesPrixJSON = "x"
         etape.prixAdolescent = 1; etape.prixAdolescentLocal = true; etape.prixAdolescentTierce = true
         etape.voyage = voyage; contexte.insert(etape)
 
         let reservation = Reservation(type: .vol, debut: .now)
         reservation.titre = "x"; reservation.fournisseur = "x"; reservation.numeroConfirmation = "x"
         reservation.fin = .now; reservation.lieu = "x"; reservation.prix = 1; reservation.devise = "EUR"; reservation.fuseauDebutId = "x"; reservation.fuseauFinId = "x"; reservation.notes = "x"; reservation.lien = "x"; reservation.siteWeb = "x"; reservation.visiblePour = ["x"]
+        reservation.exclusBudget = ["x"]; reservation.basculesTarif = ["x"]
         reservation.prixAdulte = 1; reservation.prixEtudiant = 1; reservation.prixEnfant = 1
         reservation.monnaieAdulteBrut = "x"; reservation.monnaieEtudiantBrut = "x"; reservation.monnaieEnfantBrut = "x"
         reservation.prixAdolescent = 1; reservation.monnaieAdolescentBrut = "x"

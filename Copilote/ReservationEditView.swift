@@ -141,9 +141,9 @@ struct ReservationEditView: View {
                 guard !reservation.isDeleted, reservation.modelContext != nil, !voyage.lectureSeule else { return }
                 voyage.reporterHebergement(de: reservation, dans: contexte)
             }
-            // Si le report doit remplacer un autre hébergement, on passe par « OK » pour voir l'alerte.
-            .interactiveDismissDisabled(!voyage.lectureSeule && !(voyage.reportHebergement(de: reservation)?.remplaces.isEmpty ?? true))
-            .alert("Hébergements remplacés", isPresented: Binding(get: { remplacements != nil }, set: { if !$0 { remplacements = nil } })) {
+            // Si le report rejoint des nuits qui ont déjà un hébergement, on passe par « OK » pour voir l'alerte.
+            .interactiveDismissDisabled(!voyage.lectureSeule && !(voyage.reportHebergement(de: reservation)?.voisins.isEmpty ?? true))
+            .alert("Nuits à plusieurs hébergements", isPresented: Binding(get: { remplacements != nil }, set: { if !$0 { remplacements = nil } })) {
                 Button("OK") { dismiss() }
             } message: {
                 Text(remplacements ?? "")
@@ -156,16 +156,17 @@ struct ReservationEditView: View {
 
     private var moi: String { MoiVoyage.lire(voyage) }
 
-    /// « OK » : reporte un hébergement de plusieurs nuits sur chacune, et prévient si d'autres hébergements ont dû céder leur place.
+    /// « OK » : reporte un hébergement de plusieurs nuits sur chacune, et prévient si certaines en avaient déjà un autre.
     private func valider() {
         guard !voyage.lectureSeule, let report = voyage.reporterHebergement(de: reservation, dans: contexte),
-              !report.remplaces.isEmpty else { dismiss(); return }
+              !report.voisins.isEmpty else { dismiss(); return }
         let nom = report.hebergement.titre.isEmpty ? "L'hébergement réservé" : "« \(report.hebergement.titre) »"
-        let lignes = report.remplaces.map { r in
+        let lignes = report.voisins.map { r in
             let titre = r.etape.titre.isEmpty ? r.etape.categorie.libelle : r.etape.titre
             return "• « \(titre) », nuit du \(r.nuit.formatted(.dateTime.weekday(.wide).day().month(.wide)))"
         }
-        remplacements = "\(nom) occupe maintenant toutes les nuits de la réservation. Ces hébergements sont passés dans « Étapes à placer » :\n"
+        remplacements = "\(nom) occupe maintenant toutes les nuits de la réservation. Ces nuits avaient déjà un hébergement, gardé à côté "
+            + "(retire-le de la nuit s'il ne sert plus) :\n"
             + lignes.joined(separator: "\n")
     }
 
@@ -176,7 +177,9 @@ struct ReservationEditView: View {
                        adulte: $reservation.prixAdulte, adulteMonnaie: $reservation.monnaieAdulte,
                        etudiant: $reservation.prixEtudiant, etudiantMonnaie: $reservation.monnaieEtudiant,
                        adolescent: $reservation.prixAdolescent, adolescentMonnaie: $reservation.monnaieAdolescent,
-                       enfant: $reservation.prixEnfant, enfantMonnaie: $reservation.monnaieEnfant)
+                       enfant: $reservation.prixEnfant, enfantMonnaie: $reservation.monnaieEnfant,
+                       exclus: $reservation.exclusBudget, bascules: $reservation.basculesTarif,
+                       parmi: reservation.estRestreinte ? Set(reservation.visiblePour ?? []) : nil)
             if reservation.aDesPrixParPersonne {
                 let nombre = voyage.concernes(par: reservation).count
                 LabeledContent(nombre > 1 ? "Total pour \(nombre) voyageurs" : "Total") {
@@ -218,7 +221,7 @@ struct ReservationEditView: View {
                  ? "Le Budget répartit le prix du séjour à parts égales sur chaque nuit. "
                  : "")
             + Text(reservation.aDesPrixParPersonne
-                 ? "Chaque voyageur qui peut voir la réservation compte le prix de son tarif (sans prix étudiant, le prix adulte ; sans prix adolescent, le prix enfant). Efface les prix par personne pour saisir un prix total."
+                 ? "Chaque voyageur qui peut voir la réservation compte le prix de son tarif (sans prix étudiant, le prix adulte ; sans prix adolescent, le prix enfant). Le bouton à côté d'un tarif choisit qui est concerné. Efface les prix par personne pour saisir un prix total."
                  : "Saisis le prix par personne, ou un prix total partagé à parts égales entre les voyageurs qui peuvent voir la réservation.")
             + Text(" Liée à une étape, un hébergement ou un transport, la réservation remplace son prix prévu dans le Budget.")
         }
@@ -328,7 +331,7 @@ struct ReservationEditView: View {
                 && cal.startOfDay(for: fin) >= cal.startOfDay(for: infos.fin ?? infos.debut)
                 && cal.startOfDay(for: fin) > cal.startOfDay(for: reservation.debut)
         } == true
-        if !sejourDejaSaisi {
+        if infos.datee, !sejourDejaSaisi {
             reservation.debut = infos.debut
             reservation.fin = infos.fin
         }
@@ -379,8 +382,8 @@ struct ReservationEditView: View {
         }
         etape.voyage = voyage
         contexte.insert(etape)
-        // Un hébergement va dans la nuit de l'arrivée (les nuits suivantes sont reportées en fermant la fiche).
-        if reservation.type == .hebergement, voyage.hebergements(apres: reservation.debut).isEmpty {
+        // Un hébergement va dans la nuit de l'arrivée, à côté de ceux qui y sont déjà (les nuits suivantes sont reportées en fermant la fiche).
+        if reservation.type == .hebergement {
             voyage.placerEntreJours(etape, apres: reservation.debut)
         } else {
             etape.ordre = voyage.prochainOrdre(du: reservation.debut)

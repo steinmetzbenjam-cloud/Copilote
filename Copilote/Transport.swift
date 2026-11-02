@@ -113,6 +113,10 @@ struct Transport: Codable, Equatable {
     var exclusBudget: [String]?
     /// Enfants et adolescents (uid) qui paient ici le prix de l'autre tarif : un adolescent au prix enfant, un enfant au prix adolescent.
     var basculesTarif: [String]?
+    /// Autres catégories de prix (voir `CategoriePrix`).
+    var categoriesPrix: [CategoriePrix]?
+    /// Depuis la dernière étape du jour : l'hébergement de la nuit visé (uid), quand elle en a plusieurs. Nil : le premier de la nuit.
+    var hebergementUID: String?
 
     /// L'itinéraire Google, s'il a été calculé pour ce mode et entre ces deux lieux (il ne vaut plus si une étape a bougé).
     func itineraireGoogle(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D) -> ItineraireGoogle? {

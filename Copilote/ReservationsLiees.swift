@@ -109,33 +109,52 @@ extension Voyage {
         }
     }
 
-    private func prefixeJour(_ e: Etape) -> String {
-        guard let jour = e.jour, let i = jours.firstIndex(where: { Calendar.current.isDate($0, inSameDayAs: jour) }) else { return "" }
-        return "Jour \(i + 1) · "
+    /// La date du jour d'abord, puis son numéro : « mar. 14 oct. · Jour 3 · ». Pour un hébergement, c'est le jour de la nuit (l'arrivée).
+    private func prefixeJour(_ jour: Date?) -> String {
+        guard let jour else { return "À placer · " }
+        let date = jour.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+        guard let i = jours.firstIndex(where: { Calendar.current.isDate($0, inSameDayAs: jour) }) else { return "\(date) · " }
+        return "\(date) · Jour \(i + 1) · "
+    }
+
+    private func prefixeJour(_ e: Etape) -> String { prefixeJour(e.jour) }
+
+    /// Le jour où part le transport d'une étape : le lendemain s'il part d'un hébergement.
+    private func jourDuTransport(de e: Etape) -> Date? {
+        guard let jour = e.jour else { return nil }
+        return e.apresJour ? Calendar.current.date(byAdding: .day, value: 1, to: jour) : jour
     }
 
     private func nom(_ e: Etape) -> String { e.titre.isEmpty ? e.categorie.libelle : e.titre }
 
-    /// Tout ce à quoi une réservation peut être liée, dans l'ordre du voyage.
+    /// Tout ce à quoi une réservation peut être liée, dans l'ordre du voyage, chacun précédé de sa date et de son numéro de jour ;
+    /// les étapes encore à placer viennent à la fin de leur groupe.
     var ciblesReservation: [CibleReservation] {
         var cibles: [CibleReservation] = []
         if let t = transportAller {
-            cibles.append(CibleReservation(cle: LienReservation.aller, libelle: "Aller · \(t.descriptif(avecHoraires: false))", symbole: t.mode.symbole, groupe: .transports))
+            cibles.append(CibleReservation(cle: LienReservation.aller, libelle: prefixeJour(jours.first) + "Aller · \(t.descriptif(avecHoraires: false))",
+                                           symbole: t.mode.symbole, groupe: .transports))
         }
-        for e in elementsDuVoyage {
+        func ajouter(_ e: Etape) {
             if e.categorie == .hebergement {
                 cibles.append(CibleReservation(cle: LienReservation.etape(e), libelle: prefixeJour(e) + nom(e), symbole: "bed.double.fill", groupe: .hebergements))
             } else {
                 cibles.append(CibleReservation(cle: LienReservation.etape(e), libelle: prefixeJour(e) + nom(e), symbole: e.categorie.symbole, groupe: .etapes))
             }
+        }
+        for e in elementsDuVoyage {
+            ajouter(e)
             if let t = e.transport {
                 let vers = suivante(de: e).map { " → \(nom($0))" } ?? ""
-                cibles.append(CibleReservation(cle: LienReservation.transport(depart: e), libelle: prefixeJour(e) + "\(t.descriptif(avecHoraires: false)) · \(nom(e))\(vers)",
+                cibles.append(CibleReservation(cle: LienReservation.transport(depart: e),
+                                               libelle: prefixeJour(jourDuTransport(de: e)) + "\(t.descriptif(avecHoraires: false)) · \(nom(e))\(vers)",
                                                symbole: t.mode.symbole, groupe: .transports))
             }
         }
+        etapesSansJour.forEach(ajouter)
         if let t = transportRetour {
-            cibles.append(CibleReservation(cle: LienReservation.retour, libelle: "Retour · \(t.descriptif(avecHoraires: false))", symbole: t.mode.symbole, groupe: .transports))
+            cibles.append(CibleReservation(cle: LienReservation.retour, libelle: prefixeJour(jours.last) + "Retour · \(t.descriptif(avecHoraires: false))",
+                                           symbole: t.mode.symbole, groupe: .transports))
         }
         return cibles
     }
@@ -193,6 +212,8 @@ extension Voyage {
         var fin: Date?
         var lieu: String
         var fournisseur: String = ""
+        /// Faux pour une étape encore à placer : ses dates ne disent rien, la réservation garde les siennes.
+        var datee = true
     }
 
     /// Le jour et l'heure réunis (l'heure par défaut si aucune n'est saisie).
@@ -240,7 +261,7 @@ extension Voyage {
                 // Une nuit : arrivée le soir (15 h par défaut), départ le lendemain matin (11 h par défaut).
                 let lendemain = cal.date(byAdding: .day, value: 1, to: jour) ?? jour
                 return InfosCible(titre: nom(e), type: .hebergement, debut: moment(jour, e.heure, defaut: 15),
-                                  fin: moment(lendemain, e.heureFin, defaut: 11), lieu: e.lieu)
+                                  fin: moment(lendemain, e.heureFin, defaut: 11), lieu: e.lieu, datee: e.jour != nil)
             }
             let type: TypeReservation = switch e.categorie {
             case .repas: .restaurant
@@ -250,7 +271,7 @@ extension Voyage {
             case .autre: .autre
             }
             return InfosCible(titre: nom(e), type: type, debut: moment(jour, e.heure, defaut: 10),
-                              fin: e.heureFin.map { moment(jour, $0, defaut: 10) }, lieu: e.lieu)
+                              fin: e.heureFin.map { moment(jour, $0, defaut: 10) }, lieu: e.lieu, datee: e.jour != nil)
         }
         return nil
     }
@@ -262,11 +283,11 @@ extension Voyage {
         reservations.filter { $0.lien == cle && ($0.prix != nil || $0.aDesPrixParPersonne) }.sorted { $0.debut < $1.debut }
     }
 
-    /// Ce que le report d'un hébergement réservé ferait : les nuits où le copier, et les hébergements qu'il y remplacerait.
+    /// Ce que le report d'un hébergement réservé ferait : les nuits où le copier, et les autres hébergements de ces nuits, qui restent à côté.
     struct ReportHebergement {
         let hebergement: Etape
         let nuits: [Date]
-        let remplaces: [(nuit: Date, etape: Etape)]
+        let voisins: [(nuit: Date, etape: Etape)]
     }
 
     /// Les nuits d'une réservation d'hébergement qui tombent dans le voyage (chaque nuit est désignée par le jour qui la précède).
@@ -296,7 +317,7 @@ extension Voyage {
     }
 
     /// Une réservation d'hébergement de plusieurs nuits, liée à l'une d'elles : les autres nuits de la réservation (dans le voyage)
-    /// où cet hébergement n'est pas déjà. Celles qu'occupe un autre hébergement sont comptées dans `remplaces`.
+    /// où cet hébergement n'est pas déjà. Les autres hébergements de ces nuits sont comptés dans `voisins`.
     func reportHebergement(de r: Reservation) -> ReportHebergement? {
         let cal = Calendar.current
         guard let cle = r.lien, let fin = r.fin,
@@ -309,17 +330,17 @@ extension Voyage {
             e.titre.caseInsensitiveCompare(h.titre) == .orderedSame && e.lieu.caseInsensitiveCompare(h.lieu) == .orderedSame
         }
         var nuits: [Date] = []
-        var remplaces: [(nuit: Date, etape: Etape)] = []
+        var voisins: [(nuit: Date, etape: Etape)] = []
         for jour in jours where arrivee <= jour && jour < depart && !cal.isDate(jour, inSameDayAs: nuitLiee) {
             let occupants = hebergements(apres: jour)
             if occupants.contains(where: meme) { continue }
             nuits.append(jour)
-            remplaces += occupants.map { (jour, $0) }
+            voisins += occupants.map { (jour, $0) }
         }
-        return nuits.isEmpty ? nil : ReportHebergement(hebergement: h, nuits: nuits, remplaces: remplaces)
+        return nuits.isEmpty ? nil : ReportHebergement(hebergement: h, nuits: nuits, voisins: voisins)
     }
 
-    /// Reporte l'hébergement réservé sur ses autres nuits ; l'hébergement qui occupait l'une d'elles passe dans « Étapes à placer ».
+    /// Reporte l'hébergement réservé sur ses autres nuits, à côté des hébergements qui y sont déjà.
     /// Le prix de la réservation couvre tout le séjour : les copies ne reprennent alors pas le prix prévu, pour ne pas le compter deux fois.
     @discardableResult
     func reporterHebergement(de r: Reservation, dans contexte: ModelContext) -> ReportHebergement? {
@@ -343,14 +364,17 @@ extension Voyage {
         let parTarif: [Tarif: Double?] = [.adulte: adulte, .etudiant: euros(r.prixEtudiant, r.monnaieEtudiant) ?? adulte,
                                           .adolescent: euros(r.prixAdolescent, r.monnaieAdolescent) ?? euros(r.prixEnfant, r.monnaieEnfant),
                                           .enfant: euros(r.prixEnfant, r.monnaieEnfant)]
-        let concernes = concernes(par: r)
-        let total = membres.filter { concernes.contains($0.uid) }.reduce(0.0) { $0 + ((parTarif[$1.tarif] ?? nil) ?? 0) }
+        let concernes = concernes(par: r), bascules = Set(r.basculesTarif ?? [])
+        let total = membres.filter { concernes.contains($0.uid) }
+            .reduce(0.0) { $0 + ((parTarif[bascules.contains($1.uid) ? $1.tarif.autreJeune : $1.tarif] ?? nil) ?? 0) }
         return (total, "EUR")
     }
 
-    /// Les voyageurs concernés par une réservation : ceux qui la voient, ou tout le monde.
+    /// Les voyageurs concernés par une réservation : ceux qui la voient, ou tout le monde ;
+    /// avec des prix par personne, moins ceux qui y sont décochés (pour eux, le prix prévu de l'élément lié compte encore).
     func concernes(par r: Reservation) -> Set<String> {
-        r.estRestreinte ? Set(r.visiblePour ?? []) : Set(membres.map(\.uid))
+        let voient = r.estRestreinte ? Set(r.visiblePour ?? []) : Set(membres.map(\.uid))
+        return r.aDesPrixParPersonne ? voient.subtracting(r.exclusBudget ?? []) : voient
     }
 
     /// Les voyageurs dont le coût vient d'une réservation (et non plus du prix prévu), et si c'est le cas de tous.

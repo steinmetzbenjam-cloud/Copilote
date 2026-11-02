@@ -20,6 +20,8 @@ struct CarteDuVoyage: View {
 
     @State private var position: MapCameraPosition = .automatic
     @State private var regionPays: MKCoordinateRegion?
+    /// Ce sur quoi la carte s'est cadrée la dernière fois : à la fermeture du détail d'une étape, on ne recadre pas.
+    @State private var dernierCadrage: Signature?
     /// Point d'intérêt de la carte touché : une petite fiche propose d'en faire une étape.
     @State private var lieuChoisi: LieuCarte?
     /// Fond de carte choisi (plan, satellite, mixte), retenu d'une ouverture à l'autre et commun aux deux cartes.
@@ -129,10 +131,11 @@ struct CarteDuVoyage: View {
         }
     }
 
-    /// Chaque élément du jour avec sa suivante : les étapes, puis l'hébergement, puis la première étape du lendemain.
+    /// Chaque élément du jour avec sa suivante : les étapes, puis l'hébergement visé par la dernière (la nuit peut en avoir plusieurs).
     private func liens(du jour: Date) -> [(Etape, Etape)] {
-        let liste = voyage.etapes(du: jour) + (voyage.hebergements(apres: jour).first.map { [$0] } ?? [])
-        var r = Array(zip(liste, liste.dropFirst()))
+        let etapes = voyage.etapes(du: jour)
+        var r = Array(zip(etapes, etapes.dropFirst()))
+        if let derniere = etapes.last, let h = voyage.hebergementVise(depuis: derniere, apres: jour) { r.append((derniere, h)) }
         // Le transport après l'hôtel appartient au jour suivant (voir `departDeLaVeille`).
         if voyage.hebergements(apres: jour).isEmpty, let (depart, arrivee) = voyage.transportDeNuit(apres: jour) { r.append((depart, arrivee)) }
         return r
@@ -159,11 +162,10 @@ struct CarteDuVoyage: View {
         return (avant + voyage.hebergements(apres: jour)).filter { $0.coordonnee != nil }
     }
 
-    /// Hôtel de la veille vers la première étape de ce jour : ce trajet ouvre la journée.
+    /// Chaque hôtel de la veille vers la première étape de ce jour : ces trajets ouvrent la journée.
     private func departDeLaVeille(pour jour: Date) -> [(Etape, Etape)] {
         let veille = Calendar.current.date(byAdding: .day, value: -1, to: jour) ?? jour
-        guard let h = voyage.hebergements(apres: veille).first, let premiere = voyage.suivante(de: h) else { return [] }
-        return [(h, premiere)]
+        return voyage.hebergements(apres: veille).compactMap { h in voyage.suivante(de: h).map { (h, $0) } }
     }
 
     /// Transport d'aller et de retour : un trait entre leur lieu de départ et leur lieu d'arrivée.
@@ -285,6 +287,10 @@ struct CarteDuVoyage: View {
                         }
                     }
                     .task(id: signature(geo.size)) {
+                        let nouvelle = signature(geo.size)
+                        defer { dernierCadrage = nouvelle }
+                        // Détail d'une étape refermé, sur le même jour : la carte garde le zoom où elle est.
+                        if let avant = dernierCadrage, avant.etape != nil, nouvelle.etape == nil, avant.jour == nouvelle.jour { return }
                         await recadrer(taille: geo.size)
                     }
             }
@@ -657,7 +663,9 @@ struct CarteDuVoyage: View {
         let minimum = 4_000 * metres
         if contenu.width < minimum { contenu = contenu.insetBy(dx: (contenu.width - minimum) / 2, dy: 0) }
         if contenu.height < minimum { contenu = contenu.insetBy(dx: 0, dy: (contenu.height - minimum) / 2) }
-        contenu = contenu.insetBy(dx: -contenu.width * 0.5, dy: -contenu.height * 0.5)
+        // Un jour choisi : cadre serré, ses étapes occupent presque toute la partie visible.
+        let marge = jourFocus == nil ? 0.5 : 0.15
+        contenu = contenu.insetBy(dx: -contenu.width * marge, dy: -contenu.height * marge)
         cadrer(contenu, taille: taille)
     }
 

@@ -274,7 +274,9 @@ struct EtapeEditView: View {
     private func transportPourArriver(_ voyage: Voyage) -> (transport: Transport?, vue: TransportEditView)? {
         let nom = etape.titre.isEmpty ? "Étape" : etape.titre
         if let depart = voyage.precedente(de: etape) {
-            return (depart.transport, TransportEditView(depart: depart, arrivee: etape))
+            // Un hébergement parmi plusieurs dans la nuit : le transport de la dernière étape peut en viser un autre.
+            let vise = !etape.apresJour || voyage.suivante(de: depart) === etape
+            return (vise ? depart.transport : nil, TransportEditView(depart: depart, arrivee: etape))
         }
         guard voyage.elementsDuVoyage.first === etape else { return nil }
         let vue = TransportEditView(trajet: "Départ → \(nom)", jour: etape.jour ?? .now, coordonnees: nil,
@@ -452,7 +454,7 @@ struct EtapeEditView: View {
     }
 
     private var sectionBudget: some View {
-        CadreSection("Budget", symbole: "eurosign.circle", couleur: .green) {
+        CadreSection("Budget", symbole: "eurosign.circle", couleur: .green, accessoire: { BoutonAutrePrix(autres: $etape.autresPrix) }) {
             // Une réservation liée avec un prix le remplace dans le Budget : le prix prévu est alors grisé.
             PrixPrevuOuReserve(voyage: etape.voyage, cle: LienReservation.etape(etape)) {
                 LignesPrix(voyage: etape.voyage,
@@ -460,7 +462,8 @@ struct EtapeEditView: View {
                            etudiant: $etape.prixEtudiant, etudiantMonnaie: $etape.monnaieEtudiant,
                            adolescent: $etape.prixAdolescent, adolescentMonnaie: $etape.monnaieAdolescent,
                            enfant: $etape.prixEnfant, enfantMonnaie: $etape.monnaieEnfant,
-                           exclus: $etape.exclusBudget, bascules: $etape.basculesTarif)
+                           exclus: $etape.exclusBudget, bascules: $etape.basculesTarif,
+                           autres: $etape.autresPrix)
             }
             // Séjour de plusieurs nuits : le prix de la réservation est réparti sur chacune.
             if let voyage = etape.voyage, let sejour = voyage.sejour(de: etape), let total = voyage.montant(de: sejour.reservation) {
@@ -595,7 +598,7 @@ struct EtapeEditView: View {
         .disabled(etape.voyage?.lectureSeule ?? false)
     }
 
-    /// Crée une copie de l'étape, juste après elle dans son jour (ou à placer pour un hébergement de nuit, qui n'a qu'une place).
+    /// Crée une copie de l'étape, juste après elle dans son jour (dans la même nuit pour un hébergement).
     private func dupliquer() {
         guard let contexte = etape.modelContext else { return }
         let copie = etape.copie(dans: contexte)
@@ -670,24 +673,34 @@ struct EtapeEditView: View {
 }
 
 /// Une section de la fiche : un cadre teinté et bordé de sa couleur, avec son titre et son icône.
-private struct CadreSection<Contenu: View>: View {
+private struct CadreSection<Contenu: View, Accessoire: View>: View {
     let titre: String
     let symbole: String
     let couleur: Color
     @ViewBuilder let contenu: Contenu
+    /// Placé à côté du titre (par exemple un bouton « + »).
+    @ViewBuilder let accessoire: Accessoire
 
-    init(_ titre: String, symbole: String, couleur: Color, @ViewBuilder contenu: () -> Contenu) {
+    init(_ titre: String, symbole: String, couleur: Color, @ViewBuilder contenu: () -> Contenu) where Accessoire == EmptyView {
+        self.init(titre, symbole: symbole, couleur: couleur, accessoire: { EmptyView() }, contenu: contenu)
+    }
+
+    init(_ titre: String, symbole: String, couleur: Color, @ViewBuilder accessoire: () -> Accessoire, @ViewBuilder contenu: () -> Contenu) {
         self.titre = titre
         self.symbole = symbole
         self.couleur = couleur
+        self.accessoire = accessoire()
         self.contenu = contenu()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(titre, systemImage: symbole)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(couleur)
+            HStack(spacing: 8) {
+                Label(titre, systemImage: symbole)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(couleur)
+                accessoire
+            }
             contenu
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -776,7 +789,10 @@ struct BoutonYAller: View {
     /// Le transport prévu pour arriver à l'étape : celui de l'étape précédente, ou l'aller pour la toute première.
     private var modeDeTransport: ModeTransport? {
         guard let voyage = etape.voyage else { return nil }
-        if let depart = voyage.precedente(de: etape) { return depart.transport?.mode }
+        if let depart = voyage.precedente(de: etape) {
+            // Un hébergement que le transport de la dernière étape ne vise pas (la nuit en a plusieurs) : pas de mode connu.
+            return etape.apresJour && voyage.suivante(de: depart) !== etape ? nil : depart.transport?.mode
+        }
         return voyage.elementsDuVoyage.first === etape ? voyage.transportAller?.mode : nil
     }
 

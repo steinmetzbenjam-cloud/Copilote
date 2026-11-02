@@ -109,11 +109,16 @@ extension Voyage {
         return (depart, arrivee)
     }
 
-    /// Place l'étape (un hébergement) entre `jour` et le suivant.
+    /// L'hébergement de la nuit où mène le transport de la dernière étape du jour : celui choisi dans sa fiche, sinon le premier.
+    func hebergementVise(depuis etape: Etape, apres jour: Date) -> Etape? {
+        let nuit = hebergements(apres: jour)
+        guard let uid = etape.transport?.hebergementUID else { return nuit.first }
+        return nuit.first { $0.uid == uid } ?? nuit.first
+    }
+
+    /// Place l'étape (un hébergement) entre `jour` et le suivant, après ceux qui y sont déjà (une nuit peut en avoir plusieurs).
     func placerEntreJours(_ etape: Etape, apres jour: Date) {
         let ancien = etape.apresJour ? nil : etape.jour
-        // Un seul hébergement par nuit : l'éventuel occupant repart dans « Étapes à placer ».
-        for autre in hebergements(apres: jour) where autre !== etape { retirerDuJour(autre) }
         etape.apresJour = true
         etape.jour = Calendar.current.startOfDay(for: jour)
         etape.ordre = (hebergements(apres: jour).filter { $0 !== etape }.map(\.ordre).max() ?? -1) + 1
@@ -135,24 +140,28 @@ extension Voyage {
         }
     }
 
-    /// Les étapes de chaque jour, puis l'hébergement de la nuit qui suit : la chaîne le long de laquelle on se déplace.
-    /// Les transports relient deux éléments consécutifs, et l'hébergement à la première étape du lendemain.
+    /// Les étapes de chaque jour, puis les hébergements de la nuit qui suit : la chaîne le long de laquelle on se déplace.
+    /// Les transports relient deux éléments consécutifs, la dernière étape à l'hébergement visé, et chaque hébergement
+    /// à la première étape du lendemain.
     private struct Chaine {
         var jours: [[Etape]]
-        var nuits: [Etape?]
+        var nuits: [[Etape]]
 
         var suivantes: [String: String] {
             var r: [String: String] = [:]
             for i in jours.indices {
-                let suite = jours[i] + (nuits[i].map { [$0] } ?? [])
-                for (a, b) in zip(suite, suite.dropFirst()) { r[a.uid] = b.uid }
-                if let h = nuits[i], i + 1 < jours.count, let premiere = jours[i + 1].first { r[h.uid] = premiere.uid }
+                for (a, b) in zip(jours[i], jours[i].dropFirst()) { r[a.uid] = b.uid }
+                if let derniere = jours[i].last,
+                   let h = nuits[i].first(where: { $0.uid == derniere.transport?.hebergementUID }) ?? nuits[i].first {
+                    r[derniere.uid] = h.uid
+                }
+                if i + 1 < jours.count, let premiere = jours[i + 1].first { for h in nuits[i] { r[h.uid] = premiere.uid } }
             }
             return r
         }
     }
 
-    /// Étape suivante pour le transport : la suivante du jour, l'hébergement après la dernière, la première du lendemain après l'hébergement.
+    /// Étape suivante pour le transport : la suivante du jour, l'hébergement visé après la dernière, la première du lendemain après l'hébergement.
     func suivante(de etape: Etape) -> Etape? {
         guard let jour = etape.jour else { return nil }
         let cal = Calendar.current
@@ -162,7 +171,7 @@ extension Voyage {
         }
         let liste = etapes(du: jour)
         guard let i = liste.firstIndex(where: { $0 === etape }) else { return nil }
-        return i + 1 < liste.count ? liste[i + 1] : hebergements(apres: jour).first
+        return i + 1 < liste.count ? liste[i + 1] : hebergementVise(depuis: etape, apres: jour)
     }
 
     /// Place `etape` juste après `reference` dans les étapes du jour, et renumérote le jour.
@@ -174,7 +183,7 @@ extension Voyage {
     }
 
     /// Élément qui précède `etape` pour le transport (celui qui porte le transport pour y arriver) : l'inverse de `suivante(de:)`,
-    /// avec en plus, sans hôtel la veille, la dernière étape de la veille.
+    /// avec en plus, sans hôtel la veille, la dernière étape de la veille. Avec plusieurs hôtels la veille : le premier qui a un transport.
     func precedente(de etape: Etape) -> Etape? {
         guard let jour = etape.jour else { return nil }
         let cal = Calendar.current
@@ -183,22 +192,23 @@ extension Voyage {
         guard let i = liste.firstIndex(where: { $0 === etape }) else { return nil }
         if i > 0 { return liste[i - 1] }
         let veille = cal.date(byAdding: .day, value: -1, to: jour) ?? jour
-        return hebergements(apres: veille).first ?? etapes(du: veille).last
+        let nuit = hebergements(apres: veille)
+        return nuit.first { $0.transport != nil } ?? nuit.first ?? etapes(du: veille).last
     }
 
     /// Étapes dont le transport serait perdu si on déplaçait `etape` à cet endroit
     /// (`jour` nil : on la retire de son jour ; `nuit` : on la place dans la nuit qui suit `jour`).
     func transportsPerdus(deplacant etape: Etape, vers jour: Date?, avant cible: Etape?, nuit: Bool = false) -> [Etape] {
         let cal = Calendar.current
-        let avant = Chaine(jours: jours.map { etapes(du: $0) }, nuits: jours.map { hebergements(apres: $0).first })
+        let avant = Chaine(jours: jours.map { etapes(du: $0) }, nuits: jours.map { hebergements(apres: $0) })
         var apres = avant
         for i in apres.jours.indices {
             apres.jours[i].removeAll { $0 === etape }
-            if apres.nuits[i] === etape { apres.nuits[i] = nil }
+            apres.nuits[i].removeAll { $0 === etape }
         }
         if let jour, let i = jours.firstIndex(where: { cal.isDate($0, inSameDayAs: jour) }) {
             if nuit {
-                apres.nuits[i] = etape
+                apres.nuits[i].append(etape)
             } else {
                 let index = cible.flatMap { c in apres.jours[i].firstIndex { $0 === c } } ?? apres.jours[i].count
                 apres.jours[i].insert(etape, at: index)

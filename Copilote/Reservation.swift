@@ -74,6 +74,10 @@ final class Reservation {
     var siteWeb: String?
     /// Les voyageurs (uid) qui voient la réservation dans l'app ; vide ou nil : tout le monde.
     var visiblePour: [String]?
+    /// Voyageurs (uid) non concernés par les prix par personne, comme dans une étape : ils ne comptent pas ce prix dans le Budget.
+    var exclusBudget: [String]?
+    /// Enfants et adolescents (uid) qui paient ici le prix de l'autre tarif : un adolescent au prix enfant, un enfant au prix adolescent.
+    var basculesTarif: [String]?
     var creeLe: Date
     var uid: String = ""
     var voyage: Voyage?

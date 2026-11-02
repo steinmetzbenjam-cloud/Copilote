@@ -4,10 +4,10 @@ import CoreLocation
 /// Fenêtre du transport entre une étape et la suivante : un onglet par mode, avec les champs qui conviennent.
 struct TransportEditView: View {
     /// « Étape → Étape », « Départ → Étape »…
-    let trajet: String
+    let trajetRecu: String
     let jour: Date
     /// Les deux extrémités, quand elles sont localisées (pour l'itinéraire le plus court).
-    let coordonnees: (CLLocationCoordinate2D, CLLocationCoordinate2D)?
+    let coordonneesRecues: (CLLocationCoordinate2D, CLLocationCoordinate2D)?
     let existant: Transport?
     /// Pour l'aller et le retour : on choisit un lieu de départ et un lieu d'arrivée.
     var lieuxExtremites = false
@@ -38,9 +38,9 @@ struct TransportEditView: View {
         self.lieuxExtremites = lieuxExtremites
         self.cleLien = cleLien
         self.voyageDuTransport = voyage
-        self.trajet = trajet
+        self.trajetRecu = trajet
         self.jour = jour
-        self.coordonnees = coordonnees
+        self.coordonneesRecues = coordonnees
         self.existant = existant
         self.enregistrer = enregistrer
         _transport = State(initialValue: existant ?? Transport())
@@ -55,6 +55,36 @@ struct TransportEditView: View {
                   enregistrer: { depart.transport = $0 })
         self.etapeDepart = depart
         self.etapeArrivee = arrivee
+        // Vers un hébergement de nuit : c'est lui que le transport vise (la nuit peut en avoir plusieurs).
+        if arrivee.apresJour, !depart.apresJour {
+            var t = depart.transport ?? Transport()
+            t.hebergementUID = arrivee.uid
+            _transport = State(initialValue: t)
+        }
+    }
+
+    /// Les hébergements de la nuit, quand le trajet part de la dernière étape du jour vers une nuit qui en a plusieurs.
+    private var hebergementsAuChoix: [Etape] {
+        guard let depart = etapeDepart, !depart.apresJour, let arrivee = etapeArrivee, arrivee.apresJour,
+              let voyage = voyageDuTransport, let nuit = arrivee.jour else { return [] }
+        let liste = voyage.hebergements(apres: nuit)
+        return liste.count > 1 ? liste : []
+    }
+
+    /// L'étape d'arrivée : l'hébergement choisi parmi ceux de la nuit, sinon celle reçue.
+    private var arrivee: Etape? {
+        hebergementsAuChoix.first { $0.uid == transport.hebergementUID } ?? etapeArrivee
+    }
+
+    private var trajet: String {
+        guard let depart = etapeDepart, let arrivee, arrivee !== etapeArrivee else { return trajetRecu }
+        let titre: (Etape) -> String = { $0.titre.isEmpty ? "Étape" : $0.titre }
+        return "\(titre(depart)) → \(titre(arrivee))"
+    }
+
+    private var coordonnees: (CLLocationCoordinate2D, CLLocationCoordinate2D)? {
+        guard let depart = etapeDepart, let arrivee, arrivee !== etapeArrivee else { return coordonneesRecues }
+        return depart.coordonnee.flatMap { a in arrivee.coordonnee.map { (a, $0) } }
     }
 
     var body: some View {
@@ -72,6 +102,18 @@ struct TransportEditView: View {
                     Text(trajet)
                 }
                 .onChange(of: transport.mode) { _, _ in transport.sousType = ""; transport.dureeModifiee = nil }
+
+                if !hebergementsAuChoix.isEmpty {
+                    Section {
+                        Picker("Vers", selection: Binding(get: { arrivee?.uid ?? "" }, set: { transport.hebergementUID = $0 })) {
+                            ForEach(hebergementsAuChoix) { h in
+                                Label(h.titre.isEmpty ? "Hébergement" : h.titre, systemImage: "bed.double.fill").tag(h.uid)
+                            }
+                        }
+                    } footer: {
+                        Text("La nuit a plusieurs hébergements : ce transport mène à celui-ci. Chacun garde son propre trajet vers le lendemain.")
+                    }
+                }
 
                 if let voyage = voyageDuTransport, let cleLien, !voyage.reservations(lieesA: cleLien).isEmpty {
                     Section("Réservation") { BoutonsReservations(voyage: voyage, cle: cleLien) }
@@ -179,7 +221,7 @@ struct TransportEditView: View {
 
     /// Les fuseaux par défaut (ceux des deux lieux) et les fuseaux en vigueur (avec les choix faits à la main).
     private var fuseauxParDefaut: (depart: TimeZone, arrivee: TimeZone) {
-        let base = voyageDuTransport?.fuseauxParDefaut(de: transport, depuis: etapeDepart, vers: etapeArrivee)
+        let base = voyageDuTransport?.fuseauxParDefaut(de: transport, depuis: etapeDepart, vers: arrivee)
         let a = coordonnees?.0, b = coordonnees?.1
         let cache = FuseauxHoraires.shared
         let d = transport.departCoordonnee.flatMap(cache.fuseau) ?? a.flatMap(cache.fuseau) ?? base?.depart ?? .current
@@ -533,7 +575,8 @@ struct NuitAjout: Identifiable {
     var id: String { etape.uid }
 }
 
-/// Fenêtre ouverte depuis la bande entre deux jours : deux onglets, Hébergement et Transport.
+/// Fenêtre ouverte depuis la bande entre deux jours : deux onglets, Hébergement et Transport
+/// (seulement Hébergement quand la nuit en a déjà un : on en ajoute un autre).
 struct NuitAjoutView: View {
     let voyage: Voyage
     let nuit: NuitAjout
@@ -553,15 +596,22 @@ struct NuitAjoutView: View {
         return (depart, arrivee)
     }
 
+    /// La nuit a déjà un autre hébergement : pas de transport de nuit possible.
+    private var autreHebergement: Bool {
+        voyage.hebergements(apres: nuit.jour).contains { $0 !== nuit.etape }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
-            Picker("Type", selection: $onglet) {
-                ForEach(Onglet.allCases) { Text($0.rawValue).tag($0) }
+            if !autreHebergement {
+                Picker("Type", selection: $onglet) {
+                    ForEach(Onglet.allCases) { Text($0.rawValue).tag($0) }
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 4)
             }
-            .pickerStyle(.segmented)
-            .labelsHidden()
-            .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 4)
-            switch onglet {
+            switch autreHebergement ? .hebergement : onglet {
             case .hebergement:
                 EtapeEditView(etape: nuit.etape, jours: voyage.jours) { contexte.delete(nuit.etape) }
             case .transport:

@@ -189,11 +189,15 @@ private struct BoutonConcernes: View {
     let tarif: Tarif
     var exclus: Binding<[String]?>
     var bascules: Binding<[String]?>?
+    /// Les seuls voyageurs proposés (ceux qui voient une réservation) ; nil : tous.
+    var parmi: Set<String>?
+    /// Voyageurs qui paient une autre catégorie de prix : ils ne sont pas proposés ici.
+    var ailleurs: Set<String> = []
     @State private var ouvert = false
 
     /// Ceux du tarif, puis ceux de l'autre tarif des jeunes quand on peut les y faire passer.
     private var membres: [Membre] {
-        let tous = voyage.membresTries
+        let tous = voyage.membresTries.filter { (parmi?.contains($0.uid) ?? true) && !ailleurs.contains($0.uid) }
         let autres = bascules != nil && tarif.autreJeune != tarif ? tous.filter { $0.tarif == tarif.autreJeune } : []
         return tous.filter { $0.tarif == tarif } + autres
     }
@@ -265,8 +269,87 @@ private struct BoutonConcernes: View {
     }
 }
 
+/// Le bouton d'une autre catégorie de prix : les voyageurs qui la paient, choisis parmi tous, quel que soit leur âge.
+/// Un voyageur ne paie qu'une catégorie : le cocher ici le retire des autres.
+private struct BoutonPayeurs: View {
+    let voyage: Voyage
+    let id: String
+    var autres: Binding<[CategoriePrix]>
+    var parmi: Set<String>?
+    @State private var ouvert = false
+
+    private var categorie: CategoriePrix? { autres.wrappedValue.first { $0.id == id } }
+    private var payeurs: Set<String> { Set(categorie?.payeurs ?? []) }
+    private var membres: [Membre] { voyage.membresTries.filter { parmi?.contains($0.uid) ?? true } }
+
+    /// L'autre catégorie que paie déjà ce voyageur, s'il y en a une.
+    private func autreCategorie(de m: Membre) -> CategoriePrix? {
+        autres.wrappedValue.first { $0.id != id && $0.payeurs.contains(m.uid) }
+    }
+
+    private func choisir(_ m: Membre, _ paie: Bool) {
+        for i in autres.wrappedValue.indices {
+            autres.wrappedValue[i].payeurs.removeAll { $0 == m.uid }
+            if paie, autres.wrappedValue[i].id == id { autres.wrappedValue[i].payeurs.append(m.uid) }
+        }
+    }
+
+    var body: some View {
+        let nombre = membres.filter { payeurs.contains($0.uid) }.count
+        let couleur = nombre == 0 ? Color.red : Color.orange
+        Button { ouvert = true } label: {
+            HStack(spacing: 2) {
+                Image(systemName: "person.2.fill")
+                Text("\(nombre)").monospacedDigit()
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(couleur)
+            .padding(.horizontal, 5).padding(.vertical, 3)
+            .background(Capsule().fill(couleur.opacity(0.14)))
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .help(nombre == 0 ? "Choisir qui paie ce prix" : "\(nombre) voyageur\(nombre > 1 ? "s paient" : " paie") ce prix")
+        .popover(isPresented: $ouvert) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(categorie.map { $0.titre.isEmpty ? "Autre prix" : $0.titre } ?? "Autre prix").font(.headline)
+                if membres.isEmpty {
+                    Text("Ajoute d'abord les voyageurs dans l'onglet Voyageurs.").foregroundStyle(.secondary)
+                }
+                ForEach(membres) { m in
+                    Toggle(isOn: Binding(get: { payeurs.contains(m.uid) }, set: { choisir(m, $0) })) {
+                        Text(m.nom)
+                            + Text(" · \(autreCategorie(de: m).map { $0.titre.isEmpty ? "autre prix" : $0.titre } ?? m.tarif.libelle.lowercased())")
+                                .foregroundColor(autreCategorie(de: m) == nil ? .secondary : .orange)
+                    }
+                }
+                Text("Les voyageurs cochés paient ce prix au lieu de celui de leur tarif.")
+                    .font(.footnote).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding()
+            .frame(minWidth: 260)
+            .presentationCompactAdaptation(.popover)
+        }
+    }
+}
+
+/// Le « + » à côté du titre Budget : ajoute une autre catégorie de prix (par exemple « Adulte classe affaires »).
+struct BoutonAutrePrix: View {
+    var autres: Binding<[CategoriePrix]>
+
+    var body: some View {
+        Button { autres.wrappedValue.append(CategoriePrix()) } label: {
+            Image(systemName: "plus.circle.fill")
+        }
+        .buttonStyle(.borderless)
+        .help("Ajouter une autre catégorie de prix")
+        .accessibilityLabel("Ajouter une catégorie de prix")
+    }
+}
+
 /// Quatre lignes de prix par personne (adulte, étudiant, adolescent, enfant), chacune saisie en euros, en monnaie locale ou dans la troisième monnaie.
-/// Commun à la fiche d'une étape et à celle d'un transport.
+/// Commun à la fiche d'une étape, à celle d'un transport et à celle d'une réservation.
 struct LignesPrix: View {
     let voyage: Voyage?
     var adulte: Binding<Double?>
@@ -281,6 +364,12 @@ struct LignesPrix: View {
     var exclus: Binding<[String]?>? = nil
     /// Enfants et adolescents qui paient ici le prix de l'autre tarif (nil : pas de bascule proposée).
     var bascules: Binding<[String]?>? = nil
+    /// Les seuls voyageurs proposés dans le choix de qui est concerné ; nil : tous.
+    var parmi: Set<String>? = nil
+    /// Autres catégories de prix, ajoutées avec `BoutonAutrePrix` (nil : pas proposées).
+    var autres: Binding<[CategoriePrix]>? = nil
+    /// Le titre d'une catégorie qui vient d'être ajoutée reçoit le curseur.
+    @FocusState private var titreActif: String?
 
     /// Les colonnes : la monnaie locale, l'euro, puis la troisième monnaie, quand elles sont choisies.
     private var colonnes: [MonnaiePrix] {
@@ -307,6 +396,51 @@ struct LignesPrix: View {
             ligne("Étudiant", etudiant, etudiantMonnaie, .etudiant)
             ligne("Adolescent", adolescent, adolescentMonnaie, .adolescent)
             ligne("Enfant", enfant, enfantMonnaie, .enfant)
+            if let autres {
+                ForEach(autres.wrappedValue) { c in ligneAutre(c.id, autres) }
+            }
+        }
+        .onChange(of: autres?.wrappedValue.count ?? 0) { ancien, nouveau in
+            if nouveau > ancien, let derniere = autres?.wrappedValue.last, derniere.titre.isEmpty { titreActif = derniere.id }
+        }
+    }
+
+    /// Voyageurs qui paient une autre catégorie : ils ne sont plus proposés dans les quatre tarifs.
+    private var ailleurs: Set<String> { Set(autres?.wrappedValue.flatMap(\.payeurs) ?? []) }
+
+    /// Un champ d'une catégorie, retrouvée par son identifiant (elle peut être supprimée pendant que la vue se redessine).
+    private func champ<V>(_ id: String, _ chemin: WritableKeyPath<CategoriePrix, V>, _ defaut: V, _ autres: Binding<[CategoriePrix]>) -> Binding<V> {
+        Binding(get: { autres.wrappedValue.first { $0.id == id }?[keyPath: chemin] ?? defaut },
+                set: { valeur in
+                    if let i = autres.wrappedValue.firstIndex(where: { $0.id == id }) { autres.wrappedValue[i][keyPath: chemin] = valeur }
+                })
+    }
+
+    /// Une autre catégorie : son titre à saisir, qui la paie, le bouton pour la retirer, puis ses cases de prix.
+    private func ligneAutre(_ id: String, _ autres: Binding<[CategoriePrix]>) -> some View {
+        GridRow {
+            HStack(spacing: 6) {
+                TextField("Titre", text: champ(id, \.titre, "", autres), prompt: Text("Ex. Adulte affaires"))
+                    .textFieldStyle(.plain)
+                    .labelsHidden()
+                    .lineLimit(1)
+                    .padding(.horizontal, 6).padding(.vertical, 5)
+                    .background(FondDePage.saisie, in: RoundedRectangle(cornerRadius: 7))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(.gray.opacity(0.35), lineWidth: 1))
+                    .frame(minWidth: 70)
+                    .focused($titreActif, equals: id)
+                if let voyage {
+                    BoutonPayeurs(voyage: voyage, id: id, autres: autres, parmi: parmi)
+                }
+                Button(role: .destructive) { autres.wrappedValue.removeAll { $0.id == id } } label: {
+                    Image(systemName: "minus.circle.fill").foregroundStyle(.red)
+                }
+                .buttonStyle(.borderless)
+                .help("Retirer cette catégorie de prix")
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .gridColumnAlignment(.leading)
+            cases(champ(id, \.prix, nil, autres), champ(id, \.monnaie, .euro, autres))
         }
     }
 
@@ -320,20 +454,24 @@ struct LignesPrix: View {
             HStack(spacing: 6) {
                 Text(titre).lineLimit(1).fixedSize()
                 if let exclus, let voyage {
-                    BoutonConcernes(voyage: voyage, tarif: tarif, exclus: exclus, bascules: bascules)
+                    BoutonConcernes(voyage: voyage, tarif: tarif, exclus: exclus, bascules: bascules, parmi: parmi, ailleurs: ailleurs)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .gridColumnAlignment(.leading)
-            ForEach(colonnes, id: \.self) { m in
-                saisie(Binding<Double?>(
-                    get: {
-                        guard let valeur = prix.wrappedValue else { return nil }
-                        if monnaie.wrappedValue == m { return valeur }
-                        return voyage?.versEuros(valeur, depuis: monnaie.wrappedValue).flatMap { voyage?.depuisEuros($0, vers: m) }
-                    },
-                    set: { prix.wrappedValue = $0; monnaie.wrappedValue = m }))
-            }
+            cases(prix, monnaie)
+        }
+    }
+
+    private func cases(_ prix: Binding<Double?>, _ monnaie: Binding<MonnaiePrix>) -> some View {
+        ForEach(colonnes, id: \.self) { m in
+            saisie(Binding<Double?>(
+                get: {
+                    guard let valeur = prix.wrappedValue else { return nil }
+                    if monnaie.wrappedValue == m { return valeur }
+                    return voyage?.versEuros(valeur, depuis: monnaie.wrappedValue).flatMap { voyage?.depuisEuros($0, vers: m) }
+                },
+                set: { prix.wrappedValue = $0; monnaie.wrappedValue = m }))
         }
     }
 
@@ -366,7 +504,23 @@ func piedBudget(_ voyage: Voyage?) -> Text {
     }
 }
 
+extension CategoriePrix {
+    var monnaie: MonnaiePrix {
+        get { monnaieBrut.flatMap(MonnaiePrix.init(rawValue:)) ?? .euro }
+        set { monnaieBrut = newValue == .euro ? nil : newValue.rawValue }
+    }
+}
+
 extension Transport {
+    var autresPrix: [CategoriePrix] {
+        get { categoriesPrix ?? [] }
+        set { categoriesPrix = newValue.isEmpty ? nil : newValue }
+    }
+
+    var aUnPrix: Bool {
+        prixAdulte != nil || prixEtudiant != nil || prixAdolescent != nil || prixEnfant != nil || autresPrix.contains { $0.prix != nil }
+    }
+
     var monnaieAdulte: MonnaiePrix {
         get { MonnaiePrix(locale: prixAdulteLocal ?? false, tierce: prixAdulteTierce ?? false) }
         set { prixAdulteLocal = newValue == .locale; prixAdulteTierce = newValue == .tierce }
@@ -400,10 +554,14 @@ struct SectionBudgetTransport: View {
                            etudiant: $transport.prixEtudiant, etudiantMonnaie: $transport.monnaieEtudiant,
                            adolescent: $transport.prixAdolescent, adolescentMonnaie: $transport.monnaieAdolescent,
                            enfant: $transport.prixEnfant, enfantMonnaie: $transport.monnaieEnfant,
-                           exclus: $transport.exclusBudget, bascules: $transport.basculesTarif)
+                           exclus: $transport.exclusBudget, bascules: $transport.basculesTarif,
+                           autres: $transport.autresPrix)
             }
         } header: {
-            Text("Budget")
+            HStack(spacing: 8) {
+                Text("Budget")
+                BoutonAutrePrix(autres: $transport.autresPrix)
+            }
         } footer: {
             piedBudget(voyage)
         }
@@ -450,9 +608,17 @@ extension Etape {
         set { prixAdolescentLocal = newValue == .locale; prixAdolescentTierce = newValue == .tierce }
     }
 
-    var aUnBudget: Bool { prixAdulte != nil || prixEnfant != nil || prixEtudiant != nil || prixAdolescent != nil }
+    /// Autres catégories de prix (voir `CategoriePrix`), rangées en JSON.
+    var autresPrix: [CategoriePrix] {
+        get { categoriesPrixJSON.flatMap { $0.data(using: .utf8) }.flatMap { try? JSONDecoder().decode([CategoriePrix].self, from: $0) } ?? [] }
+        set { categoriesPrixJSON = newValue.isEmpty ? nil : (try? JSONEncoder().encode(newValue)).flatMap { String(data: $0, encoding: .utf8) } }
+    }
 
-    /// Les quatre prix en euros, dans l'ordre adulte / étudiant / adolescent / enfant, séparés par un slash : « 12 € / 8 € / 7 € / 6 € ».
+    var aUnPrixParTarif: Bool { prixAdulte != nil || prixEnfant != nil || prixEtudiant != nil || prixAdolescent != nil }
+    var aUnBudget: Bool { aUnPrixParTarif || autresPrix.contains { $0.prix != nil } }
+
+    /// Les quatre prix en euros, dans l'ordre adulte / étudiant / adolescent / enfant, séparés par un slash : « 12 € / 8 € / 7 € / 6 € »,
+    /// puis les autres catégories : « · Adulte affaires 120 € ».
     /// Un prix saisi dans une autre monnaie est converti ; un prix absent (ou sans taux pour le convertir) s'affiche « — ».
     var resumeBudget: String? {
         guard aUnBudget else { return nil }
@@ -461,8 +627,15 @@ extension Etape {
             if monnaie == .euro { return Monnaies.formater(prix, "EUR") }
             return voyage?.versEuros(prix, depuis: monnaie).map { Monnaies.formater($0, "EUR") } ?? "—"
         }
-        return [euros(prixAdulte, monnaieAdulte), euros(prixEtudiant, monnaieEtudiant),
-                euros(prixAdolescent, monnaieAdolescent), euros(prixEnfant, monnaieEnfant)]
-            .joined(separator: " / ")
+        var morceaux: [String] = []
+        if aUnPrixParTarif {
+            morceaux.append([euros(prixAdulte, monnaieAdulte), euros(prixEtudiant, monnaieEtudiant),
+                             euros(prixAdolescent, monnaieAdolescent), euros(prixEnfant, monnaieEnfant)]
+                .joined(separator: " / "))
+        }
+        for c in autresPrix where c.prix != nil {
+            morceaux.append("\(c.titre.isEmpty ? "Autre" : c.titre) \(euros(c.prix, c.monnaie))")
+        }
+        return morceaux.joined(separator: " · ")
     }
 }

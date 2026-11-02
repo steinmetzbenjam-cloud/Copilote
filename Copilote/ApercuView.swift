@@ -123,9 +123,9 @@ struct ApercuView: View {
                 ForEach(hebergementsDuMatin) { hotel in
                     ligne(hotel, estProchaine: false, legende: "Ce matin · hébergement")
                 }
-                // Puis le trajet depuis l'hôtel de la veille (ou la dernière étape de la veille) vers la première étape.
-                if let (depart, arrivee) = trajetDuMatin(jour), let t = depart.transport {
-                    ligneTransport(t, depuis: depart, vers: arrivee, jour: jour)
+                // Puis le trajet depuis chaque hôtel de la veille (ou la dernière étape de la veille) vers la première étape.
+                ForEach(trajetsDuMatin(jour), id: \.0.uid) { trajet in
+                    if let t = trajet.0.transport { ligneTransport(t, depuis: trajet.0, vers: trajet.1, jour: jour) }
                 }
                 ForEach(elements) { etape in
                     ligne(etape, estProchaine: etape === prochaine,
@@ -149,12 +149,13 @@ struct ApercuView: View {
         return nil
     }
 
-    /// Le trajet qui ouvre la journée : depuis l'hôtel de la veille, ou depuis la dernière étape de la veille sans hôtel.
-    private func trajetDuMatin(_ jour: Date) -> (Etape, Etape)? {
-        guard let veille = Calendar.current.date(byAdding: .day, value: -1, to: jour), let premiere = voyage.etapes(du: jour).first else { return nil }
-        if let h = voyage.hebergements(apres: veille).first, h.transport != nil, voyage.suivante(de: h) === premiere { return (h, premiere) }
-        if let nuit = voyage.transportDeNuit(apres: veille), nuit.arrivee === premiere { return (nuit.depart, nuit.arrivee) }
-        return nil
+    /// Les trajets qui ouvrent la journée : depuis chaque hôtel de la veille, ou depuis la dernière étape de la veille sans hôtel.
+    private func trajetsDuMatin(_ jour: Date) -> [(Etape, Etape)] {
+        guard let veille = Calendar.current.date(byAdding: .day, value: -1, to: jour), let premiere = voyage.etapes(du: jour).first else { return [] }
+        let hotels = voyage.hebergements(apres: veille).filter { $0.transport != nil && voyage.suivante(de: $0) === premiere }
+        if !hotels.isEmpty { return hotels.map { ($0, premiere) } }
+        if let nuit = voyage.transportDeNuit(apres: veille), nuit.arrivee === premiere { return [(nuit.depart, nuit.arrivee)] }
+        return []
     }
 
     /// Un transport entre deux éléments du programme : son mode, vers où il mène (et quel jour, s'il change de jour),

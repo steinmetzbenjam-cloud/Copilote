@@ -223,6 +223,7 @@ enum Codec {
             r["prixAdolescentLocal"] = e.prixAdolescentLocal ? 1 : 0; r["prixAdolescentTierce"] = e.prixAdolescentTierce ? 1 : 0
             r["exclusBudget"] = (e.exclusBudget ?? []).isEmpty ? nil : e.exclusBudget
             r["basculesTarif"] = (e.basculesTarif ?? []).isEmpty ? nil : e.basculesTarif
+            r["categoriesPrixJSON"] = e.categoriesPrixJSON
             return r
         case let x as Reservation:
             let r = base(.reservation, x.uid, zone, systeme)
@@ -235,6 +236,8 @@ enum Codec {
             r["prixAdolescent"] = x.prixAdolescent; r["monnaieAdolescent"] = x.monnaieAdolescentBrut
             r["monnaieAdulte"] = x.monnaieAdulteBrut; r["monnaieEtudiant"] = x.monnaieEtudiantBrut; r["monnaieEnfant"] = x.monnaieEnfantBrut
             r["visiblePour"] = (x.visiblePour ?? []).isEmpty ? nil : x.visiblePour
+            r["exclusBudget"] = (x.exclusBudget ?? []).isEmpty ? nil : x.exclusBudget
+            r["basculesTarif"] = (x.basculesTarif ?? []).isEmpty ? nil : x.basculesTarif
             return r
         case let d as Document:
             let r = base(.document, d.uid, zone, systeme)
@@ -401,6 +404,7 @@ enum Codec {
             e.prixAdolescentLocal = (entier("prixAdolescentLocal") ?? 0) == 1; e.prixAdolescentTierce = (entier("prixAdolescentTierce") ?? 0) == 1
             e.exclusBudget = r["exclusBudget"] as? [String]
             e.basculesTarif = r["basculesTarif"] as? [String]
+            e.categoriesPrixJSON = r["categoriesPrixJSON"] as? String
             return e
 
         case .reservation:
@@ -419,6 +423,8 @@ enum Codec {
             x.monnaieEnfantBrut = r["monnaieEnfant"] as? String
             x.prixAdolescent = nombre("prixAdolescent"); x.monnaieAdolescentBrut = r["monnaieAdolescent"] as? String
             x.visiblePour = r["visiblePour"] as? [String]
+            x.exclusBudget = r["exclusBudget"] as? [String]
+            x.basculesTarif = r["basculesTarif"] as? [String]
             x.creeLe = date("creeLe") ?? x.creeLe; x.voyage = parent
             return x
 

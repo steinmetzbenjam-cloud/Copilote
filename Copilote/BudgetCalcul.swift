@@ -34,6 +34,18 @@ enum Tarif: String, CaseIterable, Identifiable {
     }
 }
 
+/// Un autre prix par personne, ajouté à la main à côté des quatre tarifs (par exemple « Adulte classe affaires »),
+/// payé par les voyageurs choisis, quel que soit leur âge : pour eux, il remplace le prix de leur tarif.
+struct CategoriePrix: Codable, Equatable, Identifiable {
+    var id = UUID().uuidString
+    var titre = ""
+    var prix: Double?
+    /// Monnaie du prix (`MonnaiePrix`) ; nil : l'euro.
+    var monnaieBrut: String?
+    /// Voyageurs (uid) qui paient ce prix.
+    var payeurs: [String] = []
+}
+
 extension Membre {
     /// Le tarif choisi à la main, sinon celui qui découle de l'âge.
     var tarif: Tarif { tarifBrut.flatMap(Tarif.init(rawValue:)) ?? Tarif.pour(age: ageAuVoyage) }
@@ -83,13 +95,16 @@ struct ElementBudget: Identifiable {
     var exclus: Set<String> = []
     /// Enfants et adolescents qui paient ici le prix de l'autre tarif (voir `Tarif.autreJeune`).
     var bascules: Set<String> = []
+    /// Voyageurs qui paient un autre prix que celui de leur tarif (voir `CategoriePrix`), en euros.
+    var prixParVoyageur: [String: Double] = [:]
     /// Prix réel d'une réservation (en euros), partagé à parts égales entre les voyageurs concernés.
     var forfait: Double?
     var concernes: Set<String> = []
 
     func montant(pour membre: Membre) -> Double {
         if let forfait { return concernes.contains(membre.uid) && !concernes.isEmpty ? forfait / Double(concernes.count) : 0 }
-        return exclus.contains(membre.uid) ? 0 : prix[tarif(de: membre)] ?? 0
+        if exclus.contains(membre.uid) { return 0 }
+        return prixParVoyageur[membre.uid] ?? prix[tarif(de: membre)] ?? 0
     }
 
     func tarif(de membre: Membre) -> Tarif {
@@ -133,11 +148,20 @@ extension Voyage {
             if r[.adolescent] == nil, let enfant = r[.enfant] { r[.adolescent] = enfant }
             return r
         }
+        /// Ce que paient les voyageurs des autres catégories de prix, en euros (un prix absent ne compte pas).
+        func prixParVoyageur(_ categories: [CategoriePrix]) -> [String: Double] {
+            var r: [String: Double] = [:]
+            for c in categories {
+                guard let v = euros(c.prix, c.monnaie) else { continue }
+                for uid in c.payeurs { r[uid] = v }
+            }
+            return r
+        }
         /// Le prix prévu d'un élément, sauf pour les voyageurs couverts par une réservation liée qui a un prix :
         /// pour eux, c'est le prix réel de la réservation qui compte. Renvoie vrai si un montant a été retenu.
         @discardableResult
         func retenir(_ cle: String, titre: String, jour: Date, poste: CategorieEtape, prevu: [Tarif: Double],
-                     nonConcernes: [String]? = nil, bascules: [String]? = nil) -> Bool {
+                     nonConcernes: [String]? = nil, bascules: [String]? = nil, autres: [String: Double] = [:]) -> Bool {
             var couverts = Set<String>()
             var retenu = false
             for r in reservationsChiffrees(lieesA: cle) {
@@ -153,7 +177,7 @@ extension Voyage {
                     let p = prix((r.prixAdulte, r.monnaieAdulte), (r.prixEtudiant, r.monnaieEtudiant), (r.prixAdolescent, r.monnaieAdolescent), (r.prixEnfant, r.monnaieEnfant))
                     for part in parts {
                         resultat.elements.append(ElementBudget(titre: part.titre, jour: part.jour, poste: poste, prix: p.mapValues { $0 / diviseur },
-                                                               exclus: Set(membres.map(\.uid)).subtracting(concernes)))
+                                                               exclus: Set(membres.map(\.uid)).subtracting(concernes), bascules: Set(r.basculesTarif ?? [])))
                     }
                     couverts.formUnion(concernes)
                     retenu = true
@@ -169,9 +193,11 @@ extension Voyage {
                 retenu = true
             }
             let tous = Set(membres.map(\.uid))
-            if !prevu.isEmpty, !(tous.isSubset(of: couverts) && !tous.isEmpty) {
+            if !prevu.isEmpty || !autres.isEmpty, !(tous.isSubset(of: couverts) && !tous.isEmpty) {
+                // Un voyageur d'une autre catégorie paie son prix même s'il est décoché de son tarif.
+                let exclus = couverts.union(Set(nonConcernes ?? []).subtracting(autres.keys))
                 resultat.elements.append(ElementBudget(titre: titre, jour: jour, poste: poste, prix: prevu,
-                                                       exclus: couverts.union(nonConcernes ?? []), bascules: Set(bascules ?? [])))
+                                                       exclus: exclus, bascules: Set(bascules ?? []), prixParVoyageur: autres))
                 retenu = true
             }
             return retenu
@@ -180,7 +206,8 @@ extension Voyage {
         func ajouter(_ transport: Transport?, cle: String, titre: String, jour: Date) {
             guard let t = transport else { return }
             let p = prix((t.prixAdulte, t.monnaieAdulte), (t.prixEtudiant, t.monnaieEtudiant), (t.prixAdolescent, t.monnaieAdolescent), (t.prixEnfant, t.monnaieEnfant))
-            retenir(cle, titre: "\(t.mode.libelleCourt) · \(titre)", jour: jour, poste: .transport, prevu: p, nonConcernes: t.exclusBudget, bascules: t.basculesTarif)
+            retenir(cle, titre: "\(t.mode.libelleCourt) · \(titre)", jour: jour, poste: .transport, prevu: p, nonConcernes: t.exclusBudget,
+                    bascules: t.basculesTarif, autres: prixParVoyageur(t.autresPrix))
         }
 
         ajouter(transportAller, cle: LienReservation.aller, titre: "Aller", jour: premier)
@@ -189,17 +216,17 @@ extension Voyage {
         for etape in etapes {
             let titre = etape.titre.isEmpty ? etape.categorie.libelle : etape.titre
             guard let jour = etape.jour else {
-                if etape.aUnBudget || (etape.transport.map { $0.prixAdulte != nil || $0.prixEtudiant != nil || $0.prixAdolescent != nil || $0.prixEnfant != nil } ?? false) {
+                if etape.aUnBudget || (etape.transport?.aUnPrix ?? false) {
                     resultat.etapesSansJour += 1
                 }
                 continue
             }
-            let p = etape.aUnBudget
+            let p = etape.aUnPrixParTarif
                 ? prix((etape.prixAdulte, etape.monnaieAdulte), (etape.prixEtudiant, etape.monnaieEtudiant),
                    (etape.prixAdolescent, etape.monnaieAdolescent), (etape.prixEnfant, etape.monnaieEnfant))
                 : [:]
             if !retenir(LienReservation.etape(etape), titre: titre, jour: jour, poste: etape.categorie, prevu: p,
-                        nonConcernes: etape.exclusBudget, bascules: etape.basculesTarif), !etape.aUnBudget {
+                        nonConcernes: etape.exclusBudget, bascules: etape.basculesTarif, autres: prixParVoyageur(etape.autresPrix)), !etape.aUnBudget {
                 resultat.etapesSansPrix += 1
             }
             var jourDuTransport = jour

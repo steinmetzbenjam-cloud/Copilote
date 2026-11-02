@@ -46,11 +46,13 @@ extension CategorieEtape {
 
 extension Etape {
     /// Une copie de l'étape (lieu, horaires, durée, prix, notes, infos et photos), placée juste après elle dans son jour.
-    /// Le transport vers l'étape suivante n'est pas copié. Un hébergement de nuit n'a qu'une place : sa copie va dans « à placer ».
+    /// Le transport vers l'étape suivante n'est pas copié. Un hébergement de nuit est copié dans la même nuit, après les autres.
     func copie(dans contexte: ModelContext) -> Etape {
-        let c = nouvelleCopie(jour: apresJour ? nil : jour, avecHoraires: !apresJour, dans: contexte)
+        let c = nouvelleCopie(jour: apresJour ? nil : jour, avecHoraires: true, dans: contexte)
         if let voyage {
-            if let j = c.jour {
+            if apresJour, let nuit = jour {
+                voyage.placerEntreJours(c, apres: nuit)
+            } else if let j = c.jour {
                 // Juste après l'original : les étapes du jour sont renumérotées.
                 voyage.inserer(c, apres: self, du: j)
             } else {
@@ -60,7 +62,7 @@ extension Etape {
         return c
     }
 
-    /// Une copie de cet hébergement pour la nuit qui suit `jour` ; l'hébergement qui y était passe dans « Étapes à placer ».
+    /// Une copie de cet hébergement pour la nuit qui suit `jour`, à côté de ceux qui y sont déjà.
     func copieHebergement(nuit jour: Date, dans contexte: ModelContext) -> Etape {
         let c = nouvelleCopie(jour: nil, avecHoraires: true, dans: contexte)
         voyage?.placerEntreJours(c, apres: jour)
@@ -80,6 +82,7 @@ extension Etape {
         c.siteWeb = siteWeb
         c.prixAdulte = prixAdulte; c.prixEnfant = prixEnfant; c.prixEtudiant = prixEtudiant; c.prixAdolescent = prixAdolescent
         c.monnaieAdulte = monnaieAdulte; c.monnaieEnfant = monnaieEnfant; c.monnaieEtudiant = monnaieEtudiant; c.monnaieAdolescent = monnaieAdolescent
+        c.categoriesPrixJSON = categoriesPrixJSON
         c.voyage = voyage
         contexte.insert(c)
         for photo in photos {
@@ -176,6 +179,8 @@ final class Etape {
     var exclusBudget: [String]?
     /// Enfants et adolescents (uid) qui paient ici le prix de l'autre tarif : un adolescent au prix enfant, un enfant au prix adolescent.
     var basculesTarif: [String]?
+    /// Autres catégories de prix (voir `CategoriePrix`), en JSON.
+    var categoriesPrixJSON: String?
     var creeLe: Date
     var uid: String = ""
     /// Transport vers l'étape suivante, en JSON (voir Transport).

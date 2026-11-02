@@ -66,6 +66,8 @@ struct TimingView: View {
         var delta: Double = 0
         /// « saisi 10:00 · heure de Paris » quand l'heure a été notée dans un autre fuseau que celui du lieu.
         var note: String?
+        /// Transport qui part d'un hôtel parmi plusieurs la même nuit : il prend la voie de ce bloc d'hôtel.
+        var voieDe: String?
     }
 
     private func minutes(_ date: Date) -> Double {
@@ -145,14 +147,16 @@ struct TimingView: View {
             return "saisi \(heureTexte(minutes(heure))) · heure de \(zone.ville)"
         }
 
-        // Matin : fin de la nuit d'hôtel de la veille, puis le transport qui en part.
-        let hotelMatin = voyage.hebergements(apres: veille).first
+        // Matin : fin de la nuit d'hôtel de la veille, puis le transport qui en part. Plusieurs hôtels la même nuit : côte à côte,
+        // et la journée part du premier qui a un transport.
+        let hotelsMatin = voyage.hebergements(apres: veille)
+        let hotelMatin = hotelsMatin.first { $0.transport != nil } ?? hotelsMatin.first
         var departHotel: Double?
-        if let h = hotelMatin {
+        for h in hotelsMatin {
             let zh = h.fuseau
             let e = h.heureFin.map { ecart($0, jour, zh) } ?? 0
             let depart = borne(h.heureFin.map { minutes($0) + e } ?? 8 * 60)
-            departHotel = depart
+            if h === hotelMatin { departHotel = depart }
             r.append(Bloc(id: "matin-\(h.uid)", genre: .hotelMatin, debut: 0, fin: depart, titre: h.titre.isEmpty ? "Hébergement" : h.titre,
                           detail: h.lieu, symbole: "bed.double.fill", etape: h, estime: h.heureFin == nil, delta: e, note: note(h.heureFin, zh)))
         }
@@ -230,13 +234,27 @@ struct TimingView: View {
             i += 1
         }
 
+        // Les autres hôtels de la nuit : leur propre transport part en même temps que celui du premier (ou à son heure déclarée).
+        let departPremier = chaine.first { $0.transport != nil && $0.etape === hotelMatin }?.debut
+        var trajetsSepares = false
+        for h in hotelsMatin where h !== hotelMatin {
+            guard let t = h.transport else { continue }
+            var m = maillonTransport(t, depuis: h)
+            let arrivee = chaine.first { $0.transport == nil && $0.etape === m.arrivee }?.debut
+            m.debut = m.fixe ?? departPremier ?? arrivee.map { max($0 - m.duree, 0) } ?? departHotel ?? 9 * 60
+            chaine.append(m)
+            trajetsSepares = true
+        }
+
         for m in chaine {
             let e = m.etape
             if let t = m.transport {
                 let fin = m.debut + m.duree
                 r.append(Bloc(id: "t-\(e.uid)", genre: .transport, debut: m.debut, fin: fin, titre: nomTransport(t),
                               detail: detailTransport(t, de: e, vers: m.arrivee, debut: m.debut, fin: fin), symbole: t.mode.symbole,
-                              etape: e, estime: m.estime, transport: t, arrivee: m.arrivee))
+                              etape: e, estime: m.estime, transport: t, arrivee: m.arrivee,
+                              // Un seul trajet pour tous les hôtels : sur toute la largeur. Un trajet par hôtel : chacun sous le sien.
+                              voieDe: trajetsSepares && hotelsMatin.contains { $0 === e } ? "matin-\(e.uid)" : nil))
             } else {
                 r.append(Bloc(id: e.uid, genre: .etape, debut: m.debut, fin: min(m.debut + m.duree, 24 * 60), titre: e.titre.isEmpty ? e.categorie.libelle : e.titre,
                               detail: e.lieu, symbole: e.categorie.symbole, etape: e, estime: m.estime, delta: m.delta, note: m.note))
@@ -254,8 +272,8 @@ struct TimingView: View {
                           estime: duree.estimee, transport: t, extremite: .retour))
         }
 
-        // Soir : la nuit d'hôtel commence (20 h par défaut) et se prolonge le lendemain matin.
-        if let h = voyage.hebergements(apres: jour).first {
+        // Soir : la nuit d'hôtel commence (20 h par défaut) et se prolonge le lendemain matin. Plusieurs hôtels : côte à côte.
+        for h in voyage.hebergements(apres: jour) {
             let zh = h.fuseau
             let e = h.heure.map { ecart($0, jour, zh) } ?? 0
             // Une étape ou un transport qui finit plus tard repousse le début de la nuit : l'hôtel est raccourci d'autant.
@@ -265,16 +283,33 @@ struct TimingView: View {
                           detail: h.lieu, symbole: "bed.double.fill", etape: h, estime: h.heure == nil, delta: e, note: note(h.heure, zh)))
         }
         // Le matin, une étape (ou un transport) qui commence avant le départ de l'hôtel avance la fin de la nuit.
-        if let i = r.firstIndex(where: { $0.genre == .hotelMatin }) {
+        // Le premier hôtel d'abord : les autres se quittent à la même heure que lui.
+        let transportsDesHotels = Set(hotelsMatin.map { "t-\($0.uid)" })
+        let matins = r.indices.filter { r[$0].genre == .hotelMatin }
+        let indicesMatin = matins.filter { r[$0].etape === hotelMatin } + matins.filter { r[$0].etape !== hotelMatin }
+        var finPremier: Double?
+        for i in indicesMatin {
             let hotel = r[i]
+            let propre = "t-" + (hotel.etape?.uid ?? "")
             let premier = r.filter { b in
-                b.genre == .etape || (b.genre == .transport && b.id != "t-" + (hotel.etape?.uid ?? ""))
+                b.genre == .etape || (b.genre == .transport && !transportsDesHotels.contains(b.id))
             }.map(\.debut).min()
             if let premier, premier < hotel.fin { r[i].fin = max(premier, 0) }
-            // La nuit dure jusqu'au premier trajet ou à la première étape : celle-ci est calée sur la première heure déclarée de la journée,
-            // ou l'hôtel n'a pas d'heure de départ.
-            if hotelAjuste, let premierDepart = r.filter({ $0.genre == .etape || $0.genre == .transport }).map(\.debut).min() {
-                r[i].fin = max(premierDepart, 0)
+            if hotel.etape === hotelMatin {
+                // La nuit dure jusqu'au premier trajet ou à la première étape : celle-ci est calée sur la première heure déclarée de la journée,
+                // ou l'hôtel n'a pas d'heure de départ.
+                if hotelAjuste, let premierDepart = r.filter({ b in
+                    b.genre == .etape || (b.genre == .transport && (b.id == propre || !transportsDesHotels.contains(b.id)))
+                }).map(\.debut).min() {
+                    r[i].fin = max(premierDepart, 0)
+                }
+                finPremier = r[i].fin
+            } else if let trajet = r.first(where: { $0.id == propre }) {
+                // Un autre hôtel de la nuit avec son propre trajet : il se quitte au départ de ce trajet.
+                r[i].fin = max(trajet.debut, 0)
+            } else if let finPremier {
+                // Sans trajet à lui : on part avec le premier hôtel, par le même transport.
+                r[i].fin = finPremier
             }
         }
         return r
@@ -518,6 +553,8 @@ struct TimingView: View {
                 Button("Ajouter une étape", systemImage: "plus.circle") { ajouter(jour: jour) }
                 if voyage.hebergements(apres: jour).isEmpty {
                     Button("Ajouter un hébergement ou un transport de nuit", systemImage: "moon.zzz") { ajouterHebergement(apres: jour) }
+                } else {
+                    Button("Ajouter un autre hébergement pour la nuit", systemImage: "bed.double") { ajouterHebergement(apres: jour) }
                 }
                 if i == 0 { Button("Transport d'aller", systemImage: "airplane.departure") { extremiteEnEdition = .aller } }
                 if i == voyage.jours.count - 1 { Button("Transport de retour", systemImage: "airplane.arrival") { extremiteEnEdition = .retour } }
@@ -569,7 +606,8 @@ struct TimingView: View {
                 bloc(b, jourIndex: i, jour: jour, voie: p.voie, total: p.total, largeur: contenu)
             }
             ForEach(liste.filter { $0.genre == .transport }) { b in
-                bloc(b, jourIndex: i, jour: jour, voie: 0, total: 1, largeur: contenu)
+                let p = b.voieDe.flatMap { placement[$0] } ?? (0, 1)
+                bloc(b, jourIndex: i, jour: jour, voie: p.voie, total: p.total, largeur: contenu)
             }
         }
         .frame(width: largeurColonne + gouttiere, height: hauteur, alignment: .topLeading)

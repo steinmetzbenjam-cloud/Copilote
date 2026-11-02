@@ -517,6 +517,11 @@ struct ItineraireView: View {
                 Button("Ajouter un hébergement ou un transport", systemImage: "plus.circle.fill") { ajouterHebergement(apres: jour) }
                 .disabled(voyage.lectureSeule)
                     .buttonStyle(.borderless).tint(couleurNuit).font(.footnote)
+            } else {
+                // Une nuit peut avoir plusieurs hébergements (deux familles, deux logements).
+                Button("Ajouter un autre hébergement", systemImage: "plus.circle") { ajouterHebergement(apres: jour) }
+                .disabled(voyage.lectureSeule)
+                    .buttonStyle(.borderless).tint(couleurNuit).font(.caption)
             }
         }
         .padding(.horizontal, 16).padding(.vertical, 10)
@@ -531,7 +536,7 @@ struct ItineraireView: View {
         .dropDestination(for: String.self) { elements, _ in
             guard !voyage.lectureSeule else { return false }
             defer { nuitVisee = nil }
-            // Toute étape lâchée sur la nuit devient l'hébergement de cette nuit.
+            // Toute étape lâchée sur la nuit devient un hébergement de cette nuit, à côté des autres.
             guard let etape = etapeGlissee(elements) else { return false }
             return demanderNuit(etape, apres: jour)
         } isTargeted: { visee in
@@ -607,11 +612,10 @@ struct ItineraireView: View {
         jourSelectionne.map { cal.isDate($0, inSameDayAs: jour) } ?? false
     }
 
-    /// Hôtel de la nuit précédente et première étape de ce jour, entre lesquels un transport peut être prévu.
-    private func transportDeLaVeille(avant jour: Date) -> (depart: Etape, arrivee: Etape)? {
+    /// Chaque hôtel de la nuit précédente et la première étape de ce jour, entre lesquels un transport peut être prévu.
+    private func transportsDeLaVeille(avant jour: Date) -> [NuitTransport] {
         let veille = cal.date(byAdding: .day, value: -1, to: jour) ?? jour
-        guard let h = voyage.hebergements(apres: veille).first, let premiere = voyage.suivante(de: h) else { return nil }
-        return (h, premiere)
+        return voyage.hebergements(apres: veille).compactMap { h in voyage.suivante(de: h).map { NuitTransport(depart: h, arrivee: $0) } }
     }
 
     // MARK: Carte d'un jour
@@ -677,8 +681,10 @@ struct ItineraireView: View {
             }
 
             // Transport prévu après l'hôtel de la veille : il ouvre la journée.
-            if let t = transportDeLaVeille(avant: jour), let transport = t.depart.transport {
-                ligneTransportDeNuit(transport, depart: t.depart, arrivee: t.arrivee)
+            ForEach(transportsDeLaVeille(avant: jour)) { t in
+                if let transport = t.depart.transport {
+                    ligneTransportDeNuit(transport, depart: t.depart, arrivee: t.arrivee)
+                }
             }
 
             if etapes.isEmpty {
@@ -693,8 +699,8 @@ struct ItineraireView: View {
                         // Le transport prévu vers l'étape suivante du jour : une ligne fine entre les deux.
                         if let transport = etape.transport, i + 1 < etapes.count {
                             ligneTransport(transport, depart: etape, arrivee: etapes[i + 1])
-                        } else if let transport = etape.transport, let hebergement = voyage.hebergements(apres: jour).first {
-                            // Après la dernière étape : le trajet jusqu'à l'hébergement de la nuit.
+                        } else if let transport = etape.transport, let hebergement = voyage.hebergementVise(depuis: etape, apres: jour) {
+                            // Après la dernière étape : le trajet jusqu'à l'hébergement de la nuit (celui choisi s'il y en a plusieurs).
                             ligneTransport(transport, depart: etape, arrivee: hebergement)
                         }
                     }
