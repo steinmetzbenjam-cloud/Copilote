@@ -31,6 +31,7 @@ struct EtapeCommun: Codable, Equatable {
         case "BUS", "INTERCITY_BUS", "TROLLEYBUS": return "bus.fill"
         case "HEAVY_RAIL", "RAIL", "HIGH_SPEED_TRAIN", "COMMUTER_TRAIN", "LONG_DISTANCE_TRAIN", "TRAIN": return "train.side.front.car"
         case "FERRY": return "ferry.fill"
+        case "AIRPLANE": return "airplane"
         case "CABLE_CAR", "GONDOLA_LIFT", "FUNICULAR": return "cablecar.fill"
         default: return "tram.fill"
         }
@@ -107,6 +108,245 @@ enum PolylineGoogle {
             points.append(CLLocationCoordinate2D(latitude: Double(lat) / 1e5, longitude: Double(lon) / 1e5))
         }
         return points
+    }
+
+    /// Coordonnées en polyligne encodée (pour enregistrer un tracé venu d'ailleurs que de Google).
+    static func encoder(_ points: [CLLocationCoordinate2D]) -> String {
+        var texte = ""
+        var precLat = 0, precLon = 0
+        func ajouter(_ valeur: Int) {
+            var v = valeur < 0 ? ~(valeur << 1) : (valeur << 1)
+            while v >= 0x20 {
+                texte.append(Character(UnicodeScalar(UInt8((0x20 | (v & 0x1F)) + 63))))
+                v >>= 5
+            }
+            texte.append(Character(UnicodeScalar(UInt8(v + 63))))
+        }
+        for p in points {
+            let lat = Int((p.latitude * 1e5).rounded()), lon = Int((p.longitude * 1e5).rounded())
+            ajouter(lat - precLat)
+            ajouter(lon - precLon)
+            precLat = lat
+            precLon = lon
+        }
+        return texte
+    }
+}
+
+/// Choisit le service qui sait chercher l'itinéraire : NAVITIME au Japon, Google ailleurs.
+enum RechercheCommun {
+    static func chercher(de a: CLLocationCoordinate2D, vers b: CLLocationCoordinate2D, sousType: String, depart: Date?) async throws -> ItineraireCommun {
+        let departAuJapon = await RoutesNavitime.auJapon(a)
+        let arriveeAuJapon = departAuJapon ? true : await RoutesNavitime.auJapon(b)
+        guard departAuJapon || arriveeAuJapon else {
+            return try await RoutesGoogle.chercher(de: a, vers: b, sousType: sousType, depart: depart)
+        }
+        if RoutesNavitime.cle != nil {
+            return try await RoutesNavitime.chercher(de: a, vers: b, depart: depart)
+        }
+        // Sans clé RapidAPI, on tente quand même Google, mais il ne donne pas les transports en commun du Japon.
+        do {
+            return try await RoutesGoogle.chercher(de: a, vers: b, sousType: sousType, depart: depart)
+        } catch {
+            throw RoutesNavitime.Erreur.pasDeCle
+        }
+    }
+}
+
+/// Itinéraires en train (Shinkansen, JR, lignes privées, métros) au Japon avec NAVITIME : l'API « NAVITIME Route(totalnavi) »
+/// sur RapidAPI, avec la même clé RapidAPI que pour AeroDataBox. Google ne fournit pas les transports en commun du Japon
+/// à ses API (seuls le site et l'app Google Maps les montrent).
+enum RoutesNavitime {
+    static let hote = "navitime-route-totalnavi.p.rapidapi.com"
+    static let pageAbonnement = URL(string: "https://rapidapi.com/navitimejapan-navitimejapan/api/navitime-route-totalnavi")!
+
+    /// La clé RapidAPI, rangée dans les Réglages avec AeroDataBox (une seule clé par compte RapidAPI).
+    static var cle: String? {
+        guard let c = Cles.lire(.aerodatabox), !c.isEmpty else { return nil }
+        return c
+    }
+
+    enum Erreur: LocalizedError {
+        case pasDeCle, nonAbonne(String), quota, parametre(String), refuse(String), aucunItineraire(String), illisible
+
+        var errorDescription: String? {
+            switch self {
+            case .pasDeCle:
+                "Google ne donne pas les trains du Japon à ses API. Au Japon, Copilote les cherche avec NAVITIME : ajoute ta clé RapidAPI dans les Réglages (section RapidAPI), puis abonne-toi à « NAVITIME Route(totalnavi) » sur RapidAPI."
+            case .nonAbonne(let message):
+                "RapidAPI refuse la recherche : abonne-toi à « NAVITIME Route(totalnavi) » sur RapidAPI, avec le compte de ta clé (lien dans les Réglages). Détail : \(message)"
+            case .quota: "Le nombre de recherches NAVITIME de ton offre RapidAPI est atteint pour ce mois."
+            case .parametre(let message), .refuse(let message): "NAVITIME a refusé la recherche : \(message)"
+            case .aucunItineraire(let detail): "NAVITIME n'a trouvé aucun itinéraire en train entre ces deux lieux. \(detail)"
+            case .illisible: "La réponse de NAVITIME n'a pas pu être lue."
+            }
+        }
+    }
+
+    /// Vrai si le lieu est au Japon (le cadre de l'archipel, puis le pays donné par Plans, pour écarter la Corée).
+    static func auJapon(_ c: CLLocationCoordinate2D) async -> Bool {
+        guard (20...46).contains(c.latitude), (122...154).contains(c.longitude) else { return false }
+        let lieu = try? await CLGeocoder().reverseGeocodeLocation(CLLocation(latitude: c.latitude, longitude: c.longitude)).first
+        if let code = lieu?.isoCountryCode { return code == "JP" }
+        return lieu?.timeZone?.identifier == "Asia/Tokyo"
+    }
+
+    /// Heures « murales », comme partout dans Copilote : 10 h 05 à Tokyo reste 10 h 05, quel que soit le fuseau de l'appareil.
+    private static func formateur() -> DateFormatter {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.timeZone = .current
+        f.dateFormat = "yyyy-MM-dd'T'HH:mm:ss"
+        return f
+    }
+
+    /// Cherche l'itinéraire. Sans heure prévue, on calcule pour demain à 10 h, et l'itinéraire est donné à titre indicatif.
+    static func chercher(de a: CLLocationCoordinate2D, vers b: CLLocationCoordinate2D, depart: Date?) async throws -> ItineraireCommun {
+        guard let cle else { throw Erreur.pasDeCle }
+        let calendrier = Calendar.current
+        let demain = calendrier.date(bySettingHour: 10, minute: 0, second: 0,
+                                     of: calendrier.date(byAdding: .day, value: 1, to: .now) ?? .now) ?? .now.addingTimeInterval(86_400)
+        let heure = depart ?? demain
+        // Noms en anglais si l'offre le permet, sinon en japonais ; tracé sur la carte si possible.
+        let essais: [(anglais: Bool, trace: Bool)] = [(true, true), (false, true), (false, false)]
+        var derniere: Error = Erreur.illisible
+        for essai in essais {
+            do {
+                var resultat = try await appeler(a, b, cle: cle, heure: heure, anglais: essai.anglais, trace: essai.trace)
+                resultat.indicatif = depart == nil
+                return resultat
+            } catch Erreur.parametre(let message) {
+                derniere = Erreur.parametre(message)
+            }
+        }
+        throw derniere
+    }
+
+    private static func appeler(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, cle: String, heure: Date,
+                                anglais: Bool, trace: Bool) async throws -> ItineraireCommun {
+        var adresse = URLComponents(string: "https://\(hote)/route_transit")!
+        adresse.queryItems = [
+            URLQueryItem(name: "start", value: "\(a.latitude),\(a.longitude)"),
+            URLQueryItem(name: "goal", value: "\(b.latitude),\(b.longitude)"),
+            URLQueryItem(name: "start_time", value: formateur().string(from: heure)),
+            URLQueryItem(name: "unuse", value: "domestic_flight"),
+            URLQueryItem(name: "limit", value: "1"),
+            URLQueryItem(name: "datum", value: "wgs84"),
+            URLQueryItem(name: "coord_unit", value: "degree"),
+        ]
+        if trace { adresse.queryItems?.append(URLQueryItem(name: "shape", value: "true")) }
+        if anglais { adresse.queryItems?.append(URLQueryItem(name: "lang", value: "en")) }
+        var requete = URLRequest(url: adresse.url!)
+        requete.setValue(cle, forHTTPHeaderField: "X-RapidAPI-Key")
+        requete.setValue(hote, forHTTPHeaderField: "X-RapidAPI-Host")
+        requete.timeoutInterval = 25
+
+        let (donnees, reponse) = try await URLSession.shared.data(for: requete)
+        let code = (reponse as? HTTPURLResponse)?.statusCode ?? 0
+        let json = (try? JSONSerialization.jsonObject(with: donnees)) as? [String: Any]
+        if code != 200 {
+            let message = (json?["message"] as? String)
+                ?? ((json?["errors"] as? [[String: Any]])?.first?["message"] as? String)
+                ?? String(data: donnees.prefix(300), encoding: .utf8).flatMap { $0.isEmpty ? nil : $0 } ?? "erreur \(code)"
+            switch code {
+            case 401, 403: throw Erreur.nonAbonne(message)
+            case 429: throw Erreur.quota
+            case 400: throw Erreur.parametre(message)
+            case 404: throw Erreur.aucunItineraire(message)
+            default: throw Erreur.refuse(message)
+            }
+        }
+        guard let item = (json?["items"] as? [[String: Any]])?.first else { throw Erreur.aucunItineraire("") }
+        let sections = item["sections"] as? [[String: Any]] ?? []
+        let formes = traces(item["shapes"])
+
+        func coordonnee(_ s: [String: Any]?) -> CLLocationCoordinate2D? {
+            guard let c = s?["coord"] as? [String: Any],
+                  let lat = (c["lat"] as? NSNumber)?.doubleValue, let lon = (c["lon"] as? NSNumber)?.doubleValue else { return nil }
+            return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+        }
+        func texte(_ v: Any?) -> String? {
+            let t = (v as? String) ?? ((v as? [String: Any])?["name"] as? String)
+            return t?.trimmingCharacters(in: .whitespaces).isEmpty == false ? t : nil
+        }
+        func date(_ v: Any?) -> Date? {
+            guard let t = v as? String, t.count >= 19 else { return nil }
+            return formateur().date(from: String(t.prefix(19)))
+        }
+        func nombre(_ v: Any?) -> Int { (v as? NSNumber)?.intValue ?? 0 }
+
+        var etapes: [EtapeCommun] = []
+        var tout: [CLLocationCoordinate2D] = []
+        for (i, s) in sections.enumerated() where s["type"] as? String == "move" {
+            let avant = i > 0 ? sections[i - 1] : nil, apres = i + 1 < sections.count ? sections[i + 1] : nil
+            let pA = coordonnee(avant), pB = coordonnee(apres)
+            let points = troncon(de: pA, vers: pB, parmi: formes)
+            tout += points
+            let mouvement = s["move"] as? String ?? ""
+            let secondes = nombre(s["time"]) * 60, metres = nombre(s["distance"])
+            if mouvement == "walk" {
+                etapes.append(EtapeCommun(mode: "MARCHE", secondes: secondes, metres: metres, trace: PolylineGoogle.encoder(points)))
+                continue
+            }
+            let transport = s["transport"] as? [String: Any]
+            let lien = (transport?["links"] as? [[String: Any]])?.first
+            etapes.append(EtapeCommun(
+                mode: "TRANSPORT", vehicule: vehicule(mouvement),
+                ligne: nil, nomLigne: texte(transport?["self_name"]) ?? texte(s["line_name"]) ?? texte(transport?["name"]),
+                couleur: transport?["color"] as? String, couleurTexte: nil,
+                depart: texte(avant?["name"]), arrivee: texte(apres?["name"]),
+                direction: texte(lien?["destination"]) ?? texte(transport?["destination"]), arrets: nil,
+                heureDepart: date(s["from_time"]), heureArrivee: date(s["to_time"]),
+                secondes: secondes, metres: metres, trace: PolylineGoogle.encoder(points)))
+        }
+        guard etapes.contains(where: { !$0.estMarche }) else { throw Erreur.aucunItineraire("Itinéraire à pied seulement.") }
+        let resume = (item["summary"] as? [String: Any])?["move"] as? [String: Any]
+        return ItineraireCommun(secondes: nombre(resume?["time"]) * 60, metres: nombre(resume?["distance"]),
+                                trace: PolylineGoogle.encoder(tout), etapes: etapes, calculeLe: .now, source: "NAVITIME")
+    }
+
+    /// Les types de NAVITIME ramenés à ceux de Google, pour l'icône du tronçon.
+    private static func vehicule(_ mouvement: String) -> String? {
+        switch mouvement {
+        case "superexpress_train": "HIGH_SPEED_TRAIN"
+        case "sleeper_ultraexpress", "ultraexpress_train", "express_train", "rapid_train", "semiexpress_train", "local_train": "TRAIN"
+        case "shuttle_bus", "local_bus", "highway_bus": "BUS"
+        case "ferry": "FERRY"
+        case "domestic_flight": "AIRPLANE"
+        default: nil
+        }
+    }
+
+    /// Les tracés renvoyés par NAVITIME (GeoJSON : lignes en [longitude, latitude]).
+    private static func traces(_ formes: Any?) -> [[CLLocationCoordinate2D]] {
+        func ligne(_ v: Any?) -> [CLLocationCoordinate2D] {
+            ((v as? [[Any]]) ?? []).compactMap { p in
+                guard p.count >= 2, let lon = (p[0] as? NSNumber)?.doubleValue, let lat = (p[1] as? NSNumber)?.doubleValue else { return nil }
+                return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+            }
+        }
+        var resultat: [[CLLocationCoordinate2D]] = []
+        for f in ((formes as? [String: Any])?["features"] as? [[String: Any]]) ?? [] {
+            guard let g = f["geometry"] as? [String: Any] else { continue }
+            switch g["type"] as? String {
+            case "LineString": resultat.append(ligne(g["coordinates"]))
+            case "MultiLineString": resultat += ((g["coordinates"] as? [Any]) ?? []).map(ligne)
+            default: break
+            }
+        }
+        return resultat.filter { $0.count >= 2 }
+    }
+
+    /// Le tracé d'un tronçon : celui de NAVITIME qui relie ses deux extrémités, sinon une ligne droite de l'une à l'autre.
+    private static func troncon(de a: CLLocationCoordinate2D?, vers b: CLLocationCoordinate2D?,
+                              parmi formes: [[CLLocationCoordinate2D]]) -> [CLLocationCoordinate2D] {
+        guard let a, let b else { return [a, b].compactMap { $0 } }
+        func d(_ p: CLLocationCoordinate2D, _ q: CLLocationCoordinate2D) -> Double {
+            CLLocation(latitude: p.latitude, longitude: p.longitude).distance(from: CLLocation(latitude: q.latitude, longitude: q.longitude))
+        }
+        let meilleure = formes.min { d($0.first!, a) + d($0.last!, b) < d($1.first!, a) + d($1.last!, b) }
+        if let m = meilleure, d(m.first!, a) + d(m.last!, b) < 1500 { return m }
+        return [a, b]
     }
 }
 
@@ -299,7 +539,12 @@ struct DetailItineraireCommun: View {
                     .font(.footnote).foregroundStyle(.secondary)
             }
             ForEach(Array(itineraire.etapes.enumerated()), id: \.offset) { _, etape in ligne(etape) }
-            if itineraire.indicatif == true && !itineraire.estDureeSeule {
+            if itineraire.source == "NAVITIME" {
+                Text(itineraire.indicatif == true
+                     ? "Itinéraire NAVITIME calculé sans heure de départ : saisis l'heure prévue puis relance la recherche pour avoir les horaires."
+                     : "Itinéraire NAVITIME : horaires estimés d'après le temps de parcours moyen des trains, à vérifier sur place (Shinkansen à réserver).")
+                    .font(.footnote).foregroundStyle(.secondary)
+            } else if itineraire.indicatif == true && !itineraire.estDureeSeule {
                 Text("Horaires donnés à titre d'exemple (un jour de semaine ordinaire) : les horaires du voyage ne sont pas encore publiés.")
                     .font(.footnote).foregroundStyle(.orange)
             }
@@ -359,5 +604,17 @@ enum EstimationPlans {
         source.name = depart ?? "Départ"
         cible.name = arrivee ?? "Arrivée"
         MKMapItem.openMaps(with: [source, cible], launchOptions: [MKLaunchOptionsDirectionsModeKey: MKLaunchOptionsDirectionsModeTransit])
+    }
+
+    /// L'itinéraire en transports en commun sur Google Maps (site ou app) : il couvre aussi le Japon, sans clé.
+    static func lienGoogleMaps(de a: CLLocationCoordinate2D, vers b: CLLocationCoordinate2D) -> URL {
+        var adresse = URLComponents(string: "https://www.google.com/maps/dir/")!
+        adresse.queryItems = [
+            URLQueryItem(name: "api", value: "1"),
+            URLQueryItem(name: "origin", value: "\(a.latitude),\(a.longitude)"),
+            URLQueryItem(name: "destination", value: "\(b.latitude),\(b.longitude)"),
+            URLQueryItem(name: "travelmode", value: "transit"),
+        ]
+        return adresse.url!
     }
 }

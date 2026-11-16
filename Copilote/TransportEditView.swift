@@ -334,21 +334,24 @@ struct TransportEditView: View {
             Text(lieuxExtremites ? "Choisis un lieu de départ et un lieu d'arrivée pour chercher l'itinéraire."
                  : "Place les deux étapes sur la carte (lieu) pour chercher l'itinéraire.")
                 .font(.footnote).foregroundStyle(.secondary)
-        } else if Cles.lire(.google) == nil {
-            Text("La recherche utilise Google : ajoute ta clé dans les Réglages et active « Routes API » dans ton projet Google Cloud.")
+        } else if Cles.lire(.google) == nil && RoutesNavitime.cle == nil {
+            Text("La recherche utilise Google (clé Google des Réglages, avec « Routes API » activée dans ton projet Google Cloud) et, au Japon, NAVITIME (clé RapidAPI des Réglages).")
                 .font(.footnote).foregroundStyle(.secondary)
         }
         if let erreurRecherche {
             Text(erreurRecherche).font(.footnote).foregroundStyle(.red)
-            Text("Google ne fournit pas toujours les transports en commun (couverture variable selon les pays). Plans peut au moins estimer la durée, ou ouvrir l'itinéraire dans son app.")
+            Text("Google ne fournit pas toujours les transports en commun à ses API (couverture variable selon les pays, rien au Japon). Plans peut au moins estimer la durée ; Plans et Google Maps montrent l'itinéraire complet dans leur app.")
                 .font(.footnote).foregroundStyle(.secondary)
         }
         if let (a, b) = lieuxDeRecherche {
-            HStack(spacing: 14) {
+            FlowLayout(espacement: 14) {
                 Button("Estimer la durée (Plans)", systemImage: "clock") { Task { await estimerAvecPlans() } }
                     .disabled(rechercheEnCours)
                 Button("Ouvrir dans Plans", systemImage: "map") {
                     EstimationPlans.ouvrir(de: a, vers: b, depart: transport.de.isEmpty ? nil : transport.de, arrivee: transport.vers.isEmpty ? nil : transport.vers)
+                }
+                Link(destination: EstimationPlans.lienGoogleMaps(de: a, vers: b)) {
+                    Label("Ouvrir dans Google Maps", systemImage: "g.circle")
                 }
             }
             .buttonStyle(.borderless)
@@ -388,7 +391,7 @@ struct TransportEditView: View {
             quand = Calendar.current.date(bySettingHour: c.hour ?? 0, minute: c.minute ?? 0, second: 0, of: Calendar.current.startOfDay(for: jour))
         }
         do {
-            let resultat = try await RoutesGoogle.chercher(de: a, vers: b, sousType: transport.sousType, depart: quand)
+            let resultat = try await RechercheCommun.chercher(de: a, vers: b, sousType: transport.sousType, depart: quand)
             transport.itineraireCommun = resultat
             transport.dureeModifiee = nil
             // Les stations et l'opérateur se remplissent s'ils sont vides.

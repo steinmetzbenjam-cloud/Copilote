@@ -1,4 +1,9 @@
 import SwiftUI
+#if canImport(UIKit)
+import UIKit
+#else
+import AppKit
+#endif
 
 struct ReglagesView: View {
     @Environment(\.dismiss) private var dismiss
@@ -13,6 +18,8 @@ struct ReglagesView: View {
     @State private var messageSchema = ""
     @State private var schemaEnCours = false
     @State private var tutorielOuvert = false
+    /// Moment où la clé AeroDataBox a été copiée, pour afficher « Copiée » un instant.
+    @State private var cleCopiee: Date?
 
     private func etat(_ service: Cles.Service, saisie: String) -> Cles.Etat {
         saisie.isEmpty ? .absente : Cles.etat(service)
@@ -25,6 +32,26 @@ struct ReglagesView: View {
         case .absente: ""
         case .synchronisee: "Synchronisée avec tes autres appareils (trousseau iCloud)."
         case .locale: "Gardée sur cet appareil seulement : valide avec OK pour la synchroniser (le trousseau iCloud doit être activé)."
+        }
+    }
+
+    /// Copie la clé dans le presse-papiers sans l'afficher. Sur iPad et iPhone, elle s'en efface d'elle-même au bout de
+    /// 2 minutes.
+    private func copier(_ cle: String) {
+        let valeur = cle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !valeur.isEmpty else { return }
+        #if canImport(UIKit)
+        UIPasteboard.general.setItems([[UIPasteboard.typeAutomatic: valeur]],
+                                      options: [.expirationDate: Date().addingTimeInterval(120)])
+        #else
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(valeur, forType: .string)
+        #endif
+        let moment = Date()
+        cleCopiee = moment
+        Task {
+            try? await Task.sleep(for: .seconds(3))
+            if cleCopiee == moment { cleCopiee = nil }
         }
     }
 
@@ -67,11 +94,18 @@ struct ReglagesView: View {
                 Section {
                     SecureField("Clé d'API", text: $aerodatabox)
                         .autocorrectionDisabled()
+                    // Pour la coller dans une autre app (PaieRotation) : le champ masqué ne se copie pas.
+                    Button(cleCopiee == nil ? "Copier la clé" : "Clé copiée",
+                           systemImage: cleCopiee == nil ? "doc.on.doc" : "checkmark") {
+                        copier(aerodatabox)
+                    }
+                    .disabled(aerodatabox.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     Link("Créer une clé AeroDataBox (gratuite)", destination: URL(string: "https://rapidapi.com/aedbx-aedbx/api/aerodatabox")!)
+                    Link("S'abonner à NAVITIME (trains au Japon)", destination: RoutesNavitime.pageAbonnement)
                 } header: {
-                    Text("Vols (AeroDataBox)")
+                    Text("RapidAPI : vols (AeroDataBox) et trains au Japon (NAVITIME)")
                 } footer: {
-                    Text("Abonne-toi à l'offre gratuite d'AeroDataBox sur RapidAPI, puis copie ta clé « X-RapidAPI-Key ». Terminal, comptoirs, porte, tapis à bagages et horaires à jour des vols d'aller et de retour.\n\(apercu(aerodatabox)) \(texteEtat(etat(.aerodatabox, saisie: aerodatabox)))")
+                    Text("Abonne-toi à l'offre gratuite d'AeroDataBox sur RapidAPI, puis copie ta clé « X-RapidAPI-Key ». Terminal, comptoirs, porte, tapis à bagages et horaires à jour des vols d'aller et de retour.\nLa même clé sert aux itinéraires en train au Japon (Shinkansen, JR, métros), que Google ne fournit pas : abonne-toi aussi à « NAVITIME Route(totalnavi) » sur RapidAPI, avec le même compte.\n\(apercu(aerodatabox)) \(texteEtat(etat(.aerodatabox, saisie: aerodatabox)))")
                 }
 
                 Section {
@@ -137,7 +171,7 @@ struct ReglagesView: View {
 
                 Section {
                 } footer: {
-                    Text("Les clés sont gardées dans ton trousseau iCloud : saisies une fois, elles apparaissent sur tous tes appareils. Elles ne sont jamais envoyées ailleurs que chez Google, Tripadvisor et AeroDataBox, ni aux autres voyageurs. Sans clé, les suggestions viennent de Plans, sans notes.")
+                    Text("Les clés sont gardées dans ton trousseau iCloud : saisies une fois, elles apparaissent sur tous tes appareils. Elles ne sont jamais envoyées ailleurs que chez Google, Tripadvisor et RapidAPI (AeroDataBox, NAVITIME), ni aux autres voyageurs. Sans clé, les suggestions viennent de Plans, sans notes.")
                 }
             }
             .formStyle(.grouped)
