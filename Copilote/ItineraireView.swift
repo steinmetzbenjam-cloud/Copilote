@@ -37,10 +37,10 @@ struct ItineraireView: View {
     @State private var ecranLarge = false
     /// Hauteur du contenu de « Étapes à placer » (iPad), pour que son défilement ne couvre pas la carte.
     @State private var hauteurEtapesAPlacer: CGFloat = .infinity
-    /// « Étapes à placer » replié : seul son titre reste visible. Retenu d'une ouverture à l'autre.
-    /// Fenêtre « Étapes à placer » ouverte : ouverte au lancement de l'app, puis gardée telle quelle d'un onglet à l'autre.
+    /// Fenêtre « Étapes à placer » ouverte : fermée au lancement de l'app (on l'ouvre avec son rond),
+    /// puis gardée telle quelle d'un onglet à l'autre.
     @State private var etapesAPlacerOuvertes = ItineraireView.etapesAPlacerOuvertesSession
-    private static var etapesAPlacerOuvertesSession = true
+    private static var etapesAPlacerOuvertesSession = false
     /// Déplacement qui effacerait des transports : en attente de confirmation.
     @State private var deplacementEnAttente: DeplacementEnAttente?
     /// Jour dont les notes sont ouvertes dans un cadre à droite de sa carte (sous son en-tête sur iPhone).
