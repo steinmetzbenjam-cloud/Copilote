@@ -147,7 +147,7 @@ struct CalculsTests {
         let v = Voyage(titre: "Essai", debut: debut, fin: jour(6))
         contexte.insert(v)
         membre("Alex", dans: v)
-        // L'hôtel est saisi pour la nuit du jour 2 ; la nuit du jour 4 a déjà un autre hébergement, qui lui cède la place.
+        // L'hôtel est saisi pour la nuit du jour 2 ; la nuit du jour 4 a déjà un autre hébergement, qui reste à côté de lui.
         let hotel = Etape(titre: "Hôtel du Lac", jour: nil, categorie: .hebergement)
         hotel.prixAdulte = 80
         hotel.voyage = v
@@ -167,11 +167,13 @@ struct CalculsTests {
 
         let report = v.reporterHebergement(de: r, dans: contexte)
         #expect(report?.nuits.count == 3)
-        #expect(report?.remplaces.map(\.etape.titre) == ["Camping"])
+        #expect(report?.voisins.map(\.etape.titre) == ["Camping"])
+        #expect(report?.voisins.map { cal.isDate($0.nuit, inSameDayAs: jour(4)) } == [true])
         #expect(v.hebergements(apres: jour(1)).map(\.titre) == ["Hôtel du Lac"])
         #expect(v.hebergements(apres: jour(3)).map(\.titre) == ["Hôtel du Lac"])
-        #expect(v.hebergements(apres: jour(4)).map(\.titre) == ["Hôtel du Lac"])
-        #expect(autre.jour == nil)
+        // La nuit du jour 4 a désormais deux hébergements côte à côte : le camping garde sa place.
+        #expect(Set(v.hebergements(apres: jour(4)).map(\.titre)) == ["Hôtel du Lac", "Camping"])
+        #expect(autre.jour.map { cal.isDate($0, inSameDayAs: jour(4)) } == true)
         #expect(v.hebergements(apres: jour(0)).isEmpty)
         // Le prix de la réservation couvre le séjour : il n'est pas compté deux fois.
         #expect(v.calculerBudget().elements.total(pour: v.membres) == 400)
