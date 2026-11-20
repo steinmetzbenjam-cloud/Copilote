@@ -63,21 +63,66 @@ struct EtapeFavorite: Codable, Identifiable, Equatable {
     }
 }
 
-/// Les étapes favorites, rangées par pays, gardées sur l'appareil (comme le profil).
+/// Les étapes favorites, rangées par pays. Gardées sur l'appareil et partagées entre l'iPhone et le Mac
+/// par le stockage clé-valeur d'iCloud (même compte iCloud) : la dernière modification l'emporte.
 /// Une étape est reconnue comme favorite à son nom et à sa position : la copie placée dans un autre voyage l'est aussi.
 @MainActor @Observable
 final class Favoris {
     static let partage = Favoris()
 
-    private static let cle = "etapesFavorites"
+    nonisolated private static let cle = "etapesFavorites"
+    /// Vrai une fois les favoris de cet appareil réunis à ceux d'iCloud : ensuite, iCloud fait foi.
+    private static let cleFusion = "etapesFavoritesFusionneesICloud"
+    private var nuage: NSUbiquitousKeyValueStore { .default }
+    /// La liste vient d'iCloud : inutile de l'y renvoyer.
+    private var depuisICloud = false
+
     private(set) var liste: [EtapeFavorite] = [] {
-        didSet { if let donnees = try? JSONEncoder().encode(liste) { UserDefaults.standard.set(donnees, forKey: Self.cle) } }
+        didSet {
+            guard let donnees = try? JSONEncoder().encode(liste) else { return }
+            UserDefaults.standard.set(donnees, forKey: Self.cle)
+            if !depuisICloud { nuage.set(donnees, forKey: Self.cle) }
+        }
     }
 
     private init() {
+        // La liste de l'appareil ne doit pas écraser celle d'iCloud avant qu'on l'ait lue.
         if let donnees = UserDefaults.standard.data(forKey: Self.cle) {
-            liste = (try? JSONDecoder().decode([EtapeFavorite].self, from: donnees)) ?? []
+            depuisICloud = true
+            liste = Self.decoder(donnees) ?? []
+            depuisICloud = false
         }
+        NotificationCenter.default.addObserver(forName: NSUbiquitousKeyValueStore.didChangeExternallyNotification,
+                                               object: NSUbiquitousKeyValueStore.default, queue: .main) { note in
+            let raison = note.userInfo?[NSUbiquitousKeyValueStoreChangeReasonKey] as? Int
+            let cles = note.userInfo?[NSUbiquitousKeyValueStoreChangedKeysKey] as? [String] ?? []
+            guard cles.contains(Favoris.cle) else { return }
+            MainActor.assumeIsolated { Favoris.partage.recevoir(premiereSynchro: raison == NSUbiquitousKeyValueStoreInitialSyncChange) }
+        }
+        nuage.synchronize()
+        recevoir(premiereSynchro: false)
+    }
+
+    /// Reprend la liste d'iCloud. La première fois sur cet appareil, les deux listes sont réunies, sans doublon.
+    private func recevoir(premiereSynchro: Bool) {
+        guard let donnees = nuage.data(forKey: Self.cle), let distante = Self.decoder(donnees) else {
+            // Rien dans iCloud : la liste de l'appareil y est envoyée.
+            if !liste.isEmpty, let donnees = try? JSONEncoder().encode(liste) { nuage.set(donnees, forKey: Self.cle) }
+            return
+        }
+        if premiereSynchro || !UserDefaults.standard.bool(forKey: Self.cleFusion) {
+            UserDefaults.standard.set(true, forKey: Self.cleFusion)
+            let reunie = distante + liste.filter { l in !distante.contains { $0.id == l.id || Self.memeLieu($0, l) } }
+            liste = reunie
+        } else if distante != liste {
+            depuisICloud = true
+            liste = distante
+            depuisICloud = false
+        }
+    }
+
+    private static func decoder(_ donnees: Data) -> [EtapeFavorite]? {
+        try? JSONDecoder().decode([EtapeFavorite].self, from: donnees)
     }
 
     func estFavorite(_ etape: Etape) -> Bool {
@@ -118,10 +163,20 @@ final class Favoris {
 
     /// Même nom (sans tenir compte des majuscules ni des accents) et, si les deux sont placés, à moins de 200 m l'un de l'autre.
     private static func correspond(_ favori: EtapeFavorite, _ etape: Etape) -> Bool {
-        let nom = normaliser(etape.titre)
-        guard !nom.isEmpty, normaliser(favori.titre) == nom else { return false }
-        guard let lat = favori.latitude, let lon = favori.longitude, let c = etape.coordonnee else { return true }
-        return CLLocation(latitude: lat, longitude: lon).distance(from: CLLocation(latitude: c.latitude, longitude: c.longitude)) < 200
+        memeEndroit(favori.titre, favori.latitude, favori.longitude, etape.titre, etape.latitude, etape.longitude)
+    }
+
+    /// Deux favoris du même lieu (gardés chacun sur un appareil avant la première synchronisation).
+    private static func memeLieu(_ a: EtapeFavorite, _ b: EtapeFavorite) -> Bool {
+        a.pays == b.pays && memeEndroit(a.titre, a.latitude, a.longitude, b.titre, b.latitude, b.longitude)
+    }
+
+    private static func memeEndroit(_ titreA: String, _ latA: Double?, _ lonA: Double?,
+                                    _ titreB: String, _ latB: Double?, _ lonB: Double?) -> Bool {
+        let nom = normaliser(titreB)
+        guard !nom.isEmpty, normaliser(titreA) == nom else { return false }
+        guard let latA, let lonA, let latB, let lonB else { return true }
+        return CLLocation(latitude: latA, longitude: lonA).distance(from: CLLocation(latitude: latB, longitude: lonB)) < 200
     }
 
     private static func normaliser(_ texte: String) -> String {
