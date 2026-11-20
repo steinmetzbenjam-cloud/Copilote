@@ -47,6 +47,16 @@ struct ItineraireView: View {
     @State private var notesOuvertes: Date?
     /// Haut de la carte du jour aux notes ouvertes, pour y aligner le cadre.
     @State private var hautNotes: CGFloat = 0
+    /// Clavier affiché (iPhone) : le détail de l'étape ouverte monte alors par-dessus la carte.
+    @State private var clavierOuvert = false
+
+    private static var estUnIPhone: Bool {
+        #if os(iOS)
+        UIDevice.current.userInterfaceIdiom == .phone
+        #else
+        false
+        #endif
+    }
 
     private struct DeplacementEnAttente: Identifiable {
         let id = UUID()
@@ -116,16 +126,28 @@ struct ItineraireView: View {
                 // une ligne droite. Il recouvre le bas de la carte de la hauteur de l'arrondi.
                 let arrondi = UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 16,
                                                      style: .continuous)
+                let hauteurCarte = max(220, geo.size.height * 0.36)
+                // Clavier ouvert sur une étape (iPhone) : son cadre monte par-dessus le plan et prend tout l'écran au-dessus du clavier.
+                // Seul le cadre s'agrandit, sans changer de place dans la hiérarchie : le champ en cours garde le clavier.
+                let etapePleinEcran = clavierOuvert && etapeEnEdition != nil && Self.estUnIPhone
                 VStack(spacing: -16) {
-                    fondDeCarte(margeGauche: 0).frame(height: max(220, geo.size.height * 0.36) + 16)
+                    fondDeCarte(margeGauche: 0).frame(height: hauteurCarte + 16)
                     DefilementMemorise(cle: cleDefilement(large: false)) { listeDesJours(avecEtapesAPlacer: true).padding(12) }
                         .id(cleDefilement(large: false))
                         .background(FondDePage.couleur)
-                        .overlay { cadreEtape.padding(8) }
                         .clipShape(arrondi)
                         .shadow(color: .black.opacity(0.12), radius: 6, y: -2)
+                        .overlay { cadreEtape.padding(8).padding(.top, etapePleinEcran ? -hauteurCarte : 0) }
                         .zIndex(1)
                 }
+                #if os(iOS)
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+                    withAnimation(.snappy) { clavierOuvert = true }
+                }
+                .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+                    withAnimation(.snappy) { clavierOuvert = false }
+                }
+                #endif
                 // Les notes du jour s'ouvrent en haut, par-dessus la carte : le clavier, qui monte du bas, ne les cache pas.
                 // (Les déplacer seulement à l'apparition du clavier recréerait la zone de texte et refermerait le clavier.)
                 .overlay(alignment: .top) {
