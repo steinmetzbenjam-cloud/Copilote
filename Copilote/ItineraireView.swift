@@ -955,7 +955,14 @@ struct ItineraireView: View {
                 // Même largeur pour tous les repères : les titres restent alignés d'une ligne à l'autre.
                 .frame(width: 44)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(etape.titre.isEmpty ? "Sans titre" : etape.titre).font(.headline).foregroundStyle(.primary)
+                    HStack(spacing: 5) {
+                        Text(etape.titre.isEmpty ? "Sans titre" : etape.titre).font(.headline).foregroundStyle(.primary)
+                        // Étape favorite : un petit cœur après son nom.
+                        if Favoris.partage.estFavorite(etape) {
+                            Image(systemName: "heart.fill").font(.caption).foregroundStyle(.red)
+                                .accessibilityLabel("Favorite")
+                        }
+                    }
                     if let note = etape.noteTripadvisor, let avis = etape.avisTripadvisor {
                         NotesView(tripadvisor: (note, avis))
                     }

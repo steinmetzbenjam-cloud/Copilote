@@ -183,6 +183,8 @@ struct ContentView: View {
                 contexte.insert(voyage)
                 // Le créateur fait partie du voyage d'office : Budget, Dépenses et votes le connaissent tout de suite.
                 if Profil.partage.estRenseigne { Profil.partage.identifier(dans: voyage, contexte: contexte) }
+                // Les étapes favorites de ses pays l'attendent dans « Étapes à placer ».
+                Favoris.partage.ajouter(a: voyage, contexte: contexte)
                 selection = voyage
             }
         }

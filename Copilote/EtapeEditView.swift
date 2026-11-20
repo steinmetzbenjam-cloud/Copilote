@@ -14,6 +14,9 @@ struct EtapeEditView: View {
     var depuisVote = false
     /// Petit message « Copie créée » après une duplication.
     @State private var copieFaite = false
+    /// Le pays de l'étape est en cours de recherche pour la garder en favori.
+    @State private var rechercheFavori = false
+    @State private var sansPaysFavori = false
     @Environment(\.dismiss) private var dismiss
     @FocusState private var titreActif: Bool
     /// Case de la durée en cours de saisie (« h » ou « min ») : son contenu est sélectionné dès qu'on y entre.
@@ -228,6 +231,33 @@ struct EtapeEditView: View {
                 // Un léger fond quand on écrit : on voit que le titre se modifie.
                 .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(titreActif ? 0.12 : 0)))
                 .help("Cliquer pour renommer")
+            // Favori : un cœur, plein quand l'étape est gardée pour les prochains voyages dans son pays.
+            if nouvelle != true, !etape.titre.trimmingCharacters(in: .whitespaces).isEmpty {
+                let favorite = Favoris.partage.estFavorite(etape)
+                Button {
+                    Task {
+                        rechercheFavori = true
+                        sansPaysFavori = !(await Favoris.partage.basculer(etape))
+                        rechercheFavori = false
+                    }
+                } label: {
+                    Image(systemName: favorite ? "heart.fill" : "heart")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(favorite ? Color.red : Color.secondary)
+                        .frame(width: 28, height: 28)
+                        .contentShape(Rectangle())
+                        .opacity(rechercheFavori ? 0.4 : 1)
+                }
+                .buttonStyle(.plain)
+                .disabled(rechercheFavori)
+                .accessibilityLabel(favorite ? "Retirer des favoris" : "Ajouter aux favoris")
+                .help(favorite ? "Retirer des favoris" : "Garder en favori : l'étape sera proposée dans les prochains voyages dans ce pays")
+                .alert("Pays introuvable", isPresented: $sansPaysFavori) {
+                    Button("OK", role: .cancel) {}
+                } message: {
+                    Text("Place l'étape sur la carte ou choisis les pays du voyage pour la garder en favori.")
+                }
+            }
             // Dupliquer : une icône discrète, à côté de la fermeture (pas en voyage : le programme est fixé).
             if !(etape.voyage?.lectureSeule ?? true), !enVoyage, nouvelle != true {
                 Button { dupliquer() } label: {
