@@ -224,6 +224,7 @@ enum Codec {
             r["exclusBudget"] = (e.exclusBudget ?? []).isEmpty ? nil : e.exclusBudget
             r["basculesTarif"] = (e.basculesTarif ?? []).isEmpty ? nil : e.basculesTarif
             r["categoriesPrixJSON"] = e.categoriesPrixJSON
+            r["paysFavori"] = e.paysFavori
             return r
         case let x as Reservation:
             let r = base(.reservation, x.uid, zone, systeme)
@@ -405,6 +406,7 @@ enum Codec {
             e.exclusBudget = r["exclusBudget"] as? [String]
             e.basculesTarif = r["basculesTarif"] as? [String]
             e.categoriesPrixJSON = r["categoriesPrixJSON"] as? String
+            e.paysFavori = r["paysFavori"] as? String
             return e
 
         case .reservation:

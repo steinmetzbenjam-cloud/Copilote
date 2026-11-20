@@ -251,7 +251,7 @@ struct EtapeEditView: View {
                 .buttonStyle(.plain)
                 .disabled(rechercheFavori)
                 .accessibilityLabel(favorite ? "Retirer des favoris" : "Ajouter aux favoris")
-                .help(favorite ? "Retirer des favoris" : "Garder en favori : l'étape sera proposée dans les prochains voyages dans ce pays")
+                .help(favorite ? "Retirer des favoris" : "Garder en favori : les voyageurs voient le cœur, et l'étape sera proposée dans les prochains voyages dans ce pays")
                 .alert("Pays introuvable", isPresented: $sansPaysFavori) {
                     Button("OK", role: .cancel) {}
                 } message: {

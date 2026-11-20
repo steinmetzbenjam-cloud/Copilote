@@ -59,13 +59,18 @@ struct EtapeFavorite: Codable, Identifiable, Equatable {
         e.noteGoogle = noteGoogle; e.avisGoogle = avisGoogle; e.lienGoogle = lienGoogle
         e.noteTripadvisor = noteTripadvisor; e.avisTripadvisor = avisTripadvisor; e.lienTripadvisor = lienTripadvisor
         e.siteWeb = siteWeb
+        // Toujours favorite dans le nouveau voyage : ses voyageurs voient le cœur.
+        e.paysFavori = pays
         return e
     }
 }
 
-/// Les étapes favorites, rangées par pays. Gardées sur l'appareil et partagées entre l'iPhone et le Mac
-/// par le stockage clé-valeur d'iCloud (même compte iCloud) : la dernière modification l'emporte.
-/// Une étape est reconnue comme favorite à son nom et à sa position : la copie placée dans un autre voyage l'est aussi.
+/// Les étapes favorites, rangées par pays, à deux endroits :
+/// - dans l'étape elle-même (`paysFavori`), synchronisée avec le voyage : tous ses voyageurs voient le cœur
+///   et retrouvent l'étape dans leurs prochains voyages dans ce pays ;
+/// - dans ma liste, gardée sur l'appareil et partagée entre l'iPhone et le Mac par le stockage clé-valeur d'iCloud
+///   (même compte iCloud, la dernière modification l'emporte) : elle survit à la suppression du voyage d'origine.
+/// Dans ma liste, une étape est reconnue à son nom et à sa position : la copie placée dans un autre voyage l'est aussi.
 @MainActor @Observable
 final class Favoris {
     static let partage = Favoris()
@@ -125,32 +130,51 @@ final class Favoris {
         try? JSONDecoder().decode([EtapeFavorite].self, from: donnees)
     }
 
+    /// Favorite pour le voyage (cœur partagé avec ses voyageurs) ou dans ma liste.
     func estFavorite(_ etape: Etape) -> Bool {
+        etape.paysFavori != nil || dansMaListe(etape)
+    }
+
+    private func dansMaListe(_ etape: Etape) -> Bool {
         liste.contains { Self.correspond($0, etape) }
     }
 
-    /// Ajoute l'étape aux favoris de son pays, ou l'en retire si elle y est déjà.
+    /// Ajoute l'étape aux favoris de son pays, ou l'en retire si elle y est déjà : dans ma liste et, si le voyage
+    /// peut être modifié, dans l'étape elle-même, pour tous ses voyageurs. Dans un voyage en lecture seule, seule ma liste change.
     /// Faux si son pays n'a pas pu être trouvé (ni position, ni pays dans le voyage).
     @discardableResult
     func basculer(_ etape: Etape) async -> Bool {
-        if estFavorite(etape) {
+        let modifiable = !(etape.voyage?.lectureSeule ?? true)
+        let favorite = modifiable ? estFavorite(etape) : dansMaListe(etape)
+        if favorite {
             liste.removeAll { Self.correspond($0, etape) }
+            if modifiable { etape.paysFavori = nil }
             return true
         }
         guard let pays = await Self.pays(de: etape) else { return false }
+        if modifiable { etape.paysFavori = pays }
         // L'étape a pu être ajoutée pendant la recherche du pays (double appui) : pas de doublon.
-        guard !estFavorite(etape) else { return true }
-        liste.append(EtapeFavorite(etape, pays: pays))
+        if !dansMaListe(etape) { liste.append(EtapeFavorite(etape, pays: pays)) }
         return true
     }
 
-    /// Ajoute aux étapes à placer d'un nouveau voyage les favoris de ses pays, dans l'ordre où on les a gardés.
+    /// Ajoute aux étapes à placer d'un nouveau voyage les favoris de ses pays : ceux de ma liste, dans l'ordre où je les ai
+    /// gardés, puis les étapes favorites de tous les voyages auxquels j'ai accès (les miens et ceux qu'on m'a partagés).
     func ajouter(a voyage: Voyage, contexte: ModelContext) {
         let pays = Set(voyage.pays)
+        let partagees = ((try? contexte.fetch(FetchDescriptor<Etape>(predicate: #Predicate { $0.paysFavori != nil }))) ?? [])
+            .filter { $0.voyage !== voyage }
+            .sorted { $0.creeLe < $1.creeLe }
+            .compactMap { e in e.paysFavori.map { EtapeFavorite(e, pays: $0) } }
+        var retenus: [EtapeFavorite] = []
+        for favori in liste + partagees where pays.contains(favori.pays) {
+            // Le même lieu gardé deux fois, ou déjà dans le voyage : pas de doublon.
+            guard !retenus.contains(where: { Self.memeLieu($0, favori) }),
+                  !voyage.etapes.contains(where: { Self.correspond(favori, $0) }) else { continue }
+            retenus.append(favori)
+        }
         var ordre = (voyage.etapesSansJour.map(\.ordre).max() ?? -1) + 1
-        for favori in liste where pays.contains(favori.pays) {
-            // Déjà dans le voyage (même nom, même endroit) : pas de doublon.
-            guard !voyage.etapes.contains(where: { Self.correspond(favori, $0) }) else { continue }
+        for favori in retenus {
             let e = favori.etape()
             e.ordre = ordre
             ordre += 1

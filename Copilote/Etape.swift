@@ -83,6 +83,7 @@ extension Etape {
         c.prixAdulte = prixAdulte; c.prixEnfant = prixEnfant; c.prixEtudiant = prixEtudiant; c.prixAdolescent = prixAdolescent
         c.monnaieAdulte = monnaieAdulte; c.monnaieEnfant = monnaieEnfant; c.monnaieEtudiant = monnaieEtudiant; c.monnaieAdolescent = monnaieAdolescent
         c.categoriesPrixJSON = categoriesPrixJSON
+        c.paysFavori = paysFavori
         c.voyage = voyage
         contexte.insert(c)
         for photo in photos {
@@ -181,6 +182,9 @@ final class Etape {
     var basculesTarif: [String]?
     /// Autres catégories de prix (voir `CategoriePrix`), en JSON.
     var categoriesPrixJSON: String?
+    /// Étape favorite : code ISO de son pays (FR, JP…). Partagé avec le voyage : tous ses voyageurs voient le cœur,
+    /// et l'étape est proposée dans leurs prochains voyages dans ce pays. nil : pas favorite pour le voyage.
+    var paysFavori: String?
     var creeLe: Date
     var uid: String = ""
     /// Transport vers l'étape suivante, en JSON (voir Transport).
