@@ -93,7 +93,7 @@ struct TransportEditView: View {
                 Section {
                     Picker("Mode", selection: $transport.mode) {
                         ForEach(ModeTransport.allCases) { m in
-                            Label(m.libelleCourt, systemImage: m.symbole).tag(m)
+                            Label(m.libelleOnglet, systemImage: m.symbole).tag(m)
                         }
                     }
                     .pickerStyle(.segmented)
@@ -101,7 +101,15 @@ struct TransportEditView: View {
                 } footer: {
                     Text(trajet)
                 }
-                .onChange(of: transport.mode) { _, _ in transport.sousType = ""; transport.dureeModifiee = nil }
+                .onChange(of: transport.mode) { _, mode in
+                    transport.sousType = ""
+                    transport.dureeModifiee = nil
+                    // « Train » : le type Train est choisi et l'itinéraire cherché tout de suite.
+                    if mode == .commun {
+                        transport.sousType = "Train"
+                        Task { await chercherCommun() }
+                    }
+                }
 
                 if !hebergementsAuChoix.isEmpty {
                     Section {

@@ -3,9 +3,13 @@ import MapKit
 import Observation
 
 enum ModeTransport: String, Codable, CaseIterable, Identifiable {
-    case avion, voiture, pied, velo, commun, bateau
+    // L'ordre des onglets du transport : le train d'abord, l'avion et le bateau à la fin.
+    case commun, voiture, pied, velo, avion, bateau
 
     var id: String { rawValue }
+
+    /// Le nom de l'onglet : « Train » pour les transports en commun, la recherche partant d'un trajet en train.
+    var libelleOnglet: String { self == .commun ? "Train" : libelleCourt }
 
     var libelle: String {
         switch self {
