@@ -207,14 +207,15 @@ enum RoutesNavitime {
         let demain = calendrier.date(bySettingHour: 10, minute: 0, second: 0,
                                      of: calendrier.date(byAdding: .day, value: 1, to: .now) ?? .now) ?? .now.addingTimeInterval(86_400)
         let heure = depart ?? demain
-        // Noms en anglais si l'offre le permet, sinon en japonais ; tracé sur la carte si possible.
-        let essais: [(anglais: Bool, trace: Bool)] = [(true, true), (false, true), (false, false)]
+        // Le tracé des voies (une seconde requête) arrive pendant qu'on cherche l'itinéraire.
+        async let voies = traceDesVoies(a, b, cle: cle, heure: heure)
+        // Noms en anglais si l'offre le permet, sinon en japonais.
         var derniere: Error = Erreur.illisible
-        for essai in essais {
+        for anglais in [true, false] {
             do {
-                var resultat = try await appeler(a, b, cle: cle, heure: heure, anglais: essai.anglais, trace: essai.trace)
+                var resultat = try await appeler(a, b, cle: cle, heure: heure, anglais: anglais)
                 resultat.indicatif = depart == nil
-                return resultat
+                return suivre(resultat, await voies)
             } catch Erreur.parametre(let message) {
                 derniere = Erreur.parametre(message)
             }
@@ -222,26 +223,34 @@ enum RoutesNavitime {
         throw derniere
     }
 
-    private static func appeler(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, cle: String, heure: Date,
-                                anglais: Bool, trace: Bool) async throws -> ItineraireCommun {
-        var adresse = URLComponents(string: "https://\(hote)/route_transit")!
-        adresse.queryItems = [
+    /// Les paramètres communs à la recherche de l'itinéraire et à celle de son tracé (le même trajet doit sortir des deux).
+    private static func parametres(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, heure: Date) -> [URLQueryItem] {
+        [
             URLQueryItem(name: "start", value: "\(a.latitude),\(a.longitude)"),
             URLQueryItem(name: "goal", value: "\(b.latitude),\(b.longitude)"),
             URLQueryItem(name: "start_time", value: formateur().string(from: heure)),
             URLQueryItem(name: "unuse", value: "domestic_flight"),
-            URLQueryItem(name: "limit", value: "1"),
             URLQueryItem(name: "datum", value: "wgs84"),
             URLQueryItem(name: "coord_unit", value: "degree"),
         ]
-        if trace { adresse.queryItems?.append(URLQueryItem(name: "shape", value: "true")) }
-        if anglais { adresse.queryItems?.append(URLQueryItem(name: "lang", value: "en")) }
+    }
+
+    private static func requete(_ chemin: String, _ parametres: [URLQueryItem], cle: String) -> URLRequest {
+        var adresse = URLComponents(string: "https://\(hote)/\(chemin)")!
+        adresse.queryItems = parametres
         var requete = URLRequest(url: adresse.url!)
         requete.setValue(cle, forHTTPHeaderField: "X-RapidAPI-Key")
         requete.setValue(hote, forHTTPHeaderField: "X-RapidAPI-Host")
         requete.timeoutInterval = 25
+        return requete
+    }
 
-        let (donnees, reponse) = try await URLSession.shared.data(for: requete)
+    private static func appeler(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, cle: String, heure: Date,
+                                anglais: Bool) async throws -> ItineraireCommun {
+        var liste = parametres(a, b, heure: heure) + [URLQueryItem(name: "limit", value: "1")]
+        if anglais { liste.append(URLQueryItem(name: "lang", value: "en")) }
+
+        let (donnees, reponse) = try await URLSession.shared.data(for: requete("route_transit", liste, cle: cle))
         let code = (reponse as? HTTPURLResponse)?.statusCode ?? 0
         let json = (try? JSONSerialization.jsonObject(with: donnees)) as? [String: Any]
         if code != 200 {
@@ -258,7 +267,6 @@ enum RoutesNavitime {
         }
         guard let item = (json?["items"] as? [[String: Any]])?.first else { throw Erreur.aucunItineraire("") }
         let sections = item["sections"] as? [[String: Any]] ?? []
-        let formes = traces(item["shapes"])
 
         func coordonnee(_ s: [String: Any]?) -> CLLocationCoordinate2D? {
             guard let c = s?["coord"] as? [String: Any],
@@ -275,13 +283,11 @@ enum RoutesNavitime {
         }
         func nombre(_ v: Any?) -> Int { (v as? NSNumber)?.intValue ?? 0 }
 
+        // Chaque tronçon part d'abord en ligne droite d'un point à l'autre ; `suivre` la remplace par le tracé des voies.
         var etapes: [EtapeCommun] = []
-        var tout: [CLLocationCoordinate2D] = []
         for (i, s) in sections.enumerated() where s["type"] as? String == "move" {
             let avant = i > 0 ? sections[i - 1] : nil, apres = i + 1 < sections.count ? sections[i + 1] : nil
-            let pA = coordonnee(avant), pB = coordonnee(apres)
-            let points = troncon(de: pA, vers: pB, parmi: formes)
-            tout += points
+            let points = [coordonnee(avant), coordonnee(apres)].compactMap { $0 }
             let mouvement = s["move"] as? String ?? ""
             let secondes = nombre(s["time"]) * 60, metres = nombre(s["distance"])
             if mouvement == "walk" {
@@ -302,7 +308,8 @@ enum RoutesNavitime {
         guard etapes.contains(where: { !$0.estMarche }) else { throw Erreur.aucunItineraire("Itinéraire à pied seulement.") }
         let resume = (item["summary"] as? [String: Any])?["move"] as? [String: Any]
         return ItineraireCommun(secondes: nombre(resume?["time"]) * 60, metres: nombre(resume?["distance"]),
-                                trace: PolylineGoogle.encoder(tout), etapes: etapes, calculeLe: .now, source: "NAVITIME")
+                                trace: PolylineGoogle.encoder(etapes.flatMap { PolylineGoogle.decoder($0.trace) }),
+                                etapes: etapes, calculeLe: .now, source: "NAVITIME")
     }
 
     /// Les types de NAVITIME ramenés à ceux de Google, pour l'icône du tronçon.
@@ -317,7 +324,27 @@ enum RoutesNavitime {
         }
     }
 
-    /// Les tracés renvoyés par NAVITIME (GeoJSON : lignes en [longitude, latitude]).
+    /// Le tracé complet du trajet, voies ferrées comprises, de bout en bout (`/shape_transit`). Sans l'option
+    /// « transport_shape », NAVITIME ne trace que la marche. Vide si le tracé n'a pas pu être obtenu.
+    private static func traceDesVoies(_ a: CLLocationCoordinate2D, _ b: CLLocationCoordinate2D, cle: String, heure: Date) async -> [CLLocationCoordinate2D] {
+        let liste = parametres(a, b, heure: heure) + [URLQueryItem(name: "format", value: "geojson"),
+                                                     URLQueryItem(name: "options", value: "transport_shape")]
+        guard let (donnees, reponse) = try? await URLSession.shared.data(for: requete("shape_transit", liste, cle: cle)),
+              (reponse as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: donnees) else { return [] }
+        // Les morceaux arrivent dans l'ordre du trajet : on les met bout à bout.
+        var ligne: [CLLocationCoordinate2D] = []
+        for morceau in traces(json) {
+            if let dernier = ligne.last, let premier = morceau.first, metres(dernier, premier) < 1 {
+                ligne += morceau.dropFirst()
+            } else {
+                ligne += morceau
+            }
+        }
+        return ligne
+    }
+
+    /// Les tracés d'un GeoJSON (lignes en [longitude, latitude]).
     private static func traces(_ formes: Any?) -> [[CLLocationCoordinate2D]] {
         func ligne(_ v: Any?) -> [CLLocationCoordinate2D] {
             ((v as? [[Any]]) ?? []).compactMap { p in
@@ -337,16 +364,51 @@ enum RoutesNavitime {
         return resultat.filter { $0.count >= 2 }
     }
 
-    /// Le tracé d'un tronçon : celui de NAVITIME qui relie ses deux extrémités, sinon une ligne droite de l'une à l'autre.
-    private static func troncon(de a: CLLocationCoordinate2D?, vers b: CLLocationCoordinate2D?,
-                              parmi formes: [[CLLocationCoordinate2D]]) -> [CLLocationCoordinate2D] {
-        guard let a, let b else { return [a, b].compactMap { $0 } }
-        func d(_ p: CLLocationCoordinate2D, _ q: CLLocationCoordinate2D) -> Double {
-            CLLocation(latitude: p.latitude, longitude: p.longitude).distance(from: CLLocation(latitude: q.latitude, longitude: q.longitude))
+    /// Distance approchée en mètres (largement assez précise à l'échelle d'un trajet).
+    private static func metres(_ p: CLLocationCoordinate2D, _ q: CLLocationCoordinate2D) -> Double {
+        let x = (q.longitude - p.longitude) * cos((p.latitude + q.latitude) / 2 * .pi / 180)
+        let y = q.latitude - p.latitude
+        return (x * x + y * y).squareRoot() * 111_195
+    }
+
+    /// Remplace la ligne droite de chaque tronçon par le morceau du tracé complet qui va d'une de ses extrémités à l'autre.
+    static func suivre(_ itineraire: ItineraireCommun, _ ligne: [CLLocationCoordinate2D]) -> ItineraireCommun {
+        guard ligne.count >= 2 else { return itineraire }
+        var resultat = itineraire
+        var curseur = 0
+        var tout: [CLLocationCoordinate2D] = []
+        for i in resultat.etapes.indices {
+            let bouts = PolylineGoogle.decoder(resultat.etapes[i].trace)
+            guard let a = bouts.first, let b = bouts.last, bouts.count >= 2 else { continue }
+            if let morceau = decouper(ligne, de: a, vers: b, curseur: &curseur) {
+                resultat.etapes[i].trace = PolylineGoogle.encoder(morceau)
+                tout += morceau
+            } else {
+                tout += bouts
+            }
         }
-        let meilleure = formes.min { d($0.first!, a) + d($0.last!, b) < d($1.first!, a) + d($1.last!, b) }
-        if let m = meilleure, d(m.first!, a) + d(m.last!, b) < 1500 { return m }
-        return [a, b]
+        resultat.trace = PolylineGoogle.encoder(tout)
+        return resultat
+    }
+
+    /// Le morceau du tracé entre les points les plus proches de `a` puis de `b`, en avançant dans le sens du trajet.
+    /// `nil` si le tracé passe loin de l'un des deux (plus de 2 km) : le tronçon garde alors sa ligne droite.
+    private static func decouper(_ ligne: [CLLocationCoordinate2D], de a: CLLocationCoordinate2D, vers b: CLLocationCoordinate2D,
+                                 curseur: inout Int) -> [CLLocationCoordinate2D]? {
+        guard curseur < ligne.count else { return nil }
+        func plusProche(de p: CLLocationCoordinate2D, depuis debut: Int) -> (indice: Int, distance: Double) {
+            var meilleur = (indice: debut, distance: Double.infinity)
+            for j in debut..<ligne.count {
+                let d = metres(ligne[j], p)
+                if d < meilleur.distance { meilleur = (j, d) }
+            }
+            return meilleur
+        }
+        let depart = plusProche(de: a, depuis: curseur)
+        let arrivee = plusProche(de: b, depuis: depart.indice)
+        guard depart.distance < 2000, arrivee.distance < 2000, arrivee.indice > depart.indice else { return nil }
+        curseur = arrivee.indice
+        return [a] + ligne[depart.indice...arrivee.indice] + [b]
     }
 }
 
