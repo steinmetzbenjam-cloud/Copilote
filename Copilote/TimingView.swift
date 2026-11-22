@@ -47,7 +47,7 @@ struct TimingView: View {
 
     // MARK: Blocs d'une journée
 
-    private struct Bloc: Identifiable {
+    struct Bloc: Identifiable {
         enum Genre { case etape, transport, hotelSoir, hotelMatin }
         let id: String
         var genre: Genre
@@ -103,7 +103,7 @@ struct TimingView: View {
         if let s = t.itineraireCommun?.secondes, s > 0 { return (Double(s) / 60, false) }
         if let a = depart?.coordonnee, let b = arrivee?.coordonnee, let g = t.itineraireGoogle(a, b), g.secondes > 0 { return (Double(g.secondes) / 60, false) }
         if t.mode.aUnItineraire, let a = depart?.coordonnee, let b = arrivee?.coordonnee,
-           let duree = itineraires.trajet(a, b, t.mode)?.duree { return (max(duree / 60, 5), false) }
+           let duree = Itineraires.shared.trajet(a, b, t.mode)?.duree { return (max(duree / 60, 5), false) }
         switch t.mode {
         case .avion: return (120, true)
         case .voiture: return (30, true)
@@ -129,7 +129,7 @@ struct TimingView: View {
     private func nomTransport(_ t: Transport) -> String { t.mode == .commun && !t.sousType.isEmpty ? t.sousType : t.mode.libelleCourt }
 
     /// Tout est affiché en heure locale du lieu visité ce jour-là : une heure saisie dans un autre fuseau est convertie.
-    private func blocs(du jour: Date) -> [Bloc] {
+    func blocs(du jour: Date) -> [Bloc] {
         var r: [Bloc] = []
         let cal = Calendar.current
         let jours = voyage.jours

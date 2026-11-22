@@ -22,6 +22,7 @@ struct ItineraireView: View {
     @State private var lieuMeteoVoyage: CLLocationCoordinate2D?
     @Environment(\.scenePhase) private var phase
     @State private var jourEnEdition: JourVoyage?
+    @State private var parcoursJoue: ParcoursJourChoisi?
     /// Étape au-dessus de laquelle on s'apprête à déposer (trait d'insertion), ou jour survolé.
     @State private var etapeVisee: String?
     @State private var jourVise: Date?
@@ -216,6 +217,11 @@ struct ItineraireView: View {
         .sheet(item: $transportDeNuitEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
         .sheet(item: $nuitEnAjout, onDismiss: { nettoyer(sauf: etapeEnEdition) }) { NuitAjoutView(voyage: voyage, nuit: $0) }
         .sheet(item: $extremiteEnEdition) { FicheExtremite(voyage: voyage, extremite: $0) }
+        #if os(iOS)
+        .fullScreenCover(item: $parcoursJoue) { ParcoursJourView(voyage: voyage, jour: $0.jour, numero: $0.numero) }
+        #else
+        .sheet(item: $parcoursJoue) { ParcoursJourView(voyage: voyage, jour: $0.jour, numero: $0.numero) }
+        #endif
         .sheet(item: $jourEnEdition, onDismiss: nettoyerJours) { infos in
             JourEditView(jour: infos, voyage: voyage, numero: (voyage.jours.firstIndex { cal.isDate($0, inSameDayAs: infos.date) } ?? 0) + 1)
         }
@@ -801,7 +807,12 @@ struct ItineraireView: View {
         .overlay(alignment: .leading) {
             Capsule().fill(couleur).frame(width: 5).padding(.vertical, 16).padding(.leading, 5)
         }
-        .overlay(alignment: .topTrailing) { boutonNotes(jour, infos: infos) }
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: -12) {
+                boutonParcours(jour, numero: numero)
+                boutonNotes(jour, infos: infos)
+            }
+        }
         .background {
             if notesSontOuvertes(jour) {
                 GeometryReader { g in Color.clear.preference(key: HautCarteNotes.self, value: g.frame(in: .named(Self.espace)).minY) }
@@ -858,6 +869,21 @@ struct ItineraireView: View {
     }
 
     /// Le post-it de la carte : ouvre ou ferme les notes du jour. Un appui long propose de modifier le jour ou de trier ses étapes.
+    /// Lance l'animation du parcours de la journée.
+    private func boutonParcours(_ jour: Date, numero: Int) -> some View {
+        Button { parcoursJoue = ParcoursJourChoisi(jour: jour, numero: numero) } label: {
+            Image(systemName: "play.fill")
+                .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                .frame(width: 26, height: 26)
+                .background(CarteDuVoyage.couleur(du: numero - 1), in: Circle())
+                .padding(12)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("Jouer le parcours de la journée")
+        .accessibilityLabel("Jouer le parcours de la journée")
+    }
+
     private func boutonNotes(_ jour: Date, infos: JourVoyage?) -> some View {
         Button {
             withAnimation(.easeInOut(duration: 0.2)) { notesOuvertes = notesSontOuvertes(jour) ? nil : jour }

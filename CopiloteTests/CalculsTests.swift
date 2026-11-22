@@ -1,4 +1,5 @@
 import Foundation
+import CoreLocation
 import ImageIO
 import SwiftData
 import Testing
@@ -589,5 +590,87 @@ struct CalculsTests {
         let image = try #require(VignettesDocuments.image(de: donnees as Data, extensionFichier: "PDF", cle: "essai-pdf", cote: 200))
         #expect(image.height == 200)
         #expect(image.width == 150)
+    }
+
+    // MARK: Parcours de la journée
+
+    @Test func leverEtCoucherDuSoleilAParis() throws {
+        let paris = CLLocationCoordinate2D(latitude: 48.8566, longitude: 2.3522)
+        let zone = try #require(TimeZone(identifier: "Europe/Paris"))
+        func jour(_ a: Int, _ m: Int, _ j: Int) -> Date { Calendar.current.date(from: DateComponents(year: a, month: m, day: j))! }
+        func heure(_ d: Date) -> Double {
+            var cal = Calendar(identifier: .gregorian); cal.timeZone = zone
+            let c = cal.dateComponents([.hour, .minute], from: d)
+            return Double(c.hour! * 60 + c.minute!)
+        }
+        // Solstice d'été : lever vers 5 h 47, coucher vers 21 h 58 (heure d'été).
+        let ete = try #require(Soleil.leverCoucher(jour: jour(2026, 6, 21), paris, zone: zone))
+        #expect(abs(heure(ete.lever) - (5 * 60 + 47)) <= 3)
+        #expect(abs(heure(ete.coucher) - (21 * 60 + 58)) <= 3)
+        // Solstice d'hiver : lever vers 8 h 42, coucher vers 16 h 56.
+        let hiver = try #require(Soleil.leverCoucher(jour: jour(2026, 12, 21), paris, zone: zone))
+        #expect(abs(heure(hiver.lever) - (8 * 60 + 42)) <= 3)
+        #expect(abs(heure(hiver.coucher) - (16 * 60 + 56)) <= 3)
+        // À midi le soleil est haut, à minuit il est sous l'horizon.
+        #expect(Soleil.hauteur(ParcoursJour.instant(jour(2026, 6, 21), 14 * 60, zone: zone), paris) > 60)
+        #expect(Soleil.hauteur(ParcoursJour.instant(jour(2026, 6, 21), 1 * 60, zone: zone), paris) < 0)
+        // Nuit polaire au Svalbard en décembre : ni lever ni coucher.
+        #expect(Soleil.leverCoucher(jour: jour(2026, 12, 21), CLLocationCoordinate2D(latitude: 78.2, longitude: 15.6), zone: zone) == nil)
+    }
+
+    @Test func leParcoursSuitLesHorairesDeLaJournee() throws {
+        let cal = Calendar.current
+        let debut = cal.startOfDay(for: .now)
+        let jour = cal.date(byAdding: .day, value: 1, to: debut)!
+        let v = Voyage(titre: "Essai", debut: debut, fin: cal.date(byAdding: .day, value: 2, to: debut)!)
+        contexte.insert(v)
+        func etape(_ titre: String, _ lat: Double, _ lon: Double, jour j: Date?) -> Etape {
+            let e = Etape(titre: titre, jour: j)
+            e.latitude = lat; e.longitude = lon
+            e.voyage = v
+            contexte.insert(e)
+            return e
+        }
+        let hotelVeille = etape("Hôtel de la veille", 48.85, 2.35, jour: nil)
+        hotelVeille.categorie = .hebergement
+        v.placerEntreJours(hotelVeille, apres: debut)
+        let a = etape("Musée", 48.86, 2.33, jour: jour)
+        a.heure = jour.addingTimeInterval(10 * 3600); a.duree = 60; a.ordre = 0
+        var marche = Transport(); marche.mode = .pied
+        a.transport = marche
+        let b = etape("Butte", 48.88, 2.34, jour: jour)
+        b.heure = jour.addingTimeInterval(12 * 3600); b.duree = 90; b.ordre = 1
+        let sous = etape("Place", 48.887, 2.341, jour: nil)
+        sous.parentUID = b.uid
+        let hotel = etape("Hôtel du soir", 48.87, 2.36, jour: nil)
+        hotel.categorie = .hebergement
+        v.placerEntreJours(hotel, apres: jour)
+        hotel.heure = jour.addingTimeInterval(19 * 3600)
+
+        let p = try #require(ParcoursJour.calculer(voyage: v, jour: jour))
+        // Une heure avant de quitter l'hôtel (à 10 h, heure de la première étape) jusqu'à une heure après l'arrivée à celui du soir.
+        #expect(p.debut == 9 * 60)
+        #expect(p.fin == 20 * 60)
+        #expect(p.arrets.map(\.titre) == ["Hôtel de la veille", "Musée", "Butte", "Hôtel du soir"])
+        #expect(p.arrets[2].sous.map(\.titre) == ["Place"])
+        // Au musée à 10 h 30, sans transport (un point) avant le premier trajet à pied.
+        let auMusee = try #require(p.position(a: 10 * 60 + 30))
+        #expect(abs(auMusee.latitude - 48.86) < 0.0001)
+        // La marche (20 min estimées) arrive à 12 h pile : à 11 h 50, à mi-chemin, en piéton.
+        let enRoute = try #require(p.position(a: 11 * 60 + 50))
+        #expect(abs(enRoute.latitude - 48.87) < 0.001)
+        #expect(p.mode(a: 11 * 60 + 50) == .pied)
+        #expect(abs(p.curseur(a: 11 * 60 + 50) - 1.5) < 0.01)
+        // La sous-étape s'affiche quand on approche de la Butte, puis disparaît une fois repartis.
+        #expect(p.sousEtapesVisibles(p.arrets[2], a: 12 * 60 + 30))
+        #expect(!p.sousEtapesVisibles(p.arrets[2], a: 10 * 60 + 30))
+        #expect(!p.sousEtapesVisibles(p.arrets[2], a: 18 * 60 + 30))
+        let visites = stride(from: 12.0 * 60, through: 13.5 * 60, by: 1).compactMap { p.sousArret(a: $0) }
+        #expect(visites.contains { $0.arret == 2 && $0.sous == 0 })
+        // Le soir, à l'hôtel.
+        let soir = try #require(p.position(a: 19 * 60 + 30))
+        #expect(abs(soir.latitude - 48.87) < 0.0001 && abs(soir.longitude - 2.36) < 0.0001)
+        // De 5 à 20 secondes de lecture.
+        #expect(p.secondes >= 5 && p.secondes <= 20)
     }
 }
