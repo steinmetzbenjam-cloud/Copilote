@@ -72,6 +72,7 @@ enum Sauvegarde {
             objets += v.fichesFamilles.map { objet($0, .famille, $0.uid) }
             objets += v.sondages.map { objet($0, .sondage, $0.uid) }
             objets += v.votes.map { objet($0, .vote, $0.uid) }
+            objets += v.journal.map { objet($0, .journal, $0.uid) }
             return VoyageSauve(uid: v.uid, titre: v.titre, objets: objets.compactMap { $0 })
         }
         let encodeur = JSONEncoder()
@@ -138,6 +139,8 @@ enum Sauvegarde {
         }
         // Un import qui ne s'enregistre pas doit se voir : l'appelant affiche l'erreur.
         try contexte.save()
+        // Ce qui vient d'une sauvegarde n'est la modification de personne : rien à noter au journal.
+        JournalModifications.shared.accepterTout()
         PartageCloud.shared.verifierChangementsLocaux()
     }
 }

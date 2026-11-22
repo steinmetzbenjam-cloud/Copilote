@@ -215,7 +215,8 @@ extension Voyage {
 
         for etape in etapes {
             let titre = etape.titre.isEmpty ? etape.categorie.libelle : etape.titre
-            guard let jour = etape.jour else {
+            // Une sous-étape compte le jour de son étape.
+            guard let jour = etape.jourEffectif else {
                 if etape.aUnBudget || (etape.transport?.aUnPrix ?? false) {
                     resultat.etapesSansJour += 1
                 }

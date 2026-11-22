@@ -6,6 +6,7 @@ import CryptoKit
 enum TypeCloud: String, CaseIterable {
     case voyage = "Voyage", jour = "Jour", membre = "Membre", depense = "Depense", reservation = "Reservation", etape = "Etape", document = "Document"
     case commentaire = "Commentaire", avisEtape = "AvisEtape", famille = "Famille", sondage = "Sondage", vote = "Vote"
+    case journal = "Journal"
 }
 
 /// Donne un identifiant stable aux objets créés avant l'arrivée de la synchronisation.
@@ -28,6 +29,7 @@ enum Identifiants {
         remplir(Famille.self, \.uid)
         remplir(Sondage.self, \.uid)
         remplir(VoteSondage.self, \.uid)
+        remplir(EntreeJournal.self, \.uid)
         try? contexte.save()
     }
 }
@@ -83,6 +85,7 @@ enum Codec {
         case .famille: return try? contexte.fetch(FetchDescriptor<Famille>(predicate: #Predicate { $0.uid == uid })).first
         case .sondage: return try? contexte.fetch(FetchDescriptor<Sondage>(predicate: #Predicate { $0.uid == uid })).first
         case .vote: return try? contexte.fetch(FetchDescriptor<VoteSondage>(predicate: #Predicate { $0.uid == uid })).first
+        case .journal: return try? contexte.fetch(FetchDescriptor<EntreeJournal>(predicate: #Predicate { $0.uid == uid })).first
         }
     }
 
@@ -114,6 +117,7 @@ enum Codec {
             for f in v.fichesFamilles { ajouter(f, .famille, f.uid, zone) }
             for s in v.sondages { ajouter(s, .sondage, s.uid, zone) }
             for x in v.votes { ajouter(x, .vote, x.uid, zone) }
+            for j in v.journal { ajouter(j, .journal, j.uid, zone) }
         }
         return entrees
     }
@@ -133,6 +137,19 @@ enum Codec {
             if let liste = valeur as? [String] { return "\(cle)=\(liste.joined(separator: ","))" }
             return "\(cle)=\(valeur)"
         }.joined(separator: "|")
+    }
+
+    /// Les champs d'un enregistrement en texte (sans les fichiers), pour savoir lesquels ont changé.
+    static func champs(de record: CKRecord) -> [String: String] {
+        var sortie: [String: String] = [:]
+        for cle in record.allKeys() {
+            guard let valeur = record[cle], !(valeur is CKAsset) else { continue }
+            if let date = valeur as? Date { sortie[cle] = "\(Int(date.timeIntervalSince1970))" }
+            else if let nombre = valeur as? NSNumber { sortie[cle] = "\(nombre.doubleValue)" }
+            else if let liste = valeur as? [String] { sortie[cle] = liste.joined(separator: ",") }
+            else { sortie[cle] = "\(valeur)" }
+        }
+        return sortie
     }
 
     // MARK: Objet → enregistrement
@@ -225,6 +242,7 @@ enum Codec {
             r["basculesTarif"] = (e.basculesTarif ?? []).isEmpty ? nil : e.basculesTarif
             r["categoriesPrixJSON"] = e.categoriesPrixJSON
             r["paysFavori"] = e.paysFavori
+            r["parentUID"] = e.parentUID
             return r
         case let x as Reservation:
             let r = base(.reservation, x.uid, zone, systeme)
@@ -246,6 +264,7 @@ enum Codec {
             r["creeLe"] = d.creeLe; r["voyageUID"] = d.voyage?.uid; r["reservationUID"] = d.reservation?.uid
             r["etapeUID"] = d.etape?.uid
             r["membreUID"] = d.membreUID; r["typeDoc"] = d.typeBrut; r["expireLe"] = d.expireLe; r["notes"] = d.notes
+            r["importantUID"] = d.importantUID
             if avecAsset {
                 let fichier = FileManager.default.temporaryDirectory.appending(path: "\(d.uid).\(d.extensionFichier)")
                 if (try? d.donnees.write(to: fichier)) != nil { r["donnees"] = CKAsset(fileURL: fichier) }
@@ -265,6 +284,12 @@ enum Codec {
             let r = base(.sondage, s.uid, zone, systeme)
             r["titre"] = s.titre; r["notes"] = s.notes; r["options"] = s.optionsJSON; r["clos"] = s.clos ? 1 : 0
             r["optionRetenue"] = s.optionRetenue; r["auteurUID"] = s.auteurUID; r["creeLe"] = s.creeLe; r["voyageUID"] = s.voyage?.uid
+            return r
+        case let j as EntreeJournal:
+            let r = base(.journal, j.uid, zone, systeme)
+            r["date"] = j.date; r["auteurUID"] = j.auteurUID; r["auteurNom"] = j.auteurNom; r["action"] = j.actionBrut
+            r["typeObjet"] = j.typeObjet; r["objetUID"] = j.objetUID; r["libelle"] = j.libelle
+            r["champs"] = j.champs.isEmpty ? nil : j.champs; r["nombre"] = j.nombre; r["voyageUID"] = j.voyage?.uid
             return r
         case let x as VoteSondage:
             let r = base(.vote, x.uid, zone, systeme)
@@ -407,6 +432,7 @@ enum Codec {
             e.basculesTarif = r["basculesTarif"] as? [String]
             e.categoriesPrixJSON = r["categoriesPrixJSON"] as? String
             e.paysFavori = r["paysFavori"] as? String
+            e.parentUID = r["parentUID"] as? String
             return e
 
         case .reservation:
@@ -446,6 +472,7 @@ enum Codec {
             if let fichier = (r["donnees"] as? CKAsset)?.fileURL, let donnees = try? Data(contentsOf: fichier) { d.donnees = donnees }
             d.voyage = parent; d.reservation = reservation; d.etape = etape
             d.membreUID = r["membreUID"] as? String; d.typeBrut = r["typeDoc"] as? String; d.expireLe = date("expireLe"); d.notes = r["notes"] as? String
+            d.importantUID = r["importantUID"] as? String
             return d
 
         case .commentaire:
@@ -485,6 +512,17 @@ enum Codec {
             x.sondageUID = texte("sondageUID"); x.optionID = texte("optionID"); x.compteCle = texte("compteCle")
             x.auteurUID = texte("auteurUID"); x.modifieLe = date("modifieLe") ?? x.modifieLe; x.voyage = parent
             return x
+
+        case .journal:
+            guard let parent else { return nil }
+            let j = (objet(recordName: r.recordID.recordName, contexte) as? EntreeJournal) ?? {
+                let nouveau = EntreeJournal(action: .modification, typeObjet: "", objetUID: "", libelle: "", auteurUID: "", auteurNom: "")
+                nouveau.uid = uid; contexte.insert(nouveau); return nouveau
+            }()
+            j.date = date("date") ?? j.date; j.auteurUID = texte("auteurUID"); j.auteurNom = texte("auteurNom")
+            j.actionBrut = texte("action"); j.typeObjet = texte("typeObjet"); j.objetUID = texte("objetUID")
+            j.libelle = texte("libelle"); j.champs = r["champs"] as? [String] ?? []; j.nombre = entier("nombre") ?? 1; j.voyage = parent
+            return j
 
         case .famille:
             guard let parent else { return nil }

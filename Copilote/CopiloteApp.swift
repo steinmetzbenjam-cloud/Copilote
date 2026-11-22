@@ -17,13 +17,15 @@ struct CopiloteApp: App {
             // SwiftData de synchroniser lui-même la base, ce qu'il tente sinon dès que l'app a l'autorisation iCloud.
             let configuration = ModelConfiguration(cloudKitDatabase: .none)
             conteneur = try ModelContainer(
-                for: Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self, Commentaire.self, AvisEtape.self, Famille.self, Sondage.self, VoteSondage.self,
+                for: Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self, Commentaire.self, AvisEtape.self, Famille.self, Sondage.self, VoteSondage.self, EntreeJournal.self,
                 configurations: configuration)
         } catch {
             fatalError("Impossible d'ouvrir la base de données : \(error)")
         }
         Horloge.demarrer()
         PartageCloud.shared.configurer(contexte: conteneur.mainContext)
+        JournalModifications.shared.demarrer(contexte: conteneur.mainContext)
+        DocumentsImportants.repandre(dans: conteneur.mainContext)
     }
 
     var body: some Scene {

@@ -287,6 +287,6 @@ struct ContentView: View {
 }
 
 #Preview {
-    ContentView().modelContainer(for: [Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self, Commentaire.self, AvisEtape.self, Famille.self, Sondage.self, VoteSondage.self], inMemory: true)
+    ContentView().modelContainer(for: [Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self, Commentaire.self, AvisEtape.self, Famille.self, Sondage.self, VoteSondage.self, EntreeJournal.self], inMemory: true)
 }
 

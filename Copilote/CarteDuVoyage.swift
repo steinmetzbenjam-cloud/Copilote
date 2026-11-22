@@ -12,10 +12,14 @@ struct CarteDuVoyage: View {
     var masquerAutresJours = false
     /// Largeur recouverte à gauche par un panneau : la carte cadre le contenu dans la partie visible.
     var margeGauche: CGFloat = 0
+    /// Vrai pendant qu'on tire la poignée entre la carte et la liste : la carte ne se recadre qu'une fois la poignée lâchée.
+    var cadrageFige = false
     /// Étape dont le détail est ouvert : la carte zoome sur son lieu et grossit son repère.
     var etapeFocus: Etape? = nil
     /// Reçoit un point d'intérêt de la carte (restaurant, musée, plage…) choisi pour devenir une étape ; nil : points non sélectionnables.
     var onLieu: ((LieuCarte) -> Void)? = nil
+    /// Fiche d'une étape ouverte : un point d'intérêt touché peut aussi devenir une de ses sous-étapes (nom de l'étape, et l'ajout).
+    var ajoutSousEtape: (nom: String, ajouter: (LieuCarte) -> Void)? = nil
     var onEtape: (Etape) -> Void
 
     @State private var position: MapCameraPosition = .automatic
@@ -24,11 +28,16 @@ struct CarteDuVoyage: View {
     @State private var dernierCadrage: Signature?
     /// Point d'intérêt de la carte touché : une petite fiche propose d'en faire une étape.
     @State private var lieuChoisi: LieuCarte?
+    /// Étapes (uid) dont les sous-étapes sont affichées : on touche l'étape pour les montrer, puis à nouveau pour les cacher.
+    @State private var deplies: Set<String> = []
     /// Fond de carte choisi (plan, satellite, mixte), retenu d'une ouverture à l'autre et commun aux deux cartes.
     @AppStorage("fondDeCarte") private var fond = FondCarte.plan
     /// Fond « Transports » : la zone affichée et les stations qu'on y a trouvées.
     @State private var regionVisible: MKCoordinateRegion?
     @State private var stations: [StationCarte] = []
+    /// Mode voyage : ma position affichée sur la carte (bouton « Ma position »), et l'alerte quand elle n'est pas autorisée.
+    @State private var maPosition = false
+    @State private var positionRefusee = false
     @Environment(\.openURL) private var ouvrirURL
     #if os(iOS)
     /// iPhone, iPad : le point d'intérêt sélectionné par Plans lui-même.
@@ -74,22 +83,28 @@ struct CarteDuVoyage: View {
         var empreinte: Double
         var largeur: CGFloat
         var hauteur: CGFloat
+        var marge: CGFloat
+        var fige: Bool
         var pays: [String]
         var etape: String?
         var latitude: Double?
         var longitude: Double?
         /// Nombre de points des tracés du jour : un itinéraire qui arrive peut agrandir le cadre.
         var traces: Int
+        /// Sous-étapes localisées de l'étape ouverte : le cadre les englobe.
+        var sousEtapes: Int
     }
 
     private func estEtapeFocus(_ etape: Etape) -> Bool { etapeFocus === etape }
 
     private func signature(_ taille: CGSize) -> Signature {
         let somme = points(du: nil).reduce(0.0) { $0 + $1.latitude * 3 + $1.longitude }
+        // Poignée tirée : la taille n'entre pas dans la signature, pour ne pas recadrer à chaque déplacement du doigt.
         return Signature(jour: jourFocus, empreinte: somme + Double(points(du: nil).count),
-                         largeur: taille.width.rounded(), hauteur: taille.height.rounded(), pays: voyage.pays,
+                         largeur: cadrageFige ? 0 : taille.width.rounded(), hauteur: cadrageFige ? 0 : taille.height.rounded(),
+                         marge: cadrageFige ? 0 : margeGauche.rounded(), fige: cadrageFige, pays: voyage.pays,
                          etape: etapeFocus?.uid, latitude: etapeFocus?.latitude, longitude: etapeFocus?.longitude,
-                         traces: tracesDuFocus.count)
+                         traces: tracesDuFocus.count, sousEtapes: etapeFocus?.sousEtapes.filter { $0.coordonnee != nil }.count ?? 0)
     }
 
     /// Les points des transports du jour choisi (aller et retour exceptés) : le cadrage les fait tenir dans la carte.
@@ -121,14 +136,16 @@ struct CarteDuVoyage: View {
         }
     }
 
-    /// Couples d'éléments consécutifs d'un jour, hébergement compris, avec le transport prévu entre eux.
+    /// Couples d'éléments consécutifs d'un jour, hébergement compris, avec le transport prévu entre eux ; puis ceux des sous-étapes.
     private var paires: [(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] {
-        voyage.jours.flatMap { jour -> [(a: CLLocationCoordinate2D, b: CLLocationCoordinate2D, mode: ModeTransport)] in
-            (liens(du: jour) + departDeLaVeille(pour: jour)).compactMap { d, a in
+        let parSousEtapes = Dictionary(grouping: voyage.etapes.filter { $0.parentUID != nil }, by: { $0.parentUID ?? "" })
+            .values.map { $0.sorted { ($0.ordre, $0.creeLe) < ($1.ordre, $1.creeLe) } }
+        return (voyage.jours.flatMap { jour in liens(du: jour) + departDeLaVeille(pour: jour) }
+                + parSousEtapes.flatMap { Array(zip($0, $0.dropFirst())) })
+            .compactMap { d, a in
                 guard let mode = d.transport?.mode, let ca = d.coordonnee, let cb = a.coordonnee else { return nil }
                 return (ca, cb, mode)
             }
-        }
     }
 
     /// Chaque élément du jour avec sa suivante : les étapes, puis l'hébergement visé par la dernière (la nuit peut en avoir plusieurs).
@@ -260,6 +277,7 @@ struct CarteDuVoyage: View {
                         VStack(spacing: 10) {
                             choixDuFond
                             if fond == .transports { boutonPlansTransports }
+                            if voyage.mode == .voyage { boutonMaPosition }
                         }
                         .padding(.leading, margeGauche)
                         .padding(12)
@@ -286,8 +304,17 @@ struct CarteDuVoyage: View {
                             await Itineraires.shared.charger(p.a, p.b, p.mode)
                         }
                     }
+                    // Fiche d'une étape à sous-étapes (ou d'une sous-étape) ouverte : ses sous-étapes s'affichent.
+                    // (Aussi quand la fiche ouverte reçoit sa première sous-étape.)
+                    .onChange(of: cleDepliage, initial: true) {
+                        if let focus = etapeFocus {
+                            let parente = focus.etapeParente ?? focus
+                            if parente.aDesSousEtapes { deplies.insert(parente.uid) }
+                        }
+                    }
                     .task(id: signature(geo.size)) {
                         let nouvelle = signature(geo.size)
+                        if nouvelle.fige { return }
                         defer { dernierCadrage = nouvelle }
                         // Détail d'une étape refermé, sur le même jour : la carte garde le zoom où elle est.
                         if let avant = dernierCadrage, avant.etape != nil, nouvelle.etape == nil, avant.jour == nouvelle.jour { return }
@@ -317,6 +344,7 @@ struct CarteDuVoyage: View {
 
     /// `ecarts` : décalage à l'écran des repères qui se chevauchent (voir `ecartsDesReperes`).
     @MapContentBuilder private func contenu(_ ecarts: [String: CGSize]) -> some MapContent {
+        if maPosition { UserAnnotation() }
         if fond == .transports {
             ForEach(stations) { station in
                 Annotation(station.nom, coordinate: station.coordonnee) {
@@ -330,17 +358,22 @@ struct CarteDuVoyage: View {
         }
         ForEach(voyage.etapesSansJour.filter { $0.coordonnee != nil }) { etape in
             Annotation(etape.titre, coordinate: etape.coordonnee!) {
-                Button { onEtape(etape) } label: {
+                Button { toucher(etape) } label: {
                     Image(systemName: etape.categorie.symbole)
                         .font(.caption2).foregroundStyle(.white)
                         .frame(width: 24, height: 24)
                         .background(.gray, in: Circle())
                         .overlay(Circle().stroke(.white, lineWidth: 2))
+                        .overlay(alignment: .bottomTrailing) { badgeSousEtapes(etape, couleur: .gray) }
                         .scaleEffect(estEtapeFocus(etape) ? 1.4 : 1)
                 }
                 .buttonStyle(.plain)
+                .contextMenu { menuEtape(etape) }
                 .offset(ecarts["e-\(etape.uid)"] ?? .zero)
             }
+        }
+        ForEach(voyage.etapesSansJour.filter { deplies.contains($0.uid) }) { etape in
+            sousEtapesDessinees(de: etape, couleur: .gray, attenue: false)
         }
         ForEach(joursDessines, id: \.jour) { index, jour in
             let focus = estJourFocus(jour)
@@ -360,18 +393,23 @@ struct CarteDuVoyage: View {
             let etapes = voyage.etapes(du: jour).filter { $0.coordonnee != nil }
             ForEach(hebergementsAffiches(pour: jour)) { h in
                 Annotation(h.titre, coordinate: h.coordonnee!) {
-                    Button { onEtape(h) } label: {
+                    Button { toucher(h) } label: {
                         Image(systemName: "bed.double.fill")
                             .font(.caption2).foregroundStyle(.white)
                             .frame(width: 26, height: 26)
                             .background(voyage.couleurNuit(apres: h.jour ?? jour), in: RoundedRectangle(cornerRadius: 7))
                             .overlay(RoundedRectangle(cornerRadius: 7).stroke(.white, lineWidth: 2))
+                            .overlay(alignment: .bottomTrailing) { badgeSousEtapes(h, couleur: voyage.couleurNuit(apres: h.jour ?? jour)) }
                             .opacity(attenue && !precedeLeFocus(h) && !estEtapeFocus(h) ? 0.4 : 1)
                             .scaleEffect(estEtapeFocus(h) ? 1.4 : 1)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu { menuEtape(h) }
                     .offset(ecarts["h-\(h.uid)"] ?? .zero)
                 }
+            }
+            ForEach(hebergementsAffiches(pour: jour).filter { deplies.contains($0.uid) }) { h in
+                sousEtapesDessinees(de: h, couleur: voyage.couleurNuit(apres: h.jour ?? jour), attenue: attenue)
             }
             let traits = segments(du: jour)
             ForEach(traits) { s in
@@ -392,9 +430,12 @@ struct CarteDuVoyage: View {
                     }
                 }
             }
+            ForEach(voyage.etapes(du: jour).filter { deplies.contains($0.uid) }) { etape in
+                sousEtapesDessinees(de: etape, couleur: Self.couleur(du: index), attenue: attenue && !estEtapeFocus(etape))
+            }
             ForEach(Array(etapes.enumerated()), id: \.element.id) { rang, etape in
                 Annotation(etape.titre, coordinate: etape.coordonnee!) {
-                    Button { onEtape(etape) } label: {
+                    Button { toucher(etape) } label: {
                         let taille: CGFloat = focus && jourFocus != nil ? 30 : 26
                         Group {
                             if etape.categorie == .repas {
@@ -424,15 +465,101 @@ struct CarteDuVoyage: View {
                                     .overlay(Circle().stroke(.white, lineWidth: 2))
                             }
                         }
+                            .overlay(alignment: .bottomTrailing) { badgeSousEtapes(etape, couleur: Self.couleur(du: index)) }
                             .opacity(attenue && !estEtapeFocus(etape) ? 0.4 : 1)
                             .scaleEffect(estEtapeFocus(etape) ? 1.4 : 1)
                             .shadow(color: .black.opacity(estEtapeFocus(etape) ? 0.35 : 0), radius: 4, y: 2)
                     }
                     .buttonStyle(.plain)
+                    .contextMenu { menuEtape(etape) }
                     .offset(ecarts["e-\(etape.uid)"] ?? .zero)
                 }
             }
         }
+    }
+
+    // MARK: Sous-étapes
+
+    /// Une étape qui a des sous-étapes : la toucher les montre ou les cache ; les autres ouvrent leur fiche.
+    /// L'étape ouverte et le nombre de sous-étapes de son étape : quand l'un change, ses sous-étapes s'affichent.
+    private var cleDepliage: String {
+        guard let focus = etapeFocus else { return "" }
+        return "\(focus.uid)#\((focus.etapeParente ?? focus).sousEtapes.count)"
+    }
+
+    private func toucher(_ etape: Etape) {
+        guard etape.aDesSousEtapes else { onEtape(etape); return }
+        withAnimation(.snappy) {
+            if deplies.contains(etape.uid) { deplies.remove(etape.uid) } else { deplies.insert(etape.uid) }
+        }
+    }
+
+    /// Un appui long sur une étape à sous-étapes ouvre quand même sa fiche.
+    @ViewBuilder private func menuEtape(_ etape: Etape) -> some View {
+        if etape.aDesSousEtapes {
+            Button("Ouvrir la fiche", systemImage: "doc.text") { onEtape(etape) }
+            Button(deplies.contains(etape.uid) ? "Cacher les sous-étapes" : "Montrer les sous-étapes",
+                   systemImage: "point.3.connected.trianglepath.dotted") { toucher(etape) }
+        }
+    }
+
+    /// Le signe d'une étape à sous-étapes, en bas à droite de son repère : plein quand elles sont cachées, inversé quand elles sont affichées.
+    @ViewBuilder private func badgeSousEtapes(_ etape: Etape, couleur: Color) -> some View {
+        if etape.aDesSousEtapes {
+            let ouvert = deplies.contains(etape.uid)
+            Image(systemName: "point.3.connected.trianglepath.dotted")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(ouvert ? Color.mint : .white)
+                .frame(width: 16, height: 16)
+                .background(Circle().fill(ouvert ? Color.white : Color.mint))
+                .overlay(Circle().stroke(ouvert ? Color.mint : .white, lineWidth: 1.5))
+                .offset(x: 7, y: 7)
+                .accessibilityLabel(ouvert ? "Sous-étapes affichées" : "Contient des sous-étapes")
+        }
+    }
+
+    /// Les sous-étapes d'une étape dépliée : de petits repères numérotés, reliés par leurs transports (ou un trait fin).
+    @MapContentBuilder private func sousEtapesDessinees(de parent: Etape, couleur: Color, attenue: Bool) -> some MapContent {
+        let sous = parent.sousEtapes
+        let placees = sous.enumerated().filter { $0.element.coordonnee != nil }.map { (rang: $0.offset + 1, etape: $0.element) }
+        // Un fil discret de l'étape à sa première sous-étape.
+        if let a = parent.coordonnee, let premiere = placees.first?.etape.coordonnee {
+            MapPolyline(coordinates: [a, premiere])
+                .stroke(couleur.opacity(attenue ? 0.15 : 0.45), style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [2, 5]))
+        }
+        ForEach(segmentsSousEtapes(sous)) { s in
+            MapPolyline(coordinates: s.points)
+                .stroke((s.couleur ?? couleur).opacity(attenue ? 0.2 : 0.8),
+                        style: StrokeStyle(lineWidth: 2.5, lineCap: .round, dash: s.tirets))
+        }
+        ForEach(placees, id: \.etape.id) { rang, s in
+            Annotation(s.titre, coordinate: s.coordonnee!) {
+                Button { onEtape(s) } label: {
+                    Text("\(rang)")
+                        .font(.system(size: 10, weight: .bold)).foregroundStyle(couleur)
+                        .frame(width: 20, height: 20)
+                        .background(.white, in: Circle())
+                        .overlay(Circle().stroke(couleur, lineWidth: 2))
+                        .opacity(attenue && !estEtapeFocus(s) ? 0.4 : 1)
+                        .scaleEffect(estEtapeFocus(s) ? 1.4 : 1)
+                        .shadow(color: .black.opacity(0.2), radius: 2, y: 1)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Sous-étape \(rang) : \(s.titre)")
+            }
+        }
+    }
+
+    /// Les traits entre sous-étapes localisées consécutives, selon le transport prévu (trait droit sans transport).
+    private func segmentsSousEtapes(_ sous: [Etape]) -> [Segment] {
+        var resultat: [Segment] = []
+        for (i, depart) in sous.enumerated() {
+            guard let a = depart.coordonnee,
+                  let j = sous[(i + 1)...].firstIndex(where: { $0.coordonnee != nil }), let b = sous[j].coordonnee else { continue }
+            let transport = j == i + 1 ? depart.transport : nil
+            resultat += segment("s-\(depart.uid)-\(sous[j].uid)", a, b, transport?.mode, transport: transport)
+        }
+        return resultat
     }
 
     // MARK: Repères superposés
@@ -528,6 +655,60 @@ struct CarteDuVoyage: View {
         .help("Fond de carte : plan, transports, satellite ou mixte")
     }
 
+    // MARK: Ma position
+
+    /// La carte suit ma position (le bouton est alors plein ; le toucher à nouveau cache ma position).
+    private var surMaPosition: Bool { maPosition && position.followsUserLocation }
+
+    private var boutonMaPosition: some View {
+        Button {
+            Task { await basculerMaPosition() }
+        } label: {
+            Image(systemName: surMaPosition ? "location.fill" : "location")
+                .font(.system(size: 16, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 40, height: 40)
+                .background(Circle().fill(.regularMaterial))
+                .shadow(color: .black.opacity(0.2), radius: 3, y: 1)
+                .contentTransition(.symbolEffect(.replace))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(surMaPosition ? "Cacher ma position" : "Ma position")
+        .help(surMaPosition ? "Cacher ma position" : "Afficher ma position et centrer la carte dessus")
+        .alert("Position non autorisée", isPresented: $positionRefusee) {
+            Button("Ouvrir les réglages") { ouvrirURL(Self.reglagesLocalisation) }
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Autorisez Copilote à utiliser votre position dans les réglages pour la voir sur la carte.")
+        }
+    }
+
+    private static var reglagesLocalisation: URL {
+        #if os(iOS)
+        URL(string: UIApplication.openSettingsURLString)!
+        #else
+        URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_LocationServices")!
+        #endif
+    }
+
+    /// Premier toucher : ma position s'affiche et la carte se centre dessus. Déjà centrée : ma position se cache, la carte reste où elle est.
+    private func basculerMaPosition() async {
+        if surMaPosition {
+            withAnimation(.snappy) { maPosition = false }
+            if let r = regionVisible { position = .region(r) }
+            return
+        }
+        guard await Localisation.shared.demander() else {
+            positionRefusee = Localisation.shared.refusee
+            return
+        }
+        maPosition = true
+        // Si Plans n'a pas encore ma position, la carte se centre quand même dessus, puis la suit.
+        let repli: MapCameraPosition = await Localisation.shared.coordonnee()
+            .map { .camera(MapCamera(centerCoordinate: $0, distance: 2500)) } ?? position
+        withAnimation(.easeInOut(duration: 0.6)) { position = .userLocation(fallback: repli) }
+    }
+
     // MARK: Transports
 
     /// Change quand il faut chercher de nouvelles stations : fond choisi ou zone (arrondie) affichée.
@@ -603,11 +784,31 @@ struct CarteDuVoyage: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer(minLength: 8)
+            if let ajout = ajoutSousEtape {
+                // Une étape est ouverte : le lieu devient une étape à placer, ou une sous-étape de celle qui est ouverte.
+                VStack(alignment: .trailing, spacing: 6) {
+                    Button("Sous-étape", systemImage: "point.3.connected.trianglepath.dotted") {
+                        ajout.ajouter(lieu)
+                        fermerFiche()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(.mint)
+                    .help("Ajouter comme sous-étape de « \(ajout.nom) »")
+                    Button("Étape", systemImage: "plus.circle.fill") {
+                        onLieu(lieu)
+                        fermerFiche()
+                    }
+                    .buttonStyle(.bordered)
+                    .help("Créer une étape à placer")
+                }
+                .fixedSize()
+            } else {
             Button("Créer une étape", systemImage: "plus.circle.fill") {
                 onLieu(lieu)
                 fermerFiche()
             }
             .buttonStyle(.borderedProminent)
+            }
             Button { fermerFiche() } label: {
                 Image(systemName: "xmark").font(.system(size: 13, weight: .bold)).foregroundStyle(.secondary)
                     .frame(width: 28, height: 28).background(Circle().fill(Color.secondary.opacity(0.18)))
@@ -632,6 +833,18 @@ struct CarteDuVoyage: View {
 
     private func recadrer(taille: CGSize) async {
         guard taille.width > 50, taille.height > 50 else { return }
+        // Détail d'une étape à sous-étapes ouvert : le cadre englobe l'étape et ses sous-étapes (un circuit).
+        if let focus = etapeFocus {
+            let pointsCircuit = ([focus] + focus.sousEtapes).compactMap(\.coordonnee)
+            if pointsCircuit.count > 1 {
+                var contenu = pointsCircuit.map { MKMapRect(origin: MKMapPoint($0), size: MKMapSize(width: 0, height: 0)) }.reduce(MKMapRect.null) { $0.union($1) }
+                let minimum = 800 * MKMapPointsPerMeterAtLatitude(pointsCircuit[0].latitude)
+                if contenu.width < minimum { contenu = contenu.insetBy(dx: (contenu.width - minimum) / 2, dy: 0) }
+                if contenu.height < minimum { contenu = contenu.insetBy(dx: 0, dy: (contenu.height - minimum) / 2) }
+                cadrer(contenu.insetBy(dx: -contenu.width * 0.2, dy: -contenu.height * 0.2), taille: taille)
+                return
+            }
+        }
         // Détail d'une étape ouvert : un cadre serré (environ 1,5 km) centré sur son lieu.
         if let coord = etapeFocus?.coordonnee {
             let centre = MKMapPoint(coord)

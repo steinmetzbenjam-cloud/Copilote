@@ -118,6 +118,9 @@ final class Document {
     var expireLe: Date?
     /// Texte libre joint au document.
     var notes: String?
+    /// Document important d'un voyageur : présent dans tous ses voyages. Identifiant commun à toutes ses copies
+    /// (une par voyage) ; nil pour un document ordinaire.
+    var importantUID: String?
 
     init(nom: String, extensionFichier: String, donnees: Data) {
         self.nom = nom

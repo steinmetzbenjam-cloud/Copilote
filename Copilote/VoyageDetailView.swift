@@ -5,6 +5,7 @@ struct VoyageDetailView: View {
     @Bindable var voyage: Voyage
     @Environment(\.modelContext) private var contexte
     @State private var profilOuvert = false
+    @State private var journalOuvert = false
     private var profil = Profil.partage
 
     init(voyage: Voyage) { self.voyage = voyage }
@@ -30,6 +31,12 @@ struct VoyageDetailView: View {
                         .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         .disabled(voyage.lectureSeule)
                 }
+                if voyage.estOrganisateur {
+                    CadreInfos(titre: "Journal des modifications", symbole: "clock.arrow.circlepath", couleur: .teal,
+                               pied: "Visible seulement par les organisateurs.") {
+                        ApercuJournal(voyage: voyage) { journalOuvert = true }
+                    }
+                }
             }
             .padding(12)
             .frame(maxWidth: 760)
@@ -37,6 +44,7 @@ struct VoyageDetailView: View {
         }
         .background(FondDePage.couleur)
         .sheet(isPresented: $profilOuvert) { ProfilEditView() }
+        .sheet(isPresented: $journalOuvert) { JournalView(voyage: voyage) }
         .onChange(of: voyage.fuseauReferenceId) { _, id in
             if let id { Horloge.appliquer(id) }
         }

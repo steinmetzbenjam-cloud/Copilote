@@ -55,6 +55,8 @@ final class Voyage {
     var sondages: [Sondage] = []
     @Relationship(deleteRule: .cascade, inverse: \VoteSondage.voyage)
     var votes: [VoteSondage] = []
+    @Relationship(deleteRule: .cascade, inverse: \EntreeJournal.voyage)
+    var journal: [EntreeJournal] = []
 
     init(titre: String, destination: String = "", debut: Date = .now, fin: Date = .now.addingTimeInterval(7 * 86_400)) {
         self.titre = titre
@@ -119,15 +121,19 @@ extension Voyage {
     /// Place l'étape (un hébergement) entre `jour` et le suivant, après ceux qui y sont déjà (une nuit peut en avoir plusieurs).
     func placerEntreJours(_ etape: Etape, apres jour: Date) {
         let ancien = etape.apresJour ? nil : etape.jour
+        etape.parentUID = nil
         etape.apresJour = true
         etape.jour = Calendar.current.startOfDay(for: jour)
         etape.ordre = (hebergements(apres: jour).filter { $0 !== etape }.map(\.ordre).max() ?? -1) + 1
         if let ancien { for (i, e) in etapes(du: ancien).enumerated() { e.ordre = Double(i) } }
     }
 
-    /// Étapes préparées sans jour, dans l'ordre où on les a rangées.
+    /// Étapes préparées sans jour, dans l'ordre où on les a rangées. Les sous-étapes n'en sont pas (elles suivent leur étape),
+    /// sauf si leur étape a disparu.
     var etapesSansJour: [Etape] {
-        etapes.filter { $0.jour == nil }.sorted { ($0.ordre, $0.creeLe) < ($1.ordre, $1.creeLe) }
+        let uids = Set(etapes.map(\.uid))
+        return etapes.filter { $0.jour == nil && !($0.parentUID.map(uids.contains) ?? false) }
+            .sorted { ($0.ordre, $0.creeLe) < ($1.ordre, $1.creeLe) }
     }
 
     /// Les étapes sans jour rangées par catégorie : hébergements, repas, puis les autres ; seules les catégories présentes.
@@ -252,6 +258,7 @@ extension Voyage {
         var liste = etapes(du: jour).filter { $0 !== etape }
         let index = cible.flatMap { c in liste.firstIndex { $0 === c } } ?? liste.count
         liste.insert(etape, at: index)
+        etape.parentUID = nil
         etape.apresJour = false
         etape.jour = cal.startOfDay(for: jour)
         for (i, e) in liste.enumerated() { e.ordre = Double(i) }

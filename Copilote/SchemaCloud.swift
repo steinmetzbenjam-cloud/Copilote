@@ -33,7 +33,7 @@ extension PartageCloud {
     /// Un exemplaire de chaque type, avec tous les champs optionnels renseignés (construit par le même code que la synchronisation).
     @MainActor private static func enregistrementsComplets(zone: CKRecordZone.ID) throws -> [CKRecord] {
         let conteneur = try ModelContainer(
-            for: Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self, Commentaire.self, AvisEtape.self, Famille.self, Sondage.self, VoteSondage.self,
+            for: Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self, Commentaire.self, AvisEtape.self, Famille.self, Sondage.self, VoteSondage.self, EntreeJournal.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
         let contexte = conteneur.mainContext
 
@@ -57,7 +57,7 @@ extension PartageCloud {
         etape.noteTripadvisor = 1; etape.avisTripadvisor = 1; etape.lienTripadvisor = "x"; etape.siteWeb = "x"
         etape.prixAdulte = 1; etape.prixEnfant = 1; etape.prixEtudiant = 1
         etape.prixAdulteLocal = true; etape.prixEnfantLocal = true; etape.prixEtudiantLocal = true
-        etape.prixAdulteTierce = true; etape.prixEnfantTierce = true; etape.prixEtudiantTierce = true; etape.exclusBudget = ["x"]; etape.basculesTarif = ["x"]; etape.categoriesPrixJSON = "x"; etape.paysFavori = "x"
+        etape.prixAdulteTierce = true; etape.prixEnfantTierce = true; etape.prixEtudiantTierce = true; etape.exclusBudget = ["x"]; etape.basculesTarif = ["x"]; etape.categoriesPrixJSON = "x"; etape.paysFavori = "x"; etape.parentUID = "x"
         etape.prixAdolescent = 1; etape.prixAdolescentLocal = true; etape.prixAdolescentTierce = true
         etape.voyage = voyage; contexte.insert(etape)
 
@@ -71,7 +71,7 @@ extension PartageCloud {
         reservation.voyage = voyage; contexte.insert(reservation)
 
         let document = Document(nom: "x", extensionFichier: "txt", donnees: Data("x".utf8))
-        document.voyage = voyage; document.reservation = reservation; document.etape = etape; document.membreUID = "x"; document.typeBrut = "x"; document.expireLe = .now; document.notes = "x"; contexte.insert(document)
+        document.voyage = voyage; document.reservation = reservation; document.etape = etape; document.membreUID = "x"; document.typeBrut = "x"; document.expireLe = .now; document.notes = "x"; document.importantUID = "x"; contexte.insert(document)
 
         let depense = Depense(devise: "EUR", payeurUID: membre.uid)
         depense.titre = "x"; depense.etapeUID = "x"; depense.montant = 1; depense.notes = "x"
@@ -91,8 +91,10 @@ extension PartageCloud {
         sondage.voyage = voyage; contexte.insert(sondage)
         let vote = VoteSondage(sondageUID: sondage.uid, optionID: "x", compteCle: "m:x", auteurUID: membre.uid)
         vote.voyage = voyage; contexte.insert(vote)
+        let entree = EntreeJournal(action: .modification, typeObjet: "x", objetUID: "x", libelle: "x", auteurUID: "x", auteurNom: "x")
+        entree.champs = ["x"]; entree.voyage = voyage; contexte.insert(entree)
 
-        let objets: [any PersistentModel] = [voyage, membre, jour, etape, reservation, document, depense, commentaire, avis, famille, sondage, vote]
+        let objets: [any PersistentModel] = [voyage, membre, jour, etape, reservation, document, depense, commentaire, avis, famille, sondage, vote, entree]
         return objets.map { Codec.enregistrement(pour: $0, zone: zone, systeme: nil, avecAsset: true) }
     }
 }

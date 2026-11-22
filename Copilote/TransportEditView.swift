@@ -49,7 +49,7 @@ struct TransportEditView: View {
     /// Transport entre deux étapes : il est gardé sur l'étape de départ.
     init(depart: Etape, arrivee: Etape) {
         let titre: (Etape) -> String = { $0.titre.isEmpty ? "Étape" : $0.titre }
-        self.init(trajet: "\(titre(depart)) → \(titre(arrivee))", jour: depart.jour ?? .now,
+        self.init(trajet: "\(titre(depart)) → \(titre(arrivee))", jour: depart.jourEffectif ?? .now,
                   coordonnees: depart.coordonnee.flatMap { a in arrivee.coordonnee.map { (a, $0) } },
                   existant: depart.transport, voyage: depart.voyage, cleLien: LienReservation.transport(depart: depart),
                   enregistrer: { depart.transport = $0 })

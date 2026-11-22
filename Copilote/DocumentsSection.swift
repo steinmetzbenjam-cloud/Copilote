@@ -27,7 +27,10 @@ struct DocumentsSection: View {
             ForEach(documents) { doc in
                 Button { ouvrir(doc) } label: {
                     HStack {
-                        Image(systemName: doc.symbole).foregroundStyle(.tint).frame(width: 24)
+                        VignetteDocument(document: doc, cote: 140)
+                            .frame(width: 40, height: 48)
+                            .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(.secondary.opacity(0.25), lineWidth: 0.5))
                         VStack(alignment: .leading) {
                             Text(doc.nom).foregroundStyle(.primary).lineLimit(1)
                             Text(ByteCountFormatter.string(fromByteCount: Int64(doc.donnees.count), countStyle: .file))

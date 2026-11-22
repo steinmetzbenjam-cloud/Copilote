@@ -12,6 +12,12 @@ struct EtapeEditView: View {
     var onDupliquer: ((Etape) -> Void)? = nil
     /// Ouverte depuis un vote : les infos du lieu remontent juste sous la catégorie, pour comparer les propositions.
     var depuisVote = false
+    /// Sous-étape à ouvrir dès l'affichage (touchée sur la carte) : la fiche de l'étape s'ouvre directement sur elle.
+    var sousEtapeAOuvrir: Etape? = nil
+    /// Prévenu quand une sous-étape s'ouvre ou se referme (nil) : l'Itinéraire cadre alors la carte sur elle.
+    var onSousEtape: ((Etape?) -> Void)? = nil
+    /// Fiche d'une sous-étape affichée dans celle de son étape, elle-même dans une feuille (et non dans un cadre de l'Itinéraire).
+    var imbriqueeDansFeuille = false
     /// Petit message « Copie créée » après une duplication.
     @State private var copieFaite = false
     /// Le pays de l'étape est en cours de recherche pour la garder en favori.
@@ -26,8 +32,20 @@ struct EtapeEditView: View {
     @State private var suggestionsOuvertes = false
     @State private var photosEnCours = false
     @Environment(\.horizontalSizeClass) private var tailleHorizontale
+    @Environment(\.modelContext) private var contexte
+    /// Sous-étape dont la fiche remplace celle de l'étape ; « OK » ramène à l'étape.
+    @State private var sousEtapeOuverte: Etape?
+    /// Transport entre deux sous-étapes, en cours de modification.
+    @State private var transportSousEtapes: PaireSousEtapes?
+    /// Étape glissée au-dessus de la liste des sous-étapes (uid de la sous-étape visée, ou "" pour la fin).
+    @State private var depotVise: String?
 
-    private var enCadre: Bool { onFermer != nil }
+    private struct PaireSousEtapes: Identifiable {
+        let depart: Etape, arrivee: Etape
+        var id: String { depart.uid }
+    }
+
+    private var enCadre: Bool { onFermer != nil && !imbriqueeDansFeuille }
 
     private func fermer() {
         if let onFermer { onFermer() } else { dismiss() }
@@ -149,20 +167,41 @@ struct EtapeEditView: View {
     }
 
     private func bulleHeure(_ valeur: Binding<Date?>, depart: Int) -> some View {
-        BulleHeure(valeur: valeur, jour: etape.jour ?? .now, heureDeDepart: depart)
+        BulleHeure(valeur: valeur, jour: etape.jourEffectif ?? .now, heureDeDepart: depart)
     }
 
     var body: some View {
-        if enCadre {
-            contenu
+        if enCadre || imbriqueeDansFeuille {
+            ficheAffichee
         } else {
-            contenu
+            ficheAffichee
                 .modifier(TailleDePage())
                 #if os(macOS)
                 // Avec les idées, la fenêtre s'élargit pour que fiche et propositions tiennent côte à côte sans être tronquées.
                 .frame(minWidth: suggestionsOuvertes ? 1020 : 420, idealWidth: suggestionsOuvertes ? 1080 : 520, minHeight: 600, idealHeight: 720)
                 #endif
         }
+    }
+
+    /// La fiche de l'étape, ou celle de la sous-étape ouverte à sa place.
+    @ViewBuilder private var ficheAffichee: some View {
+        Group {
+            if let sous = sousEtapeOuverte {
+                EtapeEditView(etape: sous, jours: jours,
+                              onSupprimer: { supprimerSousEtape(sous) },
+                              onFermer: { fermerSousEtape() },
+                              onDupliquer: { ouvrirSousEtape($0) },
+                              imbriqueeDansFeuille: !enCadre)
+                    .id(sous.uid)
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            } else {
+                contenu
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+        }
+        .onAppear { if let s = sousEtapeAOuvrir { ouvrirSousEtape(s, anime: false) } }
+        .onChange(of: sousEtapeAOuvrir?.uid) { if let s = sousEtapeAOuvrir { ouvrirSousEtape(s) } }
+        .sheet(item: $transportSousEtapes) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
     }
 
     private var contenu: some View {
@@ -315,9 +354,12 @@ struct EtapeEditView: View {
         return (voyage.transportAller, vue)
     }
 
-    /// Les catégories proposées, hébergement en tête. Le transport a sa propre fenêtre : on ne le garde que pour une étape qui l'est déjà.
+    /// Les catégories proposées, hébergement en tête. Le transport a sa propre fenêtre, et « Nature » n'est plus proposée :
+    /// on ne les garde que pour une étape qui l'est déjà.
     private var categories: [CategorieEtape] {
-        [.hebergement] + CategorieEtape.allCases.filter { $0 != .hebergement && ($0 != .transport || $0 == etape.categorie) }
+        [.hebergement] + CategorieEtape.allCases.filter {
+            $0 != .hebergement && ((!CategorieEtape.retirees.contains($0)) || $0 == etape.categorie)
+        }
     }
 
     /// Change la catégorie. Un hébergement de nuit qui n'en est plus un rejoint la fin des étapes de son jour.
@@ -375,8 +417,11 @@ struct EtapeEditView: View {
     /// En voyage : la date, les horaires et la durée, en simple lecture, sans cadre ni titre.
     private var sectionJourHoraireLecture: some View {
         VStack(alignment: .leading, spacing: 6) {
-            if let jour = etape.jour {
-                if etape.categorie == .hebergement, etape.apresJour {
+            if let parente = etape.etapeParente {
+                Label("Dans « \(parente.titre.isEmpty ? "Sans titre" : parente.titre) »", systemImage: "point.3.connected.trianglepath.dotted")
+            }
+            if let jour = etape.jourEffectif {
+                if etape.categorie == .hebergement, etape.apresJour, !etape.estSousEtape {
                     let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
                     Label("Nuit du \(jour.formatted(.dateTime.day().month(.wide))) au \(lendemain.formatted(.dateTime.day().month(.wide)))",
                           systemImage: "moon.stars")
@@ -421,6 +466,16 @@ struct EtapeEditView: View {
 
     private var sectionJourHoraireEdition: some View {
         CadreSection("Jour et horaire", symbole: "calendar", couleur: .blue) {
+            if let parente = etape.etapeParente {
+                // Une sous-étape suit le jour de son étape.
+                LabeledContent("Dans l'étape") {
+                    Text(parente.titre.isEmpty ? "Sans titre" : parente.titre).foregroundStyle(.secondary).lineLimit(1)
+                }
+                if let jour = parente.jour {
+                    let date = jour.formatted(.dateTime.weekday(.wide).day().month(.wide))
+                    LabeledContent("Jour") { Text(date.prefix(1).uppercased() + date.dropFirst()).foregroundStyle(.secondary) }
+                }
+            } else {
             LabeledContent("Jour") {
                 Picker("Jour", selection: jourChoisi) {
                     Text("Pas encore de jour").tag(Date?.none)
@@ -430,6 +485,7 @@ struct EtapeEditView: View {
                 }
                 .labelsHidden()
                 .fixedSize()
+            }
             }
             if etape.jour != nil, etape.categorie == .hebergement, etape.apresJour, let jour = etape.jour {
                 let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
@@ -459,8 +515,8 @@ struct EtapeEditView: View {
                     .help("Effacer la durée")
                 }
             }
-            if etape.jour != nil { Toggle("Horaire", isOn: horaireActive) }
-            if etape.jour != nil, horaireActive.wrappedValue {
+            if etape.jourEffectif != nil { Toggle("Horaire", isOn: horaireActive) }
+            if etape.jourEffectif != nil, horaireActive.wrappedValue {
                 HStack {
                     Spacer()
                     bulleHeure(heureDebut, depart: 9)
@@ -470,6 +526,15 @@ struct EtapeEditView: View {
                 // L'heure saisie est celle du lieu de l'étape ; on peut la noter dans un autre fuseau.
                 LigneFuseau(choisi: $etape.fuseauChoisi, parDefaut: etape.fuseauParDefaut,
                             coordonnees: etape.coordonnee.map { [$0] } ?? [])
+            }
+        }
+    }
+
+    /// Les photos prises sur place : celles de l'étape (ou de la sous-étape), réduites pour iCloud.
+    @ViewBuilder private var sectionAlbum: some View {
+        if etape.voyage != nil {
+            CadreSection("Album photo", symbole: "photo.on.rectangle.angled", couleur: .indigo) {
+                AlbumEtapeSection(etape: etape)
             }
         }
     }
@@ -567,9 +632,11 @@ struct EtapeEditView: View {
                     sectionBudget
                     sectionCategorieEtMoment
                 } else if enVoyage {
-                    // En voyage : le moment (avec « Y aller »), les réservations, puis les infos du lieu avant les avis.
+                    // En voyage : le moment (avec « Y aller »), les sous-étapes, les réservations, puis les infos du lieu avant les avis.
                     sectionCategorieEtMoment
+                    sectionSousEtapes
                     sectionReservations
+                    sectionAlbum
                     if etape.aDesInfosDeLieu { infosDuLieu }
                     sectionAvis
                     sectionBudget
@@ -577,10 +644,12 @@ struct EtapeEditView: View {
                     // En préparation : d'abord où (la recherche remplit le reste), puis quand, puis le coût et les avis.
                     sectionLieu
                     if etape.aDesInfosDeLieu { infosDuLieu }
+                    sectionSousEtapes
                     sectionCategorieEtMoment
                     sectionReservations
                     sectionBudget
                     sectionAvis
+                    sectionAlbum
                 }
                 // En préparation, le lieu est déjà plus haut ; ailleurs, il vient ici.
                 if depuisVote || enVoyage { sectionLieu }
@@ -593,7 +662,7 @@ struct EtapeEditView: View {
                 }
                 if nouvelle == true {
                     // Une étape toute neuve : on annule son ajout, sans question.
-                    Button("Annuler l'ajout", systemImage: "xmark") { onSupprimer(); fermer() }
+                    Button("Annuler l'ajout", systemImage: "xmark") { supprimerAvecSousEtapes(); fermer() }
                         .font(.body.weight(.semibold))
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 12)
@@ -603,12 +672,12 @@ struct EtapeEditView: View {
                 } else {
                 Button(etape.categorie == .hebergement ? "Supprimer l'hébergement" : "Supprimer l'étape", systemImage: "trash", role: .destructive) {
                     // Une étape encore vide part sans question ; sinon on confirme.
-                    if etape.titre.trimmingCharacters(in: .whitespaces).isEmpty && etape.lieu.isEmpty { onSupprimer(); fermer() }
+                    if etape.sansContenu { onSupprimer(); fermer() }
                     else { suppressionDemandee = true }
                 }
                 .confirmerSuppression($suppressionDemandee,
-                                      titre: "Supprimer « \(etape.titre.isEmpty ? etape.categorie.libelle : etape.titre) » ?") {
-                    onSupprimer()
+                                      titre: titreSuppression) {
+                    supprimerAvecSousEtapes()
                     fermer()
                 }
                 // Rouge plein, texte blanc : le bouton se voit bien, même en mode sombre.
@@ -626,6 +695,189 @@ struct EtapeEditView: View {
         }
         .scrollIndicators(.hidden)
         .disabled(etape.voyage?.lectureSeule ?? false)
+    }
+
+    // MARK: Sous-étapes
+
+    private var titreSuppression: String {
+        let nom = etape.titre.isEmpty ? etape.categorie.libelle : etape.titre
+        let n = etape.sousEtapes.count
+        return n == 0 ? "Supprimer « \(nom) » ?" : "Supprimer « \(nom) » et ses \(n) sous-étape\(n > 1 ? "s" : "") ?"
+    }
+
+    /// L'étape part avec ses sous-étapes.
+    private func supprimerAvecSousEtapes() {
+        for s in etape.sousEtapes { contexte.delete(s) }
+        onSupprimer()
+    }
+
+    private func ouvrirSousEtape(_ s: Etape, anime: Bool = true) {
+        withAnimation(anime ? .snappy : nil) { sousEtapeOuverte = s }
+        onSousEtape?(s)
+    }
+
+    /// « OK » sur une sous-étape : retour à l'étape. Une sous-étape laissée vide est retirée.
+    private func fermerSousEtape() {
+        if let s = sousEtapeOuverte, s.sansContenu { contexte.delete(s) }
+        withAnimation(.snappy) { sousEtapeOuverte = nil }
+        onSousEtape?(nil)
+    }
+
+    private func supprimerSousEtape(_ s: Etape) {
+        contexte.delete(s)
+        withAnimation(.snappy) { sousEtapeOuverte = nil }
+        onSousEtape?(nil)
+    }
+
+    private func ajouterSousEtape() {
+        ouvrirSousEtape(etape.ajouterSousEtape(dans: contexte))
+    }
+
+    /// Étapes à placer qui peuvent devenir des sous-étapes de celle-ci.
+    private var etapesAPrendre: [Etape] {
+        (etape.voyage?.etapesSansJour ?? []).filter { etape.peutRecevoir($0) }
+    }
+
+    private func etapeDeposee(_ elements: [String]) -> Etape? {
+        guard let texte = elements.first(where: { $0.hasPrefix(Etape.prefixeGlisser) }) else { return nil }
+        let uid = String(texte.dropFirst(Etape.prefixeGlisser.count))
+        return etape.voyage?.etapes.first { $0.uid == uid }
+    }
+
+    /// Les sous-étapes (un circuit, une visite en plusieurs points), avec les transports de l'une à l'autre.
+    /// On y glisse une étape à placer, ou on range les sous-étapes en les glissant.
+    @ViewBuilder private var sectionSousEtapes: some View {
+        if !etape.estSousEtape, !depuisVote {
+            let sous = etape.sousEtapes
+            let modifiable = !(etape.voyage?.lectureSeule ?? true)
+            CadreSection("Sous-étapes", symbole: "point.3.connected.trianglepath.dotted", couleur: .mint) {
+                if sous.isEmpty {
+                    Text("Les points d'un circuit, d'une visite : ils restent dans l'étape, et n'apparaissent sur la carte que quand on la touche.")
+                        .font(.footnote).foregroundStyle(.secondary)
+                }
+                VStack(spacing: 0) {
+                    ForEach(Array(sous.enumerated()), id: \.element.id) { i, s in
+                        ligneSousEtape(s, rang: i + 1, modifiable: modifiable)
+                        if i + 1 < sous.count { ligneTransportSousEtapes(s, sous[i + 1]) }
+                    }
+                }
+                if modifiable {
+                    HStack(spacing: 16) {
+                        Button("Ajouter une sous-étape", systemImage: "plus.circle.fill") { ajouterSousEtape() }
+                            .fontWeight(.semibold)
+                        // Sur iPhone, la liste des étapes à placer est cachée par la fiche : on les prend d'ici.
+                        if !etapesAPrendre.isEmpty {
+                            Menu {
+                                ForEach(etapesAPrendre) { e in
+                                    Button(e.titre.isEmpty ? "Sans titre" : e.titre, systemImage: e.categorie.symbole) {
+                                        withAnimation(.snappy) { _ = etape.rattacher(e, avant: nil) }
+                                    }
+                                }
+                            } label: {
+                                Label("Étapes à placer", systemImage: "tray.and.arrow.down")
+                            }
+                            .help("Faire d'une étape à placer une sous-étape")
+                        }
+                    }
+                    if !etapesAPrendre.isEmpty {
+                        Text("Tu peux aussi glisser ici une étape à placer.").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+            }
+            // Une étape à placer déposée sur la section devient la dernière sous-étape.
+            .overlay {
+                if depotVise == "" {
+                    RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Color.mint, style: StrokeStyle(lineWidth: 3, dash: [8, 5]))
+                }
+            }
+            .dropDestination(for: String.self) { elements, _ in
+                depotVise = nil
+                guard modifiable, let e = etapeDeposee(elements) else { return false }
+                return withAnimation(.snappy) { etape.rattacher(e, avant: nil) }
+            } isTargeted: { vise in
+                if vise { depotVise = "" } else if depotVise == "" { depotVise = nil }
+            }
+        }
+    }
+
+    /// Une sous-étape : son numéro, son nom, son lieu et son horaire. Un appui ouvre sa fiche ; on la glisse pour la ranger.
+    private func ligneSousEtape(_ s: Etape, rang: Int, modifiable: Bool) -> some View {
+        HStack(spacing: 10) {
+            Text("\(rang)")
+                .font(.caption.bold()).foregroundStyle(.white)
+                .frame(width: 24, height: 24)
+                .background(Color.mint, in: Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                Text(s.titre.isEmpty ? "Sans titre" : s.titre).font(.subheadline.weight(.semibold)).foregroundStyle(.primary)
+                if !s.lieu.isEmpty {
+                    Text(s.lieu).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                }
+            }
+            Spacer(minLength: 4)
+            if let heure = s.heure {
+                Text(s.heureFin.map { "\(s.heureAffichee(heure)) – \(s.heureAffichee($0))" } ?? s.heureAffichee(heure))
+                    .font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            } else if let duree = s.duree {
+                Label(CategorieEtape.texteDuree(duree), systemImage: "hourglass").font(.caption.monospacedDigit()).foregroundStyle(.secondary)
+            }
+            Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(.tertiary)
+        }
+        .padding(.vertical, 7)
+        // Trait d'insertion : l'étape glissée viendra juste avant celle-ci.
+        .overlay(alignment: .top) {
+            if depotVise == s.uid { Capsule().fill(Color.mint).frame(height: 3).offset(y: -2) }
+        }
+        .contentShape(Rectangle())
+        // Pas de Button : sur Mac, un bouton capte le clic et empêche de glisser la ligne.
+        .onTapGesture { ouvrirSousEtape(s) }
+        .accessibilityAddTraits(.isButton)
+        .contextMenu {
+            if modifiable {
+                Button("Remettre dans les étapes à placer", systemImage: "tray.and.arrow.up") {
+                    withAnimation(.snappy) { s.detacherDeSonEtape() }
+                }
+                Button("Supprimer la sous-étape", systemImage: "trash", role: .destructive) {
+                    withAnimation(.snappy) { contexte.delete(s) }
+                }
+            }
+        }
+        .draggable(Etape.prefixeGlisser + s.uid) {
+            Label(s.titre.isEmpty ? "Sous-étape" : s.titre, systemImage: s.categorie.symbole)
+                .padding(8).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+        }
+        .dropDestination(for: String.self) { elements, _ in
+            depotVise = nil
+            guard modifiable, let e = etapeDeposee(elements) else { return false }
+            return withAnimation(.snappy) { etape.rattacher(e, avant: s) }
+        } isTargeted: { vise in
+            if vise { depotVise = s.uid } else if depotVise == s.uid { depotVise = nil }
+        }
+    }
+
+    /// Entre deux sous-étapes : le transport prévu (mode, distance, temps), ou de quoi en ajouter un.
+    private func ligneTransportSousEtapes(_ a: Etape, _ b: Etape) -> some View {
+        Button { transportSousEtapes = PaireSousEtapes(depart: a, arrivee: b) } label: {
+            HStack(spacing: 6) {
+                if let t = a.transport {
+                    Image(systemName: t.mode.symbole).font(.caption).frame(width: 24)
+                    Text(t.mode == .commun && !t.sousType.isEmpty ? t.sousType : t.mode.libelleCourt).font(.caption.weight(.medium))
+                    if t.mode.aUnItineraire, let ca = a.coordonnee, let cb = b.coordonnee {
+                        Text("·").font(.caption)
+                        ResumeItineraire(a: ca, b: cb, mode: t.mode, dureeModifiee: t.dureeModifiee, google: t.itineraireGoogle(ca, cb))
+                    } else if let resume = t.resume(depuis: a, vers: b) {
+                        Text("· \(resume)").font(.caption)
+                    }
+                } else {
+                    Image(systemName: "arrow.triangle.swap").font(.caption).frame(width: 24)
+                    Text("Ajouter un transport").font(.caption)
+                }
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 3)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     /// Crée une copie de l'étape, juste après elle dans son jour (dans la même nuit pour un hébergement).
@@ -655,7 +907,7 @@ struct EtapeEditView: View {
 
     @MainActor private func rangerPhotos(_ images: [PhotosLieu.Image], de lieu: LieuPropose) {
         guard let contexte = etape.modelContext, let voyage = etape.voyage else { return }
-        for ancienne in etape.photos where ancienne.nom.hasPrefix("\(lieu.nom) – photo") { contexte.delete(ancienne) }
+        for ancienne in etape.photosDuLieu where ancienne.nom.hasPrefix("\(lieu.nom) – photo") { contexte.delete(ancienne) }
         for (i, image) in images.enumerated() {
             let photo = Document(nom: "\(lieu.nom) – photo \(i + 1)", extensionFichier: image.extensionFichier, donnees: image.donnees)
             photo.voyage = voyage
@@ -666,10 +918,10 @@ struct EtapeEditView: View {
 
     private var infosDuLieu: some View {
         CadreSection("Infos du lieu", symbole: "info.circle", couleur: .teal) {
-            if !etape.photos.isEmpty {
+            if !etape.photosDuLieu.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 8) {
-                        ForEach(etape.photos.sorted { $0.nom < $1.nom }) { photo in
+                        ForEach(etape.photosDuLieu.sorted { $0.nom < $1.nom }) { photo in
                             ImageDonnees(donnees: photo.donnees)
                                 .frame(width: 220, height: 150)
                                 .clipShape(RoundedRectangle(cornerRadius: 10))

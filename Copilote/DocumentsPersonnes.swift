@@ -74,6 +74,8 @@ struct DocumentsPersonnesView: View {
     @State private var apercu: FichierAApercevoir?
     @State private var enEdition: Document?
     @State private var erreur: String?
+    @State private var aSupprimer: Document?
+    @State private var aRetirer: Document?
 
     private func documents(de membre: Membre) -> [Document] {
         voyage.documents.filter { $0.membreUID == membre.uid }.sorted { $0.creeLe < $1.creeLe }
@@ -93,6 +95,9 @@ struct DocumentsPersonnesView: View {
                                            description: Text("Ajoute les voyageurs dans la partie « Voyageurs » pour leur associer des documents."))
                 }
                 if let erreur { Text(erreur).font(.footnote).foregroundStyle(.red) }
+                Label("L'étoile marque un document important (passeport, carte d'identité…) : il est gardé dans tous les voyages où la personne est présente.", systemImage: "star.fill")
+                    .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Text("Les documents sont partagés avec les personnes invitées au voyage. N'y mets que ce que le groupe peut voir.")
                     .font(.footnote).foregroundStyle(.secondary).padding(.horizontal, 6)
             }
@@ -104,6 +109,39 @@ struct DocumentsPersonnesView: View {
         .fileImporter(isPresented: $importOuvert, allowedContentTypes: [.pdf, .image, .data], allowsMultipleSelection: true) { importer($0) }
         .sheet(item: $apercu) { ApercuDocumentView(fichier: $0) }
         .sheet(item: $enEdition) { DocumentEditView(document: $0, voyage: voyage) }
+        // Un voyageur ajouté (ou retrouvé) reçoit ses documents importants.
+        .task(id: voyage.membres.map(\.uid).joined()) { DocumentsImportants.repandre(dans: contexte) }
+        .confirmationDialog(aSupprimer.map { DocumentsImportants.estImportant($0) ? "Supprimer « \($0.nom) » de tous les voyages ?" : "Supprimer « \($0.nom) » ?" } ?? "",
+                            isPresented: Binding(get: { aSupprimer != nil }, set: { if !$0 { aSupprimer = nil } }),
+                            titleVisibility: .visible, presenting: aSupprimer) { doc in
+            Button("Supprimer", role: .destructive) {
+                if DocumentsImportants.estImportant(doc) { DocumentsImportants.supprimerPartout(doc, dans: contexte) } else { contexte.delete(doc) }
+            }
+        } message: { doc in
+            if DocumentsImportants.estImportant(doc) {
+                Text("C'est un document important : il est retiré de tous les voyages de \(proprietaire(doc)).")
+            }
+        }
+        .confirmationDialog("Ne plus garder ce document dans tous les voyages ?",
+                            isPresented: Binding(get: { aRetirer != nil }, set: { if !$0 { aRetirer = nil } }),
+                            titleVisibility: .visible, presenting: aRetirer) { doc in
+            Button("Retirer des autres voyages", role: .destructive) { DocumentsImportants.retirer(doc, dans: contexte) }
+        } message: { doc in
+            Text("« \(doc.nom) » reste dans ce voyage ; ses copies sont retirées des autres voyages de \(proprietaire(doc)).")
+        }
+    }
+
+    private func proprietaire(_ doc: Document) -> String {
+        doc.membreUID.flatMap { voyage.membre(uid: $0)?.nom } ?? "ce voyageur"
+    }
+
+    /// Le bouton « Important » : garde le document dans tous les voyages de la personne.
+    private func basculerImportant(_ doc: Document) {
+        if DocumentsImportants.estImportant(doc) {
+            aRetirer = doc
+        } else {
+            DocumentsImportants.marquer(doc, dans: contexte)
+        }
     }
 
     // MARK: Alertes
@@ -147,7 +185,11 @@ struct DocumentsPersonnesView: View {
                 Spacer()
                 Text("\(docs.count) document\(docs.count > 1 ? "s" : "")").font(.footnote).foregroundStyle(.secondary)
             }
-            ForEach(docs) { ligne($0, peut: peut) }
+            if !docs.isEmpty {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 104, maximum: 160), spacing: 10, alignment: .top)], spacing: 12) {
+                    ForEach(docs) { tuile($0, peut: peut) }
+                }
+            }
             if peut {
                 Button("Ajouter un document", systemImage: "paperclip") {
                     importPour = membre
@@ -163,37 +205,84 @@ struct DocumentsPersonnesView: View {
         .modifier(FondDeCarte())
     }
 
-    private func ligne(_ doc: Document, peut: Bool) -> some View {
+    /// Un document en vignette : l'aperçu, l'étoile « Important », puis son nom, son type et sa validité.
+    private func tuile(_ doc: Document, peut: Bool) -> some View {
         let etat = doc.validite(pour: voyage)
-        return HStack(spacing: 12) {
+        let important = DocumentsImportants.estImportant(doc)
+        return VStack(alignment: .leading, spacing: 5) {
             Button { ouvrir(doc) } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: doc.type.symbole).foregroundStyle(.white).frame(width: 34, height: 34)
-                        .background(Circle().fill(Color.indigo))
-                    VStack(alignment: .leading, spacing: 1) {
-                        Text(doc.nom).foregroundStyle(.primary).lineLimit(1)
-                        HStack(spacing: 6) {
-                            Text(doc.type.libelle).font(.caption).foregroundStyle(.secondary)
-                            if let etat, let date = doc.expireLe {
-                                Text("· jusqu'au \(date.formatted(date: .abbreviated, time: .omitted))")
-                                    .font(.caption).foregroundStyle(etat == .expire ? .red : (etat == .courte ? .orange : .green))
-                            }
+                // Le cadre (3:4) fixe la taille ; l'aperçu le remplit sans jamais l'agrandir.
+                Color.clear
+                    .aspectRatio(3 / 4, contentMode: .fit)
+                    .overlay { VignetteDocument(document: doc, symbole: doc.type.symbole) }
+                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                            .strokeBorder(important ? Color.yellow : Color.secondary.opacity(0.25), lineWidth: important ? 2 : 0.5)
+                    }
+                    .overlay(alignment: .bottomLeading) {
+                        Image(systemName: doc.type.symbole)
+                            .font(.caption2).foregroundStyle(.white)
+                            .frame(width: 24, height: 24).background(Circle().fill(Color.indigo))
+                            .padding(6)
+                    }
+                    .overlay(alignment: .bottomTrailing) {
+                        if let etat, etat != .ok {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.caption).foregroundStyle(.white)
+                                .frame(width: 24, height: 24).background(Circle().fill(etat == .expire ? Color.red : Color.orange))
+                                .padding(6)
                         }
                     }
-                    Spacer()
-                    if let etat, etat != .ok {
-                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(etat == .expire ? .red : .orange)
-                    }
-                }
-                .contentShape(Rectangle())
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .overlay(alignment: .topTrailing) {
+                if peut {
+                    Button { basculerImportant(doc) } label: {
+                        Image(systemName: important ? "star.fill" : "star")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(important ? Color.yellow : Color.white)
+                            .frame(width: 30, height: 30)
+                            .background(Circle().fill(important ? Color.black.opacity(0.55) : Color.black.opacity(0.35)))
+                    }
+                    .buttonStyle(.plain)
+                    .padding(5)
+                    .accessibilityLabel(important ? "Important : dans tous ses voyages" : "Marquer comme important")
+                } else if important {
+                    Image(systemName: "star.fill").font(.caption).foregroundStyle(.yellow)
+                        .frame(width: 26, height: 26).background(Circle().fill(Color.black.opacity(0.5))).padding(5)
+                }
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(doc.nom).font(.footnote.weight(.medium)).lineLimit(1)
+                Spacer(minLength: 0)
+                if peut {
+                    Menu {
+                        Button("Modifier", systemImage: "pencil") { enEdition = doc }
+                        Button(important ? "Ne plus garder dans tous les voyages" : "Important : garder dans tous les voyages",
+                               systemImage: important ? "star.slash" : "star") { basculerImportant(doc) }
+                        Button("Supprimer", systemImage: "trash", role: .destructive) { aSupprimer = doc }
+                    } label: {
+                        Image(systemName: "ellipsis.circle").foregroundStyle(.secondary)
+                    }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                }
+            }
+            if let etat, let date = doc.expireLe {
+                Text("jusqu'au \(date.formatted(.dateTime.day().month(.abbreviated).year()))")
+                    .font(.caption2).foregroundStyle(etat == .expire ? .red : (etat == .courte ? .orange : .green))
+                    .lineLimit(1)
+            } else {
+                Text(important ? "Important" : doc.type.libelle).font(.caption2).foregroundStyle(.secondary).lineLimit(1)
+            }
+        }
+        .contextMenu {
             if peut {
-                Menu {
-                    Button("Modifier", systemImage: "pencil") { enEdition = doc }
-                    Button("Supprimer", systemImage: "trash", role: .destructive) { contexte.delete(doc) }
-                } label: { Image(systemName: "ellipsis.circle").foregroundStyle(.secondary) }
-                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                Button("Modifier", systemImage: "pencil") { enEdition = doc }
+                Button(important ? "Ne plus garder dans tous les voyages" : "Important : garder dans tous les voyages",
+                       systemImage: important ? "star.slash" : "star") { basculerImportant(doc) }
+                Button("Supprimer", systemImage: "trash", role: .destructive) { aSupprimer = doc }
             }
         }
     }
@@ -234,9 +323,11 @@ struct DocumentEditView: View {
     @Bindable var document: Document
     var voyage: Voyage
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.modelContext) private var contexte
     @State private var type: TypeDocument
     @State private var aUneDate: Bool
     @State private var date: Date
+    @State private var important: Bool
 
     init(document: Document, voyage: Voyage) {
         self.document = document
@@ -244,6 +335,7 @@ struct DocumentEditView: View {
         _type = State(initialValue: document.type)
         _aUneDate = State(initialValue: document.expireLe != nil)
         _date = State(initialValue: document.expireLe ?? Calendar.current.date(byAdding: .year, value: 1, to: voyage.fin) ?? .now)
+        _important = State(initialValue: document.importantUID != nil)
     }
 
     var body: some View {
@@ -262,6 +354,16 @@ struct DocumentEditView: View {
                     Text(type == .passeport ? "Beaucoup de pays exigent un passeport valable 6 mois après le retour : l'app te prévient si ce n'est pas le cas."
                          : "L'app te prévient si la pièce expire avant le retour.")
                 }
+                Section {
+                    Toggle(isOn: $important) {
+                        Label("Important", systemImage: important ? "star.fill" : "star")
+                    }
+                    .tint(.yellow)
+                } footer: {
+                    Text(important
+                         ? "Gardé dans tous les voyages où cette personne est présente, y compris les prochains. Les changements faits ici s'y appliquent aussi."
+                         : "Active pour retrouver ce document dans tous les voyages où cette personne est présente.")
+                }
             }
             .formStyle(.grouped)
             .navigationTitle("Document")
@@ -273,6 +375,12 @@ struct DocumentEditView: View {
                     Button("OK") {
                         document.type = type
                         document.expireLe = aUneDate ? date : nil
+                        if important, document.importantUID == nil {
+                            DocumentsImportants.marquer(document, dans: contexte)
+                        } else if !important, document.importantUID != nil {
+                            DocumentsImportants.retirer(document, dans: contexte)
+                        }
+                        DocumentsImportants.reporter(document, dans: contexte)
                         dismiss()
                     }
                 }

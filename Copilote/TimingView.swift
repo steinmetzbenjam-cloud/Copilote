@@ -875,7 +875,7 @@ struct TimingView: View {
 
     /// Une étape créée puis laissée vide est retirée à la fermeture.
     private func nettoyer() {
-        for etape in voyage.etapes where etape.titre.trimmingCharacters(in: .whitespaces).isEmpty && etape.lieu.isEmpty {
+        for etape in voyage.etapes where etape.sansContenu {
             contexte.delete(etape)
         }
     }

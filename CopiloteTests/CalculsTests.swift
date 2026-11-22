@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 import SwiftData
 import Testing
 @testable import Copilote
@@ -13,7 +14,7 @@ struct CalculsTests {
     init() throws {
         conteneur = try ModelContainer(
             for: Voyage.self, Membre.self, Etape.self, Reservation.self, Document.self, JourVoyage.self, Depense.self,
-            Commentaire.self, AvisEtape.self, Famille.self, Sondage.self, VoteSondage.self,
+            Commentaire.self, AvisEtape.self, Famille.self, Sondage.self, VoteSondage.self, EntreeJournal.self,
             configurations: ModelConfiguration(isStoredInMemoryOnly: true, cloudKitDatabase: .none))
     }
 
@@ -313,5 +314,280 @@ struct CalculsTests {
         let autre = voyage()
         autre.transportAller = Transport()
         #expect(autre.etapes.isEmpty)
+    }
+
+    // MARK: Sous-étapes
+
+    private func etape(_ titre: String, jour: Date?, dans v: Voyage) -> Etape {
+        let e = Etape(titre: titre, jour: jour)
+        e.voyage = v
+        contexte.insert(e)
+        return e
+    }
+
+    @Test func uneEtapeAPlacerDevientUneSousEtape() {
+        let v = voyage()
+        let circuit = etape("Circuit", jour: v.debut, dans: v)
+        let a = etape("Point A", jour: nil, dans: v)
+        let b = etape("Point B", jour: nil, dans: v)
+        #expect(v.etapesSansJour.count == 2)
+
+        #expect(circuit.rattacher(b, avant: nil))
+        #expect(circuit.rattacher(a, avant: b))
+        #expect(circuit.sousEtapes.map(\.titre) == ["Point A", "Point B"])
+        // Les sous-étapes ne sont plus « à placer », ni dans le jour : elles suivent leur étape.
+        #expect(v.etapesSansJour.isEmpty)
+        #expect(v.etapes(du: v.debut).map(\.titre) == ["Circuit"])
+        #expect(a.jourEffectif == circuit.jour)
+        // Pas de sous-étape dans une sous-étape, ni d'étape déjà placée dans un jour.
+        let autre = etape("Autre", jour: v.debut, dans: v)
+        #expect(!circuit.rattacher(autre, avant: nil))
+        #expect(!a.peutRecevoir(etape("C", jour: nil, dans: v)))
+    }
+
+    @Test func uneSousEtapeSansSonEtapeRevientAPlacer() {
+        let v = voyage()
+        let circuit = etape("Circuit", jour: v.debut, dans: v)
+        let a = circuit.ajouterSousEtape(dans: contexte)
+        a.titre = "Point A"
+        #expect(v.etapesSansJour.isEmpty)
+        contexte.delete(circuit)
+        try? contexte.save()
+        #expect(v.etapesSansJour.map(\.titre) == ["Point A"])
+    }
+
+    @Test func sousEtapeRemiseAPlacerOuPlaceeDansUnJour() {
+        let v = voyage()
+        let circuit = etape("Circuit", jour: v.debut, dans: v)
+        let a = circuit.ajouterSousEtape(dans: contexte)
+        let b = circuit.ajouterSousEtape(dans: contexte)
+        a.titre = "A"; b.titre = "B"
+        a.transport = Transport()
+        a.detacherDeSonEtape()
+        #expect(a.parentUID == nil && a.transport == nil)
+        #expect(v.etapesSansJour.map(\.titre) == ["A"])
+        // Glissée sur un jour, une sous-étape devient une étape ordinaire.
+        v.deplacer(b, vers: v.debut, avant: nil)
+        #expect(b.parentUID == nil)
+        #expect(!circuit.aDesSousEtapes)
+    }
+
+    @Test func dupliquerUneEtapeCopieSesSousEtapes() {
+        let v = voyage()
+        let circuit = etape("Circuit", jour: v.debut, dans: v)
+        let a = circuit.ajouterSousEtape(dans: contexte)
+        let b = circuit.ajouterSousEtape(dans: contexte)
+        a.titre = "A"; b.titre = "B"
+        var t = Transport(); t.mode = .pied
+        a.transport = t
+        let copie = circuit.copie(dans: contexte)
+        #expect(copie.sousEtapes.map(\.titre) == ["A", "B"])
+        #expect(copie.sousEtapes.first?.transport?.mode == .pied)
+        #expect(circuit.sousEtapes.count == 2)
+        // Une sous-étape dupliquée reste dans son étape, juste après l'originale.
+        _ = a.copie(dans: contexte)
+        #expect(circuit.sousEtapes.map(\.titre) == ["A", "A", "B"])
+    }
+
+    @Test func budgetDUneSousEtapeAuJourDeSonEtape() {
+        let v = voyage()
+        membre("Alex", tarif: .adulte, dans: v)
+        let circuit = etape("Circuit", jour: v.debut, dans: v)
+        let a = circuit.ajouterSousEtape(dans: contexte)
+        a.titre = "Musée"
+        a.prixAdulte = 15
+        let budget = v.calculerBudget()
+        #expect(budget.elements.total(pour: v.membresTries) == 15)
+        #expect(budget.etapesSansJour == 0)
+    }
+
+    // MARK: Album photo
+
+    /// Une grande photo (4 032 × 3 024, comme un iPhone), bruitée pour peser lourd, avec sa date de prise de vue.
+    private func grandePhoto(prise: String) -> Data {
+        let largeur = 4032, hauteur = 3024
+        var pixels = [UInt8](repeating: 0, count: largeur * hauteur * 4)
+        var graine: UInt32 = 12345
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            graine = graine &* 1_664_525 &+ 1_013_904_223
+            pixels[i] = UInt8(truncatingIfNeeded: graine >> 24); pixels[i + 1] = UInt8(truncatingIfNeeded: graine >> 16)
+            pixels[i + 2] = UInt8(truncatingIfNeeded: graine >> 8); pixels[i + 3] = 255
+        }
+        let contexteImage = CGContext(data: &pixels, width: largeur, height: hauteur, bitsPerComponent: 8, bytesPerRow: largeur * 4,
+                                      space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        let image = contexteImage.makeImage()!
+        let sortie = NSMutableData()
+        let destination = CGImageDestinationCreateWithData(sortie, "public.jpeg" as CFString, 1, nil)!
+        CGImageDestinationAddImage(destination, image, [
+            kCGImageDestinationLossyCompressionQuality: 0.95,
+            kCGImagePropertyExifDictionary: [kCGImagePropertyExifDateTimeOriginal: prise],
+        ] as CFDictionary)
+        CGImageDestinationFinalize(destination)
+        return sortie as Data
+    }
+
+    @Test func unePhotoDAlbumEstReduite() throws {
+        let originale = grandePhoto(prise: "2026:10:23 14:05:00")
+        let prete = try #require(PhotoAlbum.preparer(originale))
+        let source = try #require(CGImageSourceCreateWithData(prete.donnees as CFData, nil))
+        let proprietes = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        let largeur = try #require(proprietes[kCGImagePropertyPixelWidth] as? Int)
+        let hauteur = try #require(proprietes[kCGImagePropertyPixelHeight] as? Int)
+        // Le grand côté passe à 2 048 pixels, en gardant les proportions.
+        #expect(largeur == 2048)
+        #expect(hauteur == 1536)
+        #expect(prete.donnees.count < originale.count / 3)
+        var composants = DateComponents(); composants.year = 2026; composants.month = 10; composants.day = 23; composants.hour = 14; composants.minute = 5
+        #expect(prete.priseLe == Calendar.current.date(from: composants))
+        #expect(PhotoAlbum.preparer(Data("pas une image".utf8)) == nil)
+    }
+
+    @Test func lAlbumEstAPartDesPhotosDuLieuEtNeSuitPasUneCopie() throws {
+        let v = voyage()
+        let musee = etape("Musée", jour: v.debut, dans: v)
+        let duLieu = Document(nom: "Musée – photo 1", extensionFichier: "jpg", donnees: Data([1]))
+        duLieu.etape = musee; duLieu.voyage = v; contexte.insert(duLieu)
+        let prete = try #require(PhotoAlbum.preparer(grandePhoto(prise: "2026:10:23 10:00:00")))
+        musee.ajouterAuAlbum(prete, dans: contexte)
+        let sous = musee.ajouterSousEtape(dans: contexte)
+        sous.ajouterAuAlbum(prete, dans: contexte)
+        #expect(musee.album.count == 1)
+        #expect(musee.photosDuLieu.map(\.nom) == ["Musée – photo 1"])
+        #expect(sous.album.count == 1)
+        // Une photo d'album n'est pas un document du voyage à vérifier (passeport…).
+        #expect(musee.album.first?.membreUID == nil)
+        let copie = musee.copie(dans: contexte)
+        #expect(copie.album.isEmpty)
+        #expect(copie.photosDuLieu.count == 1)
+    }
+
+    // MARK: Journal des modifications
+
+    @Test func leJournalNoteQuiAjouteModifieEtSupprime() throws {
+        let v = voyage()
+        let moi = membre("Léa", dans: v)
+        MoiVoyage.ecrire(moi.uid, v)
+        defer { UserDefaults.standard.removeObject(forKey: MoiVoyage.cle(v)) }
+        let journal = JournalModifications(contexte: contexte)
+        var horloge = Date(timeIntervalSince1970: 1_800_000_000)
+        journal.maintenant = { horloge }
+        journal.accepterTout()
+
+        // Ajout puis retouches dans la foulée : une seule ligne « ajout ».
+        let etape = Etape(titre: "Louvre", jour: v.debut)
+        etape.voyage = v; contexte.insert(etape)
+        journal.noter()
+        etape.notes = "Billets pris"
+        horloge += 60
+        journal.noter()
+        var lignes = v.journal.sorted { $0.date < $1.date }
+        #expect(lignes.count == 1)
+        #expect(lignes.first?.action == .ajout)
+        #expect(lignes.first?.auteurNom == "Léa")
+        #expect(lignes.first?.phrase == "a ajouté l'étape « Louvre »")
+
+        // Plus tard, une modification : nouvelle ligne avec les champs changés.
+        horloge += 3600
+        etape.titre = "Musée du Louvre"
+        etape.duree = 5400
+        journal.noter()
+        lignes = v.journal.sorted { $0.date < $1.date }
+        #expect(lignes.count == 2)
+        #expect(lignes.last?.action == .modification)
+        #expect(lignes.last?.champsEnClair == "Durée, Titre", "\(lignes.last?.champs ?? [])")
+
+        // Ce qui arrive d'iCloud n'est pas noté à mon nom.
+        horloge += 3600
+        etape.heure = horloge
+        journal.accepter(noms: [Codec.nom(.etape, etape.uid)])
+        journal.noter()
+        #expect(v.journal.count == 2)
+
+        // Suppression : une ligne.
+        horloge += 3600
+        contexte.delete(etape)
+        journal.noter()
+        #expect(v.journal.count == 3)
+        #expect(v.journal.contains { $0.action == .suppression && $0.libelle == "Musée du Louvre" })
+    }
+
+    @Test func uneEtapeAjouteePuisRetireeAussitotNeLaissePasDeTrace() throws {
+        let v = voyage()
+        let journal = JournalModifications(contexte: contexte)
+        journal.accepterTout()
+        let etape = Etape(titre: "", jour: v.debut)
+        etape.voyage = v; contexte.insert(etape)
+        journal.noter()
+        #expect(v.journal.count == 1)
+        contexte.delete(etape)
+        journal.noter()
+        try contexte.save()
+        #expect(v.journal.isEmpty)
+    }
+
+    @Test func lesPhotosAjouteesEnsembleFontUneLigne() throws {
+        let v = voyage()
+        let etape = Etape(titre: "Montmartre", jour: v.debut)
+        etape.voyage = v; contexte.insert(etape)
+        let journal = JournalModifications(contexte: contexte)
+        journal.accepterTout()
+        let prete = try #require(PhotoAlbum.preparer(grandePhoto(prise: "2026:10:23 10:00:00")))
+        for _ in 0..<3 { _ = etape.ajouterAuAlbum(prete, dans: contexte) }
+        journal.noter()
+        #expect(v.journal.count == 1)
+        #expect(v.journal.first?.nombre == 3)
+        #expect(v.journal.first?.phrase == "a ajouté 3 photos à l'album de « Montmartre »")
+    }
+
+    // MARK: Documents importants
+
+    @Test func unDocumentImportantSuitLaPersonneDansSesVoyages() throws {
+        let paris = voyage(), rome = voyage(), autre = voyage()
+        let leaParis = membre("Léa", dans: paris)
+        leaParis.email = "lea@exemple.fr"
+        let leaRome = membre("Léa", dans: rome)
+        leaRome.email = "LEA@exemple.fr "
+        membre("Hugo", dans: autre)
+        let passeport = Document(nom: "Passeport Léa", extensionFichier: "pdf", donnees: Data([1, 2, 3]))
+        passeport.membreUID = leaParis.uid; passeport.type = .passeport; passeport.voyage = paris
+        contexte.insert(passeport)
+
+        DocumentsImportants.marquer(passeport, dans: contexte)
+        let copie = try #require(rome.documents.first)
+        #expect(copie.membreUID == leaRome.uid)
+        #expect(copie.importantUID == passeport.importantUID)
+        #expect(copie.type == .passeport)
+        #expect(autre.documents.isEmpty)
+        // Rien en double si on recommence.
+        #expect(DocumentsImportants.repandre(dans: contexte) == 0)
+
+        // Un nouveau voyage de Léa reçoit le document.
+        let lisbonne = voyage()
+        membre("Léa", dans: lisbonne).email = "lea@exemple.fr"
+        #expect(DocumentsImportants.repandre(dans: contexte) == 1)
+        #expect(lisbonne.documents.count == 1)
+
+        // Une modification passe sur toutes les copies.
+        passeport.expireLe = Date(timeIntervalSince1970: 2_000_000_000)
+        DocumentsImportants.reporter(passeport, dans: contexte)
+        #expect(copie.expireLe == passeport.expireLe)
+
+        // Plus important : il reste ici, les copies partent.
+        DocumentsImportants.retirer(passeport, dans: contexte)
+        try contexte.save()
+        #expect(passeport.importantUID == nil)
+        #expect(paris.documents.count == 1)
+        #expect(rome.documents.isEmpty && lisbonne.documents.isEmpty)
+    }
+
+    @Test func laVignetteDUnPDFEstSaPremierePage() throws {
+        let donnees = NSMutableData()
+        var boite = CGRect(x: 0, y: 0, width: 600, height: 800)
+        let consommateur = try #require(CGDataConsumer(data: donnees as CFMutableData))
+        let ctx = try #require(CGContext(consumer: consommateur, mediaBox: &boite, nil))
+        ctx.beginPDFPage(nil); ctx.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1)); ctx.fill(boite); ctx.endPDFPage(); ctx.closePDF()
+        let image = try #require(VignettesDocuments.image(de: donnees as Data, extensionFichier: "PDF", cle: "essai-pdf", cote: 200))
+        #expect(image.height == 200)
+        #expect(image.width == 150)
     }
 }

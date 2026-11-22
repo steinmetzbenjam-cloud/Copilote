@@ -21,6 +21,7 @@ final class Commentaire {
 }
 
 /// Ce que quelqu'un pense d'une étape : l'envie qu'il en a.
+/// On ne la choisit plus ni ne l'affiche ; le champ reste pour lire les avis déjà enregistrés et synchronisés.
 enum EnvieEtape: String, Codable, CaseIterable, Identifiable {
     case incontournable, neutre, pasEnvie
 
@@ -73,7 +74,8 @@ final class AvisEtape {
 
     static func identifiant(etapeUID: String, auteurUID: String) -> String { "\(etapeUID)_\(auteurUID)" }
 
-    var estVide: Bool { etoiles == 0 && envie == .neutre && commentaire.trimmingCharacters(in: .whitespaces).isEmpty }
+    /// Sans note ni commentaire (l'envie, qu'on ne choisit plus, ne compte pas).
+    var estVide: Bool { etoiles == 0 && commentaire.trimmingCharacters(in: .whitespaces).isEmpty }
 }
 
 extension Voyage {
@@ -90,13 +92,10 @@ extension Voyage {
     }
 
     /// Synthèse des avis du groupe sur une étape.
-    func synthese(de etape: Etape) -> (moyenne: Double?, incontournables: Int, refus: Int, total: Int) {
+    func synthese(de etape: Etape) -> (moyenne: Double?, total: Int) {
         let tous = avis(de: etape)
         let notes = tous.map(\.etoiles).filter { $0 > 0 }
-        return (notes.isEmpty ? nil : Double(notes.reduce(0, +)) / Double(notes.count),
-                tous.filter { $0.envie == .incontournable }.count,
-                tous.filter { $0.envie == .pasEnvie }.count,
-                tous.count)
+        return (notes.isEmpty ? nil : Double(notes.reduce(0, +)) / Double(notes.count), tous.count)
     }
 }
 

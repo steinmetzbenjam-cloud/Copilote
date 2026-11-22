@@ -11,16 +11,13 @@ struct PastilleAvis: View {
         let s = voyage.synthese(de: etape)
         Button(action: action) {
             HStack(spacing: 6) {
-                if s.incontournables > 0 {
-                    Label("\(s.incontournables)", systemImage: EnvieEtape.incontournable.symbole).foregroundStyle(EnvieEtape.incontournable.couleur)
-                }
-                if s.refus > 0 {
-                    Label("\(s.refus)", systemImage: EnvieEtape.pasEnvie.symbole).foregroundStyle(EnvieEtape.pasEnvie.couleur)
-                }
                 if let moyenne = s.moyenne {
                     Label(moyenne.formatted(.number.precision(.fractionLength(1))), systemImage: "star.fill").foregroundStyle(.orange)
                 } else if s.total == 0 {
                     Image(systemName: "star").foregroundStyle(.secondary)
+                } else {
+                    // Des commentaires, mais pas encore de note.
+                    Label("\(s.total)", systemImage: "text.bubble.fill").foregroundStyle(.secondary)
                 }
             }
             .labelStyle(.titleAndIcon)
@@ -71,10 +68,6 @@ struct ListeAvisEtape: View {
                         Text("a noté \(avis.etoiles)/5").font(.caption).foregroundStyle(.secondary)
                     }
                 }
-                if avis.envie != .neutre {
-                    Label(avis.envie.libelle, systemImage: avis.envie.symbole)
-                        .font(.caption.weight(.medium)).foregroundStyle(avis.envie.couleur)
-                }
                 if !avis.commentaire.isEmpty {
                     Text(avis.commentaire)
                         .font(.subheadline)
@@ -88,7 +81,7 @@ struct ListeAvisEtape: View {
     }
 }
 
-/// Dans la fiche d'une étape : mon avis (étoiles, envie, un commentaire) puis ceux des autres voyageurs.
+/// Dans la fiche d'une étape : mon avis (étoiles, un commentaire) puis ceux des autres voyageurs.
 struct AvisEtapeSection: View {
     @Bindable var voyage: Voyage
     let etape: Etape
@@ -164,23 +157,6 @@ struct AvisEtapeSection: View {
             choisirEtoiles(sens == .increment ? min(n + 1, 5) : max(n - 1, 0), basculer: false)
         }
 
-        // Mon envie : de « incontournable » à « pas envie ».
-        HStack(spacing: 6) {
-            ForEach(EnvieEtape.allCases) { envie in
-                let choisi = (monAvis?.envie ?? .neutre) == envie
-                Button { choisirEnvie(envie) } label: {
-                    Label(envie.libelle, systemImage: envie.symbole)
-                        .font(.caption.weight(.medium))
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
-                        .foregroundStyle(choisi ? Color.white : envie.couleur)
-                        .background(choisi ? envie.couleur : envie.couleur.opacity(0.12), in: Capsule())
-                }
-                .buttonStyle(.plain)
-            }
-        }
-
         TextField("Mon commentaire (facultatif)", text: $commentaire, axis: .vertical)
             .lineLimit(2...5)
             .textFieldStyle(.plain)
@@ -205,9 +181,5 @@ struct AvisEtapeSection: View {
 
     private func choisirEtoiles(_ rang: Int, basculer: Bool = true) {
         enregistrer { $0.etoiles = (basculer && $0.etoiles == rang) ? 0 : rang }
-    }
-
-    private func choisirEnvie(_ envie: EnvieEtape) {
-        enregistrer { $0.envie = envie }
     }
 }

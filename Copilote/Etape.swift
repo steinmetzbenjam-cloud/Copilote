@@ -36,6 +36,9 @@ enum CategorieEtape: String, Codable, CaseIterable, Identifiable {
 }
 
 extension CategorieEtape {
+    /// Catégories qu'on ne choisit plus (elles restent lisibles pour les étapes qui les ont déjà).
+    static let retirees: Set<CategorieEtape> = [.transport, .nature]
+
     /// Texte court d'une durée en minutes : « 45 min », « 2 h », « 1 h 30 ».
     static func texteDuree(_ minutes: Double) -> String {
         let m = Int(minutes.rounded())
@@ -45,10 +48,24 @@ extension CategorieEtape {
 }
 
 extension Etape {
-    /// Une copie de l'étape (lieu, horaires, durée, prix, notes, infos et photos), placée juste après elle dans son jour.
+    /// Une copie de l'étape (lieu, horaires, durée, prix, notes, infos et photos du lieu, sans l'album), placée juste après elle dans son jour.
     /// Le transport vers l'étape suivante n'est pas copié. Un hébergement de nuit est copié dans la même nuit, après les autres.
+    /// Ses sous-étapes sont copiées avec elle ; une sous-étape est copiée juste après elle, dans la même étape.
     func copie(dans contexte: ModelContext) -> Etape {
         let c = nouvelleCopie(jour: apresJour ? nil : jour, avecHoraires: true, dans: contexte)
+        if let parente = etapeParente {
+            // La sous-étape qui suit l'originale, cherchée avant que la copie ne rejoigne la liste.
+            let suivante = parente.sousEtapes.drop { $0 !== self }.dropFirst().first
+            c.parentUID = parente.uid
+            parente.ranger(c, avant: suivante)
+            return c
+        }
+        for s in sousEtapes {
+            let cs = s.nouvelleCopie(jour: nil, avecHoraires: true, dans: contexte)
+            cs.parentUID = c.uid
+            cs.ordre = s.ordre
+            cs.transport = s.transport
+        }
         if let voyage {
             if apresJour, let nuit = jour {
                 voyage.placerEntreJours(c, apres: nuit)
@@ -86,7 +103,8 @@ extension Etape {
         c.paysFavori = paysFavori
         c.voyage = voyage
         contexte.insert(c)
-        for photo in photos {
+        // Les photos du lieu suivent la copie ; l'album reste à l'étape d'origine.
+        for photo in photosDuLieu {
             let p = Document(nom: photo.nom, extensionFichier: photo.extensionFichier, donnees: photo.donnees)
             p.voyage = voyage
             p.etape = c
@@ -124,7 +142,6 @@ extension CategorieEtape {
         switch c {
         case .restaurant?, .cafe?, .bakery?, .brewery?, .winery?, .foodMarket?: self = .repas
         case .museum?: self = .musee
-        case .park?, .nationalPark?, .beach?: self = .nature
         case .hotel?, .campground?: self = .hebergement
         case .amusementPark?, .aquarium?, .zoo?, .stadium?, .theater?, .movieTheater?, .nightlife?, .marina?, .fitnessCenter?: self = .activite
         default: self = .visite
@@ -185,6 +202,9 @@ final class Etape {
     /// Étape favorite : code ISO de son pays (FR, JP…). Partagé avec le voyage : tous ses voyageurs voient le cœur,
     /// et l'étape est proposée dans leurs prochains voyages dans ce pays. nil : pas favorite pour le voyage.
     var paysFavori: String?
+    /// Sous-étape : uid de l'étape qui la contient (les points d'un circuit, d'une visite…). Elle n'a pas de jour à elle :
+    /// elle suit son étape, et n'apparaît sur la carte que quand on déplie celle-ci. nil : étape ordinaire.
+    var parentUID: String?
     var creeLe: Date
     var uid: String = ""
     /// Transport vers l'étape suivante, en JSON (voir Transport).
@@ -209,7 +229,7 @@ final class Etape {
 
 extension Etape {
     var aDesInfosDeLieu: Bool {
-        resume != nil || horaires != nil || photoURL != nil || !photos.isEmpty || noteGoogle != nil || noteTripadvisor != nil || siteWeb != nil
+        resume != nil || horaires != nil || photoURL != nil || !photosDuLieu.isEmpty || noteGoogle != nil || noteTripadvisor != nil || siteWeb != nil
     }
 
     /// Reprend dans l'étape ce que l'on sait d'un lieu proposé : nom du lieu proposé (qui remplace le titre saisi), adresse, position, catégorie, et tout le reste dans les notes.
@@ -269,5 +289,85 @@ extension Etape {
     var coordonnee: CLLocationCoordinate2D? {
         guard let latitude, let longitude else { return nil }
         return CLLocationCoordinate2D(latitude: latitude, longitude: longitude)
+    }
+}
+
+// MARK: Sous-étapes
+
+extension Etape {
+    /// Préfixe du texte glissé pour déplacer une étape (liste des jours, étapes à placer, sous-étapes).
+    static let prefixeGlisser = "copilote-etape:"
+
+    var estSousEtape: Bool { parentUID != nil }
+
+    /// L'étape qui contient cette sous-étape (nil si elle a disparu : la sous-étape repart alors dans « À placer »).
+    var etapeParente: Etape? {
+        guard let parentUID, let voyage else { return nil }
+        return voyage.etapes.first { $0.uid == parentUID }
+    }
+
+    /// Les sous-étapes, dans l'ordre choisi. Une sous-étape n'en a pas : un seul niveau.
+    var sousEtapes: [Etape] {
+        guard parentUID == nil, let voyage else { return [] }
+        return voyage.etapes.filter { $0.parentUID == uid }.sorted { ($0.ordre, $0.creeLe) < ($1.ordre, $1.creeLe) }
+    }
+
+    var aDesSousEtapes: Bool {
+        guard parentUID == nil, let voyage else { return false }
+        return voyage.etapes.contains { $0.parentUID == uid }
+    }
+
+    /// Le jour de l'étape ; pour une sous-étape, celui de son étape.
+    var jourEffectif: Date? { jour ?? etapeParente?.jour }
+
+    /// Une étape créée puis laissée vide (ni nom, ni lieu, ni sous-étape) : elle est retirée à la fermeture.
+    var sansContenu: Bool {
+        titre.trimmingCharacters(in: .whitespaces).isEmpty && lieu.isEmpty && !aDesSousEtapes
+    }
+
+    /// Crée une sous-étape vide, à la fin de la liste.
+    func ajouterSousEtape(dans contexte: ModelContext) -> Etape {
+        let s = Etape(titre: "", jour: nil)
+        s.voyage = voyage
+        contexte.insert(s)
+        s.parentUID = uid
+        ranger(s, avant: nil)
+        return s
+    }
+
+    /// Vrai si `etape` peut devenir une sous-étape de celle-ci : une étape à placer (sans sous-étapes), ou une des siennes qu'on range.
+    func peutRecevoir(_ etape: Etape) -> Bool {
+        guard etape !== self, parentUID == nil else { return false }
+        if etape.parentUID == uid { return true }
+        return etape.jour == nil && etape.parentUID == nil && !etape.aDesSousEtapes
+    }
+
+    /// Fait de `etape` une sous-étape, juste avant `cible` (à la fin sans cible), et renumérote les sous-étapes.
+    @discardableResult
+    func rattacher(_ etape: Etape, avant cible: Etape?) -> Bool {
+        guard peutRecevoir(etape), cible !== etape else { return false }
+        etape.parentUID = uid
+        etape.jour = nil
+        etape.apresJour = false
+        ranger(etape, avant: cible)
+        return true
+    }
+
+    /// Place la sous-étape juste avant `cible` (à la fin sans cible) et renumérote.
+    fileprivate func ranger(_ etape: Etape, avant cible: Etape?) {
+        var liste = sousEtapes.filter { $0 !== etape }
+        let index = cible.flatMap { c in liste.firstIndex { $0 === c } } ?? liste.count
+        liste.insert(etape, at: index)
+        for (i, e) in liste.enumerated() { e.ordre = Double(i) }
+    }
+
+    /// La sous-étape redevient une étape à placer, sans horaires ni transport.
+    func detacherDeSonEtape() {
+        guard parentUID != nil else { return }
+        parentUID = nil
+        transport = nil
+        heure = nil
+        heureFin = nil
+        if let voyage { ordre = (voyage.etapesSansJour.filter { $0 !== self }.map(\.ordre).max() ?? -1) + 1 }
     }
 }

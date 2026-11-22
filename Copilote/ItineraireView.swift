@@ -8,6 +8,10 @@ struct ItineraireView: View {
     @Environment(\.modelContext) private var contexte
     /// Étape dont le détail est ouvert dans un cadre posé sur la colonne des jours ; la carte zoome dessus.
     @State private var etapeEnEdition: Etape?
+    /// Sous-étape ouverte dans la fiche de son étape : la carte se cadre sur elle.
+    @State private var sousEtapeEnEdition: Etape?
+    /// Sous-étape touchée sur la carte : la fiche de son étape s'ouvre directement sur elle.
+    @State private var sousEtapeDemandee: Etape?
     @State private var nuitEnAjout: NuitAjout?
     @State private var transportDeNuitEnEdition: NuitTransport?
     /// Transport d'aller ou de retour ouvert depuis son pavé, en tête du premier jour ou en bas du dernier.
@@ -26,14 +30,11 @@ struct ItineraireView: View {
     @State private var jourSelectionne: Date?
     /// Étape dont on affiche l'explication de l'avertissement d'horaire.
     @State private var avertissementOuvert: String?
-    @State private var discussionOuverte = false
     /// Fenêtre des votes, ouverte depuis le rond « Votes » de la carte.
     @State private var votesOuverts = false
     @State private var profilOuvert = false
-    /// Dernier moment où la discussion était ouverte : au-delà, les messages des autres sont « nouveaux ».
-    @State private var discussionVueLe = Date.now
     @State private var membreAffiche: Membre?
-    /// Écran large : la discussion devient un cadre sur la carte au lieu d'une feuille.
+    /// Écran large (iPad, Mac) : plus de place pour les notes d'un jour.
     @State private var ecranLarge = false
     /// Hauteur du contenu de « Étapes à placer » (iPad), pour que son défilement ne couvre pas la carte.
     @State private var hauteurEtapesAPlacer: CGFloat = .infinity
@@ -49,6 +50,12 @@ struct ItineraireView: View {
     @State private var hautNotes: CGFloat = 0
     /// Clavier affiché (iPhone) : le détail de l'étape ouverte monte alors par-dessus la carte.
     @State private var clavierOuvert = false
+    /// Partage entre la carte et la liste, réglé avec la poignée et retenu d'une ouverture à l'autre :
+    /// iPhone, part de la hauteur donnée à la carte ; iPad et Mac, largeur du panneau des jours.
+    @AppStorage("itineraireHauteurCarte") private var partCarte = ItineraireView.partCarteParDefaut
+    @AppStorage("itineraireLargeurPanneau") private var largeurPanneauRetenue = Double(ItineraireView.largeurPanneauParDefaut)
+    /// Poignée en cours de déplacement : taille de départ et décalage du doigt. La carte ne se recadre qu'au lâcher.
+    @State private var poignee: (depart: CGFloat, decalage: CGFloat)?
 
     private static var estUnIPhone: Bool {
         #if os(iOS)
@@ -81,32 +88,30 @@ struct ItineraireView: View {
             let panneauLateral = geo.size.width >= 700
             if panneauLateral {
                 // iPad, Mac : la carte en fond, les jours empilés dans un panneau à gauche.
+                let largeurPanneau = largeurDuPanneau(dans: geo.size.width)
                 ZStack(alignment: .leading) {
-                    fondDeCarte(margeGauche: Self.largeurPanneau)
+                    fondDeCarte(margeGauche: largeurPanneau)
                     DefilementMemorise(cle: cleDefilement(large: true)) { listeDesJours(avecEtapesAPlacer: false).padding(12) }
                         .id(cleDefilement(large: true))
-                        .frame(width: Self.largeurPanneau)
+                        .frame(width: largeurPanneau)
                         .scrollIndicators(.hidden)
                         .overlay { cadreEtape.padding(12) }
+                        // La poignée, sur le bord droit du panneau : on la tire pour élargir la liste ou la carte.
+                        .overlay(alignment: .trailing) { poigneeVerticale(largeurEcran: geo.size.width).offset(x: 9) }
                     // Les notes du jour : un post-it à droite de sa carte.
                     if let jour = notesOuvertes, let numero = voyage.jours.firstIndex(where: { cal.isDate($0, inSameDayAs: jour) }) {
                         cadreNotes(jour, numero: numero + 1)
                             .frame(width: 380)
-                            .padding(.leading, Self.largeurPanneau + 4)
+                            .padding(.leading, largeurPanneau + 4)
                             .padding(.top, min(max(hautNotes, 12), max(geo.size.height - 470, 12)))
                             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
                     }
-                    // À droite : le bouton des messages, la discussion puis les étapes à placer. Seuls les cadres captent le toucher.
+                    // À droite : les ronds (sur Mac) puis les étapes à placer. Seuls les cadres captent le toucher.
                     VStack(alignment: .trailing, spacing: 0) {
                         // Sur Mac, les ronds en haut à droite de la carte (sur iPhone et iPad, ils sont dans la barre du haut).
                         #if os(macOS)
                         boutonsRonds.padding(.top, 6).padding(.trailing, 10)
                         #endif
-                        if discussionOuverte {
-                            CommentairesView(voyage: voyage, enCadre: true, ouverte: $discussionOuverte)
-                                .frame(width: 320, height: min(440, max(260, geo.size.height * 0.55)))
-                                .padding(12)
-                        }
                         if etapesAPlacerOuvertes {
                             // Le défilement se limite à la hauteur du contenu : en dessous, le doigt agit sur la carte.
                             ScrollView {
@@ -126,7 +131,7 @@ struct ItineraireView: View {
                 // une ligne droite. Il recouvre le bas de la carte de la hauteur de l'arrondi.
                 let arrondi = UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 0, bottomTrailingRadius: 0, topTrailingRadius: 16,
                                                      style: .continuous)
-                let hauteurCarte = max(220, geo.size.height * 0.36)
+                let hauteurCarte = hauteurDeLaCarte(dans: geo.size.height)
                 // Clavier ouvert sur une étape (iPhone) : son cadre monte par-dessus le plan et prend tout l'écran au-dessus du clavier.
                 // Seul le cadre s'agrandit, sans changer de place dans la hiérarchie : le champ en cours garde le clavier.
                 let etapePleinEcran = clavierOuvert && etapeEnEdition != nil && Self.estUnIPhone
@@ -134,6 +139,8 @@ struct ItineraireView: View {
                     fondDeCarte(margeGauche: 0).frame(height: hauteurCarte + 16)
                     DefilementMemorise(cle: cleDefilement(large: false)) { listeDesJours(avecEtapesAPlacer: true).padding(12) }
                         .id(cleDefilement(large: false))
+                        // La poignée, en haut du panneau des jours : on la tire pour agrandir la carte ou la liste.
+                        .safeAreaInset(edge: .top, spacing: 0) { poigneeHorizontale(hauteurEcran: geo.size.height) }
                         .background(FondDePage.couleur)
                         .clipShape(arrondi)
                         .shadow(color: .black.opacity(0.12), radius: 6, y: -2)
@@ -177,8 +184,7 @@ struct ItineraireView: View {
             Text(d.perdus.count == 1 ? "Ce déplacement efface le transport prévu après « \(d.perdus[0].titre) »." : "Ce déplacement efface \(d.perdus.count) transports prévus entre des étapes.")
         }
         .toolbar {
-            // Sur Mac : les voyageurs (toucher les ronds ouvre mon profil), puis le bouton de discussion à leur droite.
-            // Sur iPhone et iPad, la barre reste dégagée : les messages s'ouvrent avec le rond de la carte.
+            // Sur Mac : les voyageurs (toucher les ronds ouvre mon profil).
             #if os(iOS)
             // Sur iPhone et iPad : les ronds dans la barre du haut, au niveau du changement de vue.
             if #available(iOS 26.0, *) {
@@ -188,35 +194,13 @@ struct ItineraireView: View {
             }
             #else
             ToolbarItem(placement: .primaryAction) {
-                HStack(spacing: 12) {
-                    GroupeAvatars(voyage: voyage, onMoi: { profilOuvert = true }, onAutre: { membreAffiche = $0 })
-                    // Préparation seulement : on échange sur le déroulé avec les autres voyageurs.
-                    if voyage.mode == .preparation {
-                        // Icône seule : la barre doit tenir sur un petit écran.
-                        Button { discussionOuverte.toggle() } label: {
-                            Image(systemName: "bubble.left.and.bubble.right")
-                                .accessibilityLabel("Discussion")
-                        }
-                        // Point rouge : un message d'un autre est arrivé et la discussion n'est pas ouverte.
-                        .overlay(alignment: .topTrailing) {
-                            if messagesNonLus {
-                                Circle().fill(.red).frame(width: 10, height: 10)
-                                    .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
-                                    .offset(x: 5, y: -4)
-                                    .accessibilityLabel("Nouveaux messages")
-                            }
-                        }
-                    }
-                }
+                GroupeAvatars(voyage: voyage, onMoi: { profilOuvert = true }, onAutre: { membreAffiche = $0 })
             }
             #endif
         }
-        .onAppear { chargerDiscussionVue() }
         // Les fonds suivent les prévisions : une mise à jour qui change le temps d'un jour change son fond.
         .task(id: voyage.cleMeteo) { await chargerMeteo() }
         .onChange(of: phase) { _, p in if p == .active { Task { await chargerMeteo() } } }
-        .onChange(of: discussionOuverte) { marquerDiscussionVue() }
-        .onChange(of: voyage.commentaires.count) { if discussionOuverte { marquerDiscussionVue() } }
         .sheet(isPresented: $profilOuvert) { ProfilEditView() }
         .sheet(isPresented: $votesOuverts) {
             NavigationStack {
@@ -229,7 +213,6 @@ struct ItineraireView: View {
             #endif
         }
         .sheet(item: $membreAffiche) { ProfilMembreView(membre: $0) }
-        .sheet(isPresented: Binding(get: { discussionOuverte && !ecranLarge }, set: { discussionOuverte = $0 })) { CommentairesView(voyage: voyage) }
         .sheet(item: $transportDeNuitEnEdition) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
         .sheet(item: $nuitEnAjout, onDismiss: { nettoyer(sauf: etapeEnEdition) }) { NuitAjoutView(voyage: voyage, nuit: $0) }
         .sheet(item: $extremiteEnEdition) { FicheExtremite(voyage: voyage, extremite: $0) }
@@ -238,7 +221,93 @@ struct ItineraireView: View {
         }
     }
 
-    private static let largeurPanneau: CGFloat = 404
+    // MARK: Poignée entre la carte et la liste
+
+    private static let largeurPanneauParDefaut: CGFloat = 404
+    private static let partCarteParDefaut = 0.36
+
+    /// iPad, Mac : la largeur retenue, ou celle qu'on est en train de tirer, sans écraser la carte ni la liste.
+    private func largeurDuPanneau(dans largeurEcran: CGFloat) -> CGFloat {
+        let voulue = poignee.map { $0.depart + $0.decalage } ?? CGFloat(largeurPanneauRetenue)
+        return Self.borner(voulue, 320, max(320, largeurEcran - 280))
+    }
+
+    /// iPhone : la hauteur de la carte, retenue en part de l'écran ou en cours de réglage, en gardant de la place pour la liste.
+    private func hauteurDeLaCarte(dans hauteurEcran: CGFloat) -> CGFloat {
+        let voulue = poignee.map { $0.depart + $0.decalage } ?? hauteurEcran * CGFloat(partCarte)
+        return Self.borner(voulue, 120, max(120, hauteurEcran - 180))
+    }
+
+    private static func borner(_ valeur: CGFloat, _ minimum: CGFloat, _ maximum: CGFloat) -> CGFloat {
+        min(max(valeur, minimum), maximum)
+    }
+
+    /// Le geste commun aux deux poignées. `taille` donne la taille actuelle au début du geste ; `fin` retient la taille lâchée.
+    private func gestePoignee(axe: Axis, taille: @escaping () -> CGFloat, fin: @escaping (CGFloat) -> Void) -> some Gesture {
+        // Repère global : la poignée bouge avec le doigt, un repère local fausserait le décalage.
+        DragGesture(minimumDistance: 2, coordinateSpace: .global)
+            .onChanged { geste in
+                let decalage = axe == .vertical ? geste.translation.height : geste.translation.width
+                if poignee == nil { poignee = (taille(), 0) }
+                poignee?.decalage = decalage
+            }
+            .onEnded { _ in
+                fin(taille())
+                poignee = nil
+            }
+    }
+
+    /// iPhone : la barre en haut du panneau des jours. Tirer pour changer la hauteur de la carte ; toucher deux fois pour revenir au réglage d'origine.
+    private func poigneeHorizontale(hauteurEcran: CGFloat) -> some View {
+        Capsule()
+            .fill(Color.secondary.opacity(poignee == nil ? 0.45 : 0.8))
+            .frame(width: 40, height: 5)
+            .frame(maxWidth: .infinity)
+            .frame(height: 18)
+            .padding(.top, 2)
+            .background(FondDePage.couleur)
+            .contentShape(Rectangle())
+            .gesture(gestePoignee(axe: .vertical, taille: { hauteurDeLaCarte(dans: hauteurEcran) },
+                                  fin: { partCarte = Double($0 / max(hauteurEcran, 1)) }))
+            .onTapGesture(count: 2) { withAnimation(.snappy) { partCarte = Self.partCarteParDefaut } }
+            .accessibilityElement()
+            .accessibilityLabel("Taille de la carte")
+            .accessibilityValue("\(Int((hauteurDeLaCarte(dans: hauteurEcran) / max(hauteurEcran, 1) * 100).rounded())) %")
+            .accessibilityAdjustableAction { sens in
+                let pas: CGFloat = sens == .increment ? 0.08 : -0.08
+                let part = hauteurDeLaCarte(dans: hauteurEcran) / max(hauteurEcran, 1) + pas
+                withAnimation(.snappy) { partCarte = Double(Self.borner(part, 0.15, 0.75)) }
+            }
+    }
+
+    /// iPad, Mac : la poignée sur le bord droit du panneau des jours. Tirer pour changer sa largeur ; toucher deux fois pour revenir au réglage d'origine.
+    private func poigneeVerticale(largeurEcran: CGFloat) -> some View {
+        Capsule()
+            .fill(Color.secondary.opacity(poignee == nil ? 0.55 : 0.9))
+            .frame(width: 5, height: 44)
+            .padding(.vertical, 6).padding(.horizontal, 2)
+            .background(Capsule().fill(.regularMaterial))
+            .shadow(color: .black.opacity(0.15), radius: 3)
+            // Zone de prise plus large que la capsule, sur toute la hauteur.
+            .frame(width: 18)
+            .frame(maxHeight: .infinity)
+            .contentShape(Rectangle())
+            #if os(macOS)
+            .onHover { dessus in
+                if dessus { NSCursor.resizeLeftRight.push() } else { NSCursor.pop() }
+            }
+            #endif
+            .gesture(gestePoignee(axe: .horizontal, taille: { largeurDuPanneau(dans: largeurEcran) },
+                                  fin: { largeurPanneauRetenue = Double($0) }))
+            .onTapGesture(count: 2) { withAnimation(.snappy) { largeurPanneauRetenue = Double(Self.largeurPanneauParDefaut) } }
+            .help("Tirer pour changer la largeur de la liste ; double-clic pour revenir à la largeur d'origine")
+            .accessibilityElement()
+            .accessibilityLabel("Largeur de la liste")
+            .accessibilityAdjustableAction { sens in
+                let pas: CGFloat = sens == .increment ? 40 : -40
+                withAnimation(.snappy) { largeurPanneauRetenue = Double(largeurDuPanneau(dans: largeurEcran) + pas) }
+            }
+    }
 
     // MARK: Messages
 
@@ -251,13 +320,12 @@ struct ItineraireView: View {
         #endif
     }
 
-    /// Les ronds, côte à côte : les votes en cours, les étapes à placer, puis les messages.
+    /// Les ronds, côte à côte : les votes en cours, puis les étapes à placer.
     private var boutonsRonds: some View {
         HStack(spacing: 8) {
             // Un vote en cours : raccourci vers la fenêtre des votes.
             if !voyage.votesOuverts.isEmpty { boutonVotes }
             boutonEtapesAPlacer
-            boutonMessages
         }
     }
 
@@ -323,57 +391,26 @@ struct ItineraireView: View {
         .help(etapesAPlacerOuvertes ? "Fermer les étapes à placer" : "Étapes à placer")
     }
 
-    /// Un rond bien visible à côté des étapes à placer : il ouvre ou ferme les messages entre voyageurs.
-    private var boutonMessages: some View {
-        Button { withAnimation(.snappy) { discussionOuverte.toggle() } } label: {
-            Image(systemName: "bubble.left.and.bubble.right.fill")
-                .font(.system(size: tailleRond * 0.4, weight: .semibold))
-                .foregroundStyle(discussionOuverte ? Color.accentColor : .white)
-                .frame(width: tailleRond, height: tailleRond)
-                .background(Circle().fill(discussionOuverte ? Color.white : Color.accentColor))
-                .overlay(Circle().stroke(.white, lineWidth: 2))
-                .shadow(color: .black.opacity(0.25), radius: 4, y: 2)
-                // Point rouge : un message d'un autre voyageur n'a pas encore été lu.
-                .overlay(alignment: .topTrailing) {
-                    if messagesNonLus {
-                        Circle().fill(.red).frame(width: 13, height: 13)
-                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                            .offset(x: 2, y: -2)
-                    }
-                }
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(discussionOuverte ? "Fermer les messages" : (messagesNonLus ? "Messages, nouveaux messages" : "Messages"))
-        .help(discussionOuverte ? "Fermer les messages" : "Messages entre voyageurs")
-    }
-
-    private var cleDiscussionVue: String { "discussionVue-\(voyage.uid)" }
-
-    private var messagesNonLus: Bool {
-        guard !discussionOuverte else { return false }
-        let moi = MoiVoyage.lire(voyage)
-        return voyage.commentaires.contains { $0.auteurUID != moi && $0.date > discussionVueLe }
-    }
-
-    /// Première fois sur ce voyage : les messages déjà là sont considérés comme lus.
-    private func chargerDiscussionVue() {
-        if let date = UserDefaults.standard.object(forKey: cleDiscussionVue) as? Date {
-            discussionVueLe = date
-        } else {
-            marquerDiscussionVue()
-        }
-    }
-
-    private func marquerDiscussionVue() {
-        discussionVueLe = .now
-        UserDefaults.standard.set(discussionVueLe, forKey: cleDiscussionVue)
-    }
-
     private func fondDeCarte(margeGauche: CGFloat) -> some View {
+        // Une sous-étape pas encore placée sur la carte : la carte reste sur son étape.
         CarteDuVoyage(voyage: voyage, jourFocus: jourSelectionne, masquerAutresJours: false, margeGauche: margeGauche,
-                      etapeFocus: etapeEnEdition, onLieu: voyage.lectureSeule ? nil : { creerEtape(depuis: $0) }) { etape in
+                      cadrageFige: poignee != nil,
+                      etapeFocus: sousEtapeEnEdition.flatMap { $0.coordonnee == nil ? nil : $0 } ?? etapeEnEdition,
+                      onLieu: voyage.lectureSeule ? nil : { creerEtape(depuis: $0) },
+                      ajoutSousEtape: etapeQuiPeutRecevoir.map { parente in
+                          (parente.titre.isEmpty ? "l'étape" : parente.titre, { lieu in
+                              let s = voyage.creerEtape(depuis: lieu, jour: nil, dans: contexte)
+                              withAnimation(.snappy) { _ = parente.rattacher(s, avant: nil) }
+                          })
+                      }) { etape in
             ouvrir(etape)
         }
+    }
+
+    /// L'étape ouverte, quand un lieu touché sur la carte peut devenir une de ses sous-étapes.
+    private var etapeQuiPeutRecevoir: Etape? {
+        guard !voyage.lectureSeule, let e = etapeEnEdition, !e.estSousEtape, sousEtapeEnEdition == nil else { return nil }
+        return e
     }
 
     // MARK: Détail d'une étape
@@ -384,7 +421,11 @@ struct ItineraireView: View {
             EtapeEditView(etape: etape, jours: voyage.jours, onSupprimer: {
                 if etapeEnEdition === etape { etapeEnEdition = nil }
                 contexte.delete(etape)
-            }, onFermer: { fermerEtape() }, onDupliquer: { ouvrir($0) })
+            }, onFermer: { fermerEtape() }, onDupliquer: { ouvrir($0) },
+               sousEtapeAOuvrir: sousEtapeDemandee, onSousEtape: { s in
+                sousEtapeEnEdition = s
+                if s == nil { sousEtapeDemandee = nil }
+            })
             .id(etape.uid)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .modifier(FondDeCarte())
@@ -393,13 +434,25 @@ struct ItineraireView: View {
     }
 
     private func ouvrir(_ etape: Etape) {
+        // Une sous-étape s'ouvre dans la fiche de son étape.
+        if let parente = etape.etapeParente {
+            if etapeEnEdition !== parente { ouvrir(parente) }
+            sousEtapeDemandee = etape
+            return
+        }
         // Passer d'une étape à l'autre : l'étape quittée, si elle est restée vide, est retirée.
-        if etapeEnEdition.map({ $0 !== etape }) ?? false { nettoyer(sauf: etape) }
+        if etapeEnEdition.map({ $0 !== etape }) ?? false {
+            nettoyer(sauf: etape)
+            sousEtapeEnEdition = nil
+        }
+        sousEtapeDemandee = nil
         withAnimation(.snappy) { etapeEnEdition = etape }
     }
 
     private func fermerEtape() {
         withAnimation(.snappy) { etapeEnEdition = nil }
+        sousEtapeEnEdition = nil
+        sousEtapeDemandee = nil
         nettoyer()
     }
 
@@ -774,7 +827,7 @@ struct ItineraireView: View {
 
     // MARK: Glisser-déposer
 
-    private static let prefixe = "copilote-etape:"
+    private static let prefixe = Etape.prefixeGlisser
 
     private func ligneGlissable(_ etape: Etape, jour: Date, couleur: Color, rang: Int?, incoherence: Date?, chevauche: Etape? = nil) -> some View {
         ligne(etape, couleur: couleur, rang: rang, incoherence: incoherence, chevauche: chevauche)
@@ -962,6 +1015,13 @@ struct ItineraireView: View {
                             Image(systemName: "heart.fill").font(.caption).foregroundStyle(.red)
                                 .accessibilityLabel("Favorite")
                         }
+                        // Une étape qui contient des sous-étapes (un circuit…) : leur nombre, avec le même symbole que sur la carte.
+                        let nombreSous = etape.sousEtapes.count
+                        if nombreSous > 0 {
+                            Label("\(nombreSous)", systemImage: "point.3.connected.trianglepath.dotted")
+                                .font(.caption.weight(.semibold)).foregroundStyle(.mint)
+                                .accessibilityLabel("\(nombreSous) sous-étape\(nombreSous > 1 ? "s" : "")")
+                        }
                     }
                     if let note = etape.noteTripadvisor, let avis = etape.avisTripadvisor {
                         NotesView(tripadvisor: (note, avis))
@@ -1013,7 +1073,8 @@ struct ItineraireView: View {
                         .font(.subheadline.monospacedDigit()).foregroundStyle(incoherence == nil && chevauche == nil ? Color.secondary : Color.orange)
                 }
                 // La première photo enregistrée du lieu, en vignette.
-                if let photo = etape.photos.min(by: { $0.nom < $1.nom }) {
+                // La photo du lieu, sinon la première de l'album.
+                if let photo = etape.photosDuLieu.min(by: { $0.nom < $1.nom }) ?? etape.album.first {
                     ImageDonnees(donnees: photo.donnees)
                         .frame(width: 48, height: 48)
                         .clipShape(RoundedRectangle(cornerRadius: 8))
@@ -1040,7 +1101,7 @@ struct ItineraireView: View {
 
     /// Une étape créée puis laissée vide est retirée à la fermeture.
     private func nettoyer(sauf gardee: Etape? = nil) {
-        for etape in voyage.etapes where etape !== gardee && etape.titre.trimmingCharacters(in: .whitespaces).isEmpty && etape.lieu.isEmpty {
+        for etape in voyage.etapes where etape !== gardee && etape.sansContenu {
             contexte.delete(etape)
         }
     }

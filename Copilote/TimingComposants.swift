@@ -68,7 +68,7 @@ struct APlacerView: View {
             #endif
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("OK") { dismiss() } } }
             .sheet(item: $etape, onDismiss: {
-                for e in voyage.etapes where e.titre.trimmingCharacters(in: .whitespaces).isEmpty && e.lieu.isEmpty { contexte.delete(e) }
+                for e in voyage.etapes where e.sansContenu { contexte.delete(e) }
             }) { e in
                 EtapeEditView(etape: e, jours: voyage.jours) { contexte.delete(e) }
             }

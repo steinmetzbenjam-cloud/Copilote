@@ -195,6 +195,10 @@ final class PartageCloud {
 
     func appliquer(enregistrements: [CKRecord], suppressions: [CKRecord.ID]) {
         guard let contexte else { return }
+        // Mes modifications pas encore notées au journal le sont d'abord ; celles qui arrivent ne sont pas les miennes.
+        JournalModifications.shared.noter()
+        let recus = (orphelins + enregistrements).map(\.recordID.recordName) + suppressions.map(\.recordName)
+        defer { JournalModifications.shared.accepter(noms: recus) }
         // Seules les zones de voyages nous concernent (pas la zone temporaire de l'outil de schéma).
         var aTraiter = (orphelins + enregistrements).filter { $0.recordID.zoneID.zoneName.hasPrefix("voyage-") }
         orphelins = []
@@ -248,6 +252,7 @@ final class PartageCloud {
         for (nom, meta) in metas where meta.zoneName == zone.zoneName { metas.removeValue(forKey: nom) }
         partages.removeValue(forKey: zone.zoneName)
         sauvegarderMetas()
+        JournalModifications.shared.accepterTout()
     }
 
     static func noms(des share: CKShare) -> [String] {
