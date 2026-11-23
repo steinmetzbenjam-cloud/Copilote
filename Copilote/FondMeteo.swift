@@ -290,13 +290,25 @@ extension Voyage {
 }
 
 extension Voyage {
-    /// Les jours couverts par les prévisions (aujourd'hui et les 15 suivants).
+    /// Les jours couverts par Open-Meteo : les 14 derniers (le temps qu'il a fait, qui remplace la prévision),
+    /// aujourd'hui et les 15 suivants.
     var joursPrevisibles: [Date] {
         let cal = Calendar.current
         let aujourdhui = cal.startOfDay(for: .now)
+        let debut = cal.date(byAdding: .day, value: -14, to: aujourdhui) ?? aujourdhui
         let limite = cal.date(byAdding: .day, value: 15, to: aujourdhui) ?? aujourdhui
-        return jours.filter { $0 >= aujourdhui && $0 <= limite }
+        return jours.filter { $0 >= debut && $0 <= limite }
     }
+
+    /// Les jours passés du voyage trop anciens pour les prévisions : leur météo vient de l'archive.
+    var joursPassesAnciens: [Date] {
+        let cal = Calendar.current
+        let debut = cal.date(byAdding: .day, value: -14, to: cal.startOfDay(for: .now)) ?? .now
+        return jours.filter { $0 < debut }
+    }
+
+    /// Il y a de la météo à charger : des jours à prévoir, ou des jours anciens à retrouver.
+    var aDeLaMeteoACharger: Bool { !joursPrevisibles.isEmpty || !joursPassesAnciens.isEmpty }
 
     /// Change quand les lieux des jours à prévoir changent : la météo est alors à recharger.
     var cleMeteo: String {
@@ -313,6 +325,13 @@ extension Meteo {
             if let lieu = voyage.lieuMeteo(du: j) ?? lieuVoyage { lieux[Self.cle(lieu)] = lieu }
         }
         for lieu in lieux.values { await actualiserSiAncienne(lieu) }
+        // Les jours plus anciens dont on n'a encore que la prévision : le temps qu'il a fait, une fois pour toutes.
+        var anciens: [String: (lieu: CLLocationCoordinate2D, jours: [Date])] = [:]
+        for j in voyage.joursPassesAnciens {
+            guard let lieu = voyage.lieuMeteo(du: j) ?? lieuVoyage, prevision(j, en: lieu)?.observe != true else { continue }
+            anciens[Self.cle(lieu), default: (lieu, [])].jours.append(j)
+        }
+        for (lieu, jours) in anciens.values { await completerPasse(lieu, jours: jours) }
     }
 
     /// La prévision d'un jour du voyage, à l'endroit où l'on est ce jour-là.

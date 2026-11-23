@@ -4,6 +4,10 @@
 <dict>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>En voyage, votre position s'affiche sur la carte quand vous touchez « Ma position ».</string>
+	<key>NSCameraUsageDescription</key>
+	<string>En voyage, l'appareil photo ajoute directement vos photos à l'album de l'étape.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Les photos prises avec Copilote sont aussi gardées, en pleine résolution, dans vos Photos.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
 	<key>CKSharingSupported</key>

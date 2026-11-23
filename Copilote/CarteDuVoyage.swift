@@ -143,7 +143,7 @@ struct CarteDuVoyage: View {
         return (voyage.jours.flatMap { jour in liens(du: jour) + departDeLaVeille(pour: jour) }
                 + parSousEtapes.flatMap { Array(zip($0, $0.dropFirst())) })
             .compactMap { d, a in
-                guard let mode = d.transport?.mode, let ca = d.coordonnee, let cb = a.coordonnee else { return nil }
+                guard let mode = d.transport?.mode, let ca = d.coordonneeSortie, let cb = a.coordonneeEntree else { return nil }
                 return (ca, cb, mode)
             }
     }
@@ -211,15 +211,16 @@ struct CarteDuVoyage: View {
         let liste = voyage.etapes(du: jour)
         var resultat: [Segment] = []
         for (i, depart) in liste.enumerated() {
-            guard let a = depart.coordonnee else { continue }
+            // Une étape à sous-étapes : le trajet part de sa dernière sous-étape et arrive à la première de la suivante.
+            guard let a = depart.coordonneeSortie else { continue }
             // Prochaine étape localisée ; le transport ne compte que si c'est la suivante directe.
-            guard let j = liste[(i + 1)...].firstIndex(where: { $0.coordonnee != nil }), let b = liste[j].coordonnee else { continue }
+            guard let j = liste[(i + 1)...].firstIndex(where: { $0.coordonnee != nil }), let b = liste[j].coordonneeEntree else { continue }
             let mode = j == i + 1 ? depart.transport?.mode : nil
             resultat += segment("\(depart.uid)-\(liste[j].uid)", a, b, mode, transport: j == i + 1 ? depart.transport : nil)
         }
         // Liaisons avec l'hébergement : tracées seulement quand un transport est prévu.
         for (d, s) in liens(du: jour) + departDeLaVeille(pour: jour) where d.apresJour || s.apresJour || !Calendar.current.isDate(d.jour ?? jour, inSameDayAs: s.jour ?? jour) {
-            guard let mode = d.transport?.mode, let a = d.coordonnee, let b = s.coordonnee else { continue }
+            guard let mode = d.transport?.mode, let a = d.coordonneeSortie, let b = s.coordonneeEntree else { continue }
             resultat += segment("\(d.uid)-\(s.uid)", a, b, mode, transport: d.transport)
         }
         // L'aller se rattache au premier jour du voyage, le retour au dernier.

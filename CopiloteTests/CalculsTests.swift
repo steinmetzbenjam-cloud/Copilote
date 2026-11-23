@@ -1,8 +1,12 @@
 import Foundation
+import CloudKit
 import CoreLocation
 import ImageIO
 import SwiftData
 import Testing
+#if os(iOS)
+import UIKit
+#endif
 @testable import Copilote
 
 /// Les calculs d'argent de l'app : ce qu'ils renvoient doit rester juste quand on modifie le code.
@@ -443,6 +447,27 @@ struct CalculsTests {
         #expect(PhotoAlbum.preparer(Data("pas une image".utf8)) == nil)
     }
 
+    #if os(iOS)
+    /// Une photo prise avec l'appareil : ses pixels sont ceux du capteur, tournés par l'orientation ; une fois encodée puis
+    /// réduite pour l'album, elle doit être à l'endroit et garder sa date de prise de vue.
+    @Test func unePhotoPriseGardeSonOrientationEtSaDate() throws {
+        let ctx = try #require(CGContext(data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 0,
+                                         space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue))
+        ctx.setFillColor(red: 1, green: 0, blue: 0, alpha: 1)
+        ctx.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
+        let image = UIImage(cgImage: try #require(ctx.makeImage()), scale: 1, orientation: .right)
+        let meta: [String: Any] = [kCGImagePropertyExifDictionary as String: [kCGImagePropertyExifDateTimeOriginal as String: "2026:10:22 09:15:00"]]
+        let originale = try #require(BoutonPhotoAlbum.encoder(image, metadonnees: meta))
+        let prete = try #require(PhotoAlbum.preparer(originale))
+        let source = try #require(CGImageSourceCreateWithData(prete.donnees as CFData, nil))
+        let decodee = try #require(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        #expect(decodee.width == 20)
+        #expect(decodee.height == 40)
+        var composants = DateComponents(); composants.year = 2026; composants.month = 10; composants.day = 22; composants.hour = 9; composants.minute = 15
+        #expect(prete.priseLe == Calendar.current.date(from: composants))
+    }
+    #endif
+
     @Test func lAlbumEstAPartDesPhotosDuLieuEtNeSuitPasUneCopie() throws {
         let v = voyage()
         let musee = etape("Musée", jour: v.debut, dans: v)
@@ -510,6 +535,30 @@ struct CalculsTests {
         journal.noter()
         #expect(v.journal.count == 3)
         #expect(v.journal.contains { $0.action == .suppression && $0.libelle == "Musée du Louvre" })
+    }
+
+    @Test func lesHeuresDArriveeEtDeDepartPassentParLaSynchronisation() throws {
+        let v = voyage()
+        let etape = Etape(titre: "Volcan", jour: v.debut)
+        etape.voyage = v; contexte.insert(etape)
+        let sous = etape.ajouterSousEtape(dans: contexte)
+        let arrivee = Date(timeIntervalSince1970: 1_800_000_000), depart = arrivee.addingTimeInterval(5400)
+        etape.arriveeReelle = arrivee; etape.departReel = depart
+        sous.arriveeReelle = arrivee
+        let zone = Codec.zone(de: v)
+        let r = Codec.enregistrement(pour: etape, zone: zone, systeme: nil, avecAsset: false)
+        let rs = Codec.enregistrement(pour: sous, zone: zone, systeme: nil, avecAsset: false)
+        #expect(Codec.champs(de: r)["arriveeReelle"] != nil)
+        // Effacée ici : l'enregistrement reçu la remet ; effacée là-bas, elle disparaît ici.
+        etape.arriveeReelle = nil; etape.departReel = nil; sous.arriveeReelle = nil
+        _ = Codec.appliquer(r, contexte)
+        _ = Codec.appliquer(rs, contexte)
+        #expect(etape.arriveeReelle == arrivee)
+        #expect(etape.departReel == depart)
+        #expect(sous.arriveeReelle == arrivee && sous.departReel == nil)
+        r["departReel"] = nil
+        _ = Codec.appliquer(r, contexte)
+        #expect(etape.departReel == nil)
     }
 
     @Test func uneEtapeAjouteePuisRetireeAussitotNeLaissePasDeTrace() throws {
@@ -656,9 +705,12 @@ struct CalculsTests {
         // Au musée à 10 h 30, sans transport (un point) avant le premier trajet à pied.
         let auMusee = try #require(p.position(a: 10 * 60 + 30))
         #expect(abs(auMusee.latitude - 48.86) < 0.0001)
-        // La marche (20 min estimées) arrive à 12 h pile : à 11 h 50, à mi-chemin, en piéton.
+        // La marche (20 min estimées) arrive à 12 h pile à la Place, la sous-étape de la Butte : à 11 h 50, à mi-chemin, en piéton.
         let enRoute = try #require(p.position(a: 11 * 60 + 50))
-        #expect(abs(enRoute.latitude - 48.87) < 0.001)
+        #expect(abs(enRoute.latitude - (48.86 + 48.887) / 2) < 0.001)
+        // Arrivé : directement à la sous-étape, pas au lieu de la Butte.
+        let aLaPlace = try #require(p.position(a: 12 * 60 + 5))
+        #expect(abs(aLaPlace.latitude - 48.887) < 0.0001)
         #expect(p.mode(a: 11 * 60 + 50) == .pied)
         #expect(abs(p.curseur(a: 11 * 60 + 50) - 1.5) < 0.01)
         // La sous-étape s'affiche quand on approche de la Butte, puis disparaît une fois repartis.
@@ -672,5 +724,51 @@ struct CalculsTests {
         #expect(abs(soir.latitude - 48.87) < 0.0001 && abs(soir.longitude - 2.36) < 0.0001)
         // De 5 à 20 secondes de lecture.
         #expect(p.secondes >= 5 && p.secondes <= 20)
+    }
+
+    @Test func lesTrajetsVontDeLaDerniereSousEtapeALaPremiereDeLaSuivante() throws {
+        let cal = Calendar.current
+        let debut = cal.startOfDay(for: .now)
+        let jour = cal.date(byAdding: .day, value: 1, to: debut)!
+        let v = Voyage(titre: "Essai", debut: debut, fin: cal.date(byAdding: .day, value: 2, to: debut)!)
+        contexte.insert(v)
+        func etape(_ titre: String, _ lat: Double, _ lon: Double, jour j: Date?, parent: Etape? = nil) -> Etape {
+            let e = Etape(titre: titre, jour: j)
+            e.latitude = lat; e.longitude = lon
+            e.voyage = v
+            contexte.insert(e)
+            if let parent { e.parentUID = parent.uid; e.ordre = Double(parent.sousEtapes.count) }
+            return e
+        }
+        let a = etape("Quartier A", 48.80, 2.30, jour: jour)
+        a.heure = jour.addingTimeInterval(9 * 3600); a.duree = 120; a.ordre = 0
+        var marche = Transport(); marche.mode = .pied
+        a.transport = marche
+        let a1 = etape("A1", 48.81, 2.31, jour: nil, parent: a)
+        let a2 = etape("A2", 48.82, 2.32, jour: nil, parent: a)
+        let b = etape("Quartier B", 48.90, 2.40, jour: jour)
+        b.heure = jour.addingTimeInterval(12 * 3600); b.duree = 120; b.ordre = 1
+        let b1 = etape("B1", 48.91, 2.41, jour: nil, parent: b)
+        _ = etape("B2", 48.92, 2.42, jour: nil, parent: b)
+        let sansSous = etape("Musée", 48.85, 2.35, jour: nil)
+
+        // Le transport de A vers B part de la dernière sous-étape de A et arrive à la première de B.
+        #expect(a.sortie === a2 && b.entree === b1)
+        #expect(a.entree === a1 && sansSous.entree === sansSous && sansSous.sortie === sansSous)
+        #expect(a1.entree === a1 && a1.sortie === a1)
+        // Une sous-étape pas encore placée sur la carte ne compte pas.
+        let b3 = etape("B3", 0, 0, jour: nil, parent: b)
+        b3.latitude = nil; b3.longitude = nil
+        #expect(b.sortie.titre == "B2")
+
+        let p = try #require(ParcoursJour.calculer(voyage: v, jour: jour))
+        let iA = try #require(p.arrets.firstIndex { $0.titre == "Quartier A" })
+        // Le trajet de A à B : de A2 à B1, sans passer par le lieu des étapes.
+        let trajet = try #require(p.morceaux.first { $0.trajet && $0.arret == iA })
+        #expect(trajet.points.first?.latitude == 48.82 && trajet.points.last?.latitude == 48.91)
+        // Pendant le séjour à A, l'icône ne va jamais au lieu de l'étape : elle commence à A1.
+        let sejourA = p.morceaux.filter { !$0.trajet && $0.arret == iA }
+        #expect(sejourA.first?.points.first?.latitude == 48.81)
+        #expect(!sejourA.flatMap(\.points).contains { $0.latitude == 48.80 })
     }
 }

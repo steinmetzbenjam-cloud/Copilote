@@ -334,7 +334,7 @@ extension EntreeJournal {
     }
 
     static let nomsDeChamps: [String: String] = [
-        "titre": "Titre", "lieu": "Lieu", "jour": "Jour", "apresJour": "Nuit", "heure": "Heure", "heureFin": "Heure de fin",
+        "titre": "Titre", "lieu": "Lieu", "jour": "Jour", "apresJour": "Nuit", "heure": "Heure", "heureFin": "Heure de fin", "arriveeReelle": "Arrivée", "departReel": "Départ",
         "duree": "Durée", "notes": "Notes", "notesMiseEnFormeEmpreinte": "Notes", "latitude": "Position", "longitude": "Position",
         "ordre": "Ordre", "categorie": "Catégorie", "transport": "Transport", "transportJSON": "Transport", "parentUID": "Étape parente",
         "prixAdulte": "Prix adulte", "prixEnfant": "Prix enfant", "prixEtudiant": "Prix étudiant", "prixAdolescent": "Prix adolescent",

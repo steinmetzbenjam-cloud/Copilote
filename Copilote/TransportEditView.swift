@@ -49,8 +49,9 @@ struct TransportEditView: View {
     /// Transport entre deux étapes : il est gardé sur l'étape de départ.
     init(depart: Etape, arrivee: Etape) {
         let titre: (Etape) -> String = { $0.titre.isEmpty ? "Étape" : $0.titre }
-        self.init(trajet: "\(titre(depart)) → \(titre(arrivee))", jour: depart.jourEffectif ?? .now,
-                  coordonnees: depart.coordonnee.flatMap { a in arrivee.coordonnee.map { (a, $0) } },
+        // Une étape à sous-étapes : le trajet part de sa dernière sous-étape, ou mène à sa première.
+        self.init(trajet: "\(titre(depart.sortie)) → \(titre(arrivee.entree))", jour: depart.jourEffectif ?? .now,
+                  coordonnees: depart.coordonneeSortie.flatMap { a in arrivee.coordonneeEntree.map { (a, $0) } },
                   existant: depart.transport, voyage: depart.voyage, cleLien: LienReservation.transport(depart: depart),
                   enregistrer: { depart.transport = $0 })
         self.etapeDepart = depart
@@ -79,12 +80,12 @@ struct TransportEditView: View {
     private var trajet: String {
         guard let depart = etapeDepart, let arrivee, arrivee !== etapeArrivee else { return trajetRecu }
         let titre: (Etape) -> String = { $0.titre.isEmpty ? "Étape" : $0.titre }
-        return "\(titre(depart)) → \(titre(arrivee))"
+        return "\(titre(depart.sortie)) → \(titre(arrivee.entree))"
     }
 
     private var coordonnees: (CLLocationCoordinate2D, CLLocationCoordinate2D)? {
         guard let depart = etapeDepart, let arrivee, arrivee !== etapeArrivee else { return coordonneesRecues }
-        return depart.coordonnee.flatMap { a in arrivee.coordonnee.map { (a, $0) } }
+        return depart.coordonneeSortie.flatMap { a in arrivee.coordonneeEntree.map { (a, $0) } }
     }
 
     var body: some View {

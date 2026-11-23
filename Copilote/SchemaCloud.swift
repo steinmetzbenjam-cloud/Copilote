@@ -59,6 +59,7 @@ extension PartageCloud {
         etape.prixAdulteLocal = true; etape.prixEnfantLocal = true; etape.prixEtudiantLocal = true
         etape.prixAdulteTierce = true; etape.prixEnfantTierce = true; etape.prixEtudiantTierce = true; etape.exclusBudget = ["x"]; etape.basculesTarif = ["x"]; etape.categoriesPrixJSON = "x"; etape.paysFavori = "x"; etape.parentUID = "x"
         etape.prixAdolescent = 1; etape.prixAdolescentLocal = true; etape.prixAdolescentTierce = true
+        etape.arriveeReelle = .now; etape.departReel = .now
         etape.voyage = voyage; contexte.insert(etape)
 
         let reservation = Reservation(type: .vol, debut: .now)

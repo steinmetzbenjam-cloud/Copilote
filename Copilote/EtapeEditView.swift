@@ -446,12 +446,16 @@ struct EtapeEditView: View {
         .padding(.horizontal, 4)
     }
 
-    /// La catégorie puis le moment ; en voyage, avec à droite le bouton qui guide jusqu'à l'étape.
+    /// La catégorie puis le moment ; en voyage, avec à droite l'appareil photo (iPhone, iPad) et le bouton qui guide jusqu'à l'étape.
     @ViewBuilder private var sectionCategorieEtMoment: some View {
         if enVoyage {
             HStack(alignment: .center, spacing: 12) {
                 // La catégorie est dans la barre de titre, à gauche du nom.
                 sectionJourHoraire
+                #if os(iOS)
+                // Une photo prise sur place va droit dans l'album de l'étape.
+                BoutonPhotoAlbum(etape: etape)
+                #endif
                 BoutonYAller(etape: etape)
             }
         } else {
@@ -634,6 +638,8 @@ struct EtapeEditView: View {
                 } else if enVoyage {
                     // En voyage : le moment (avec « Y aller »), les sous-étapes, les réservations, puis les infos du lieu avant les avis.
                     sectionCategorieEtMoment
+                    // Sur place : on note l'heure réelle d'arrivée et de départ.
+                    if etape.jourEffectif != nil { PointageEtape(etape: etape) }
                     sectionSousEtapes
                     sectionReservations
                     sectionAlbum
@@ -814,6 +820,7 @@ struct EtapeEditView: View {
                 }
             }
             Spacer(minLength: 4)
+            if enVoyage { PastillePointage(etape: s).font(.caption) }
             if let heure = s.heure {
                 Text(s.heureFin.map { "\(s.heureAffichee(heure)) – \(s.heureAffichee($0))" } ?? s.heureAffichee(heure))
                     .font(.caption.monospacedDigit()).foregroundStyle(.secondary)

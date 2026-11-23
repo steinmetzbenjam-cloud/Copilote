@@ -164,6 +164,10 @@ final class Etape {
     var duree: Double?
     /// Fuseau horaire des heures de l'étape (identifiant, ex. « America/Costa_Rica »), si différent de celui de son lieu.
     var fuseauChoisi: String?
+    /// En voyage : le moment réel où l'on est arrivé à l'étape (un instant, affiché dans le fuseau du lieu). nil : pas encore noté.
+    var arriveeReelle: Date?
+    /// En voyage : le moment réel où l'on est reparti de l'étape. nil : pas encore noté.
+    var departReel: Date?
     var categorie: CategorieEtape
     var notes: String
     var latitude: Double?
@@ -319,6 +323,13 @@ extension Etape {
 
     /// Le jour de l'étape ; pour une sous-étape, celui de son étape.
     var jourEffectif: Date? { jour ?? etapeParente?.jour }
+
+    /// Où mène le transport qui arrive à cette étape : sa première sous-étape placée sur la carte, sinon l'étape elle-même.
+    var entree: Etape { sousEtapes.first { $0.coordonnee != nil } ?? self }
+    /// D'où part le transport vers l'étape suivante : sa dernière sous-étape placée sur la carte, sinon l'étape elle-même.
+    var sortie: Etape { sousEtapes.last { $0.coordonnee != nil } ?? self }
+    var coordonneeEntree: CLLocationCoordinate2D? { entree.coordonnee }
+    var coordonneeSortie: CLLocationCoordinate2D? { sortie.coordonnee }
 
     /// Une étape créée puis laissée vide (ni nom, ni lieu, ni sous-étape) : elle est retirée à la fermeture.
     var sansContenu: Bool {

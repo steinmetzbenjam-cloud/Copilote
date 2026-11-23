@@ -92,7 +92,7 @@ struct ItineraireView: View {
                 let largeurPanneau = largeurDuPanneau(dans: geo.size.width)
                 ZStack(alignment: .leading) {
                     fondDeCarte(margeGauche: largeurPanneau)
-                    DefilementMemorise(cle: cleDefilement(large: true)) { listeDesJours(avecEtapesAPlacer: false).padding(12) }
+                    DefilementMemorise(cle: cleDefilement(large: true)) { listeDesJours.padding(12) }
                         .id(cleDefilement(large: true))
                         .frame(width: largeurPanneau)
                         .scrollIndicators(.hidden)
@@ -113,16 +113,7 @@ struct ItineraireView: View {
                         #if os(macOS)
                         boutonsRonds.padding(.top, 6).padding(.trailing, 10)
                         #endif
-                        if etapesAPlacerOuvertes {
-                            // Le défilement se limite à la hauteur du contenu : en dessous, le doigt agit sur la carte.
-                            ScrollView {
-                                etapesAPlacer.padding(12)
-                                    .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { hauteurEtapesAPlacer = $0 }
-                            }
-                            .frame(width: 344)
-                            .frame(maxHeight: hauteurEtapesAPlacer)
-                            .scrollIndicators(.hidden)
-                        }
+                        if etapesAPlacerOuvertes { fenetreEtapesAPlacer().frame(width: 344) }
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
                 }
@@ -138,7 +129,14 @@ struct ItineraireView: View {
                 let etapePleinEcran = clavierOuvert && etapeEnEdition != nil && Self.estUnIPhone
                 VStack(spacing: -16) {
                     fondDeCarte(margeGauche: 0).frame(height: hauteurCarte + 16)
-                    DefilementMemorise(cle: cleDefilement(large: false)) { listeDesJours(avecEtapesAPlacer: true).padding(12) }
+                        // Les étapes à placer, par-dessus le plan comme sur iPad : les jours restent en place dessous, prêts à recevoir
+                        // l'étape qu'on y glisse. La fenêtre laisse libres les ronds à gauche du plan et le bord recouvert par les jours.
+                        .overlay(alignment: .topTrailing) {
+                            if etapesAPlacerOuvertes {
+                                fenetreEtapesAPlacer(hauteurMax: hauteurCarte - 4).frame(maxWidth: 344)
+                            }
+                        }
+                    DefilementMemorise(cle: cleDefilement(large: false)) { listeDesJours.padding(12) }
                         .id(cleDefilement(large: false))
                         // La poignée, en haut du panneau des jours : on la tire pour agrandir la carte ou la liste.
                         .safeAreaInset(edge: .top, spacing: 0) { poigneeHorizontale(hauteurEcran: geo.size.height) }
@@ -463,10 +461,8 @@ struct ItineraireView: View {
     }
 
     /// Les jours, les uns au-dessus des autres.
-    private func listeDesJours(avecEtapesAPlacer: Bool) -> some View {
+    private var listeDesJours: some View {
         LazyVStack(spacing: 12) {
-            // iPhone : les étapes sans jour, au-dessus du jour 1 (les ronds sont dans la barre du haut).
-            if avecEtapesAPlacer && etapesAPlacerOuvertes { etapesAPlacer }
             ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
                 carte(numero: index + 1, jour: jour)
                 nuit(apres: jour)
@@ -481,6 +477,20 @@ struct ItineraireView: View {
                 .modifier(FondDeCarte())
             }
         }
+    }
+
+    /// La fenêtre flottante des étapes à placer, en haut à droite du plan (iPhone, iPad, Mac).
+    /// Le défilement se limite à la hauteur du contenu (et à `hauteurMax`) : en dessous, le doigt agit sur la carte.
+    private func fenetreEtapesAPlacer(hauteurMax: CGFloat = .infinity) -> some View {
+        ScrollView {
+            etapesAPlacer.padding(12)
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { hauteurEtapesAPlacer = $0 }
+        }
+        .frame(maxHeight: max(min(hauteurEtapesAPlacer, hauteurMax), 0))
+        .scrollIndicators(.hidden)
+        // Sans cela, le contenu défilé passe sous la barre du haut (le plan s'étend sous elle).
+        .clipped()
+        .transition(.scale(scale: 0.92, anchor: .topTrailing).combined(with: .opacity))
     }
 
     /// Étapes préparées sans jour : on les glisse sur la carte d'un jour pour les placer.
@@ -643,7 +653,7 @@ struct ItineraireView: View {
             HStack(spacing: 6) {
                 Image(systemName: t.mode.symbole).font(.caption).frame(width: 24)
                 Text(t.mode == .commun && !t.sousType.isEmpty ? t.sousType : t.mode.libelleCourt).font(.caption.weight(.medium))
-                if t.mode.aUnItineraire, let a = depart.coordonnee, let b = arrivee.coordonnee {
+                if t.mode.aUnItineraire, let a = depart.coordonneeSortie, let b = arrivee.coordonneeEntree {
                     Text("·").font(.caption)
                     ResumeItineraire(a: a, b: b, mode: t.mode, dureeModifiee: t.dureeModifiee, google: t.itineraireGoogle(a, b))
                 } else if let resume = t.resume(depuis: depart, vers: arrivee) {
@@ -665,7 +675,7 @@ struct ItineraireView: View {
             HStack(spacing: 8) {
                 Image(systemName: t.mode.symbole).frame(width: 24)
                 Text(voyage.descriptifLocal(t, depuis: depart, vers: arrivee))
-                if t.mode.aUnItineraire, let a = depart.coordonnee, let b = arrivee.coordonnee {
+                if t.mode.aUnItineraire, let a = depart.coordonneeSortie, let b = arrivee.coordonneeEntree {
                     Spacer()
                     ResumeItineraire(a: a, b: b, mode: t.mode, dureeModifiee: t.dureeModifiee, google: t.itineraireGoogle(a, b))
                 }
@@ -708,7 +718,7 @@ struct ItineraireView: View {
     // MARK: Carte d'un jour
 
     private func chargerMeteo() async {
-        guard !voyage.joursPrevisibles.isEmpty else { return }
+        guard voyage.aDeLaMeteoACharger else { return }
         if lieuMeteoVoyage == nil { lieuMeteoVoyage = await voyage.lieuMeteo() }
         await meteo.chargerJours(de: voyage, lieuVoyage: lieuMeteoVoyage)
     }

@@ -56,7 +56,7 @@ struct ApercuView: View {
         .task { rappelsProgrammes = await Rappels.nombreProgramme() }
         // Prévisions des jours à venir, à l'endroit de chaque jour : le fond du programme suit leurs mises à jour.
         .task(id: voyage.cleMeteo) {
-            guard voyage.mode != .souvenir, !voyage.joursPrevisibles.isEmpty else { return }
+            guard voyage.aDeLaMeteoACharger else { return }
             if lieu == nil { lieu = await voyage.lieuMeteo() }
             await meteo.chargerJours(de: voyage, lieuVoyage: lieu)
         }
@@ -184,7 +184,7 @@ struct ApercuView: View {
                 }
                 .font(.footnote.weight(.medium)).foregroundStyle(.indigo)
                 // Distance et temps seulement s'ils sont connus ; sinon, le mode suffit.
-                if t.mode.aUnItineraire, let a = depart.coordonnee, let b = arrivee.coordonnee {
+                if t.mode.aUnItineraire, let a = depart.coordonneeSortie, let b = arrivee.coordonneeEntree {
                     ResumeItineraire(a: a, b: b, mode: t.mode, dureeModifiee: t.dureeModifiee, google: t.itineraireGoogle(a, b), masquerSiVide: true)
                 } else if let resume = t.resume(depuis: depart, vers: arrivee) {
                     Text(resume).font(.caption).foregroundStyle(.secondary)

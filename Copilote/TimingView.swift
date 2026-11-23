@@ -101,8 +101,9 @@ struct TimingView: View {
         // Durée corrigée à la main après le calcul : elle remplace celle de l'itinéraire.
         if let m = t.dureeModifiee, m > 0 { return (m, false) }
         if let s = t.itineraireCommun?.secondes, s > 0 { return (Double(s) / 60, false) }
-        if let a = depart?.coordonnee, let b = arrivee?.coordonnee, let g = t.itineraireGoogle(a, b), g.secondes > 0 { return (Double(g.secondes) / 60, false) }
-        if t.mode.aUnItineraire, let a = depart?.coordonnee, let b = arrivee?.coordonnee,
+        // Une étape à sous-étapes : on part de la dernière, on arrive à la première.
+        if let a = depart?.coordonneeSortie, let b = arrivee?.coordonneeEntree, let g = t.itineraireGoogle(a, b), g.secondes > 0 { return (Double(g.secondes) / 60, false) }
+        if t.mode.aUnItineraire, let a = depart?.coordonneeSortie, let b = arrivee?.coordonneeEntree,
            let duree = Itineraires.shared.trajet(a, b, t.mode)?.duree { return (max(duree / 60, 5), false) }
         switch t.mode {
         case .avion: return (120, true)
@@ -401,7 +402,7 @@ struct TimingView: View {
         .onChange(of: phase) { _, p in if p == .active { Task { await chargerMeteo() } } }
         .task(id: clesItineraires) {
             for e in voyage.etapes {
-                if let t = e.transport, t.mode.aUnItineraire, let a = e.coordonnee, let b = voyage.suivante(de: e)?.coordonnee {
+                if let t = e.transport, t.mode.aUnItineraire, let a = e.coordonneeSortie, let b = voyage.suivante(de: e)?.coordonneeEntree {
                     await Itineraires.shared.charger(a, b, t.mode)
                 }
             }
@@ -488,13 +489,13 @@ struct TimingView: View {
     }
 
     private func chargerMeteo() async {
-        guard !rendu, !voyage.joursPrevisibles.isEmpty else { return }
+        guard !rendu, voyage.aDeLaMeteoACharger else { return }
         if lieuMeteoVoyage == nil { lieuMeteoVoyage = await voyage.lieuMeteo() }
         await meteo.chargerJours(de: voyage, lieuVoyage: lieuMeteoVoyage)
     }
 
     private var clesItineraires: String {
-        voyage.etapes.compactMap { e in e.transport.map { "\(e.uid)\($0.mode.rawValue)" } }.joined(separator: ",")
+        voyage.etapes.compactMap { e in e.transport.map { "\(e.uid)\($0.mode.rawValue)\(e.sortie.uid)\(voyage.suivante(de: e)?.entree.uid ?? "")" } }.joined(separator: ",")
     }
 
     /// L'heure à laquelle ouvrir un jour : une heure avant sa première activité, ou 7 h.

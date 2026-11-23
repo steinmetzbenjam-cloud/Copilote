@@ -243,6 +243,7 @@ enum Codec {
             r["categoriesPrixJSON"] = e.categoriesPrixJSON
             r["paysFavori"] = e.paysFavori
             r["parentUID"] = e.parentUID
+            r["arriveeReelle"] = e.arriveeReelle; r["departReel"] = e.departReel
             return r
         case let x as Reservation:
             let r = base(.reservation, x.uid, zone, systeme)
@@ -433,6 +434,7 @@ enum Codec {
             e.categoriesPrixJSON = r["categoriesPrixJSON"] as? String
             e.paysFavori = r["paysFavori"] as? String
             e.parentUID = r["parentUID"] as? String
+            e.arriveeReelle = date("arriveeReelle"); e.departReel = date("departReel")
             return e
 
         case .reservation:
