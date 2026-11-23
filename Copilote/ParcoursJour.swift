@@ -458,7 +458,11 @@ struct ParcoursJour {
         let transports = blocs.filter { $0.genre == .transport }
         let matins = blocs.filter { $0.genre == .hotelMatin }
         let matin = matins.first { b in transports.contains { $0.extremite == nil && $0.etape === b.etape } } ?? matins.first
-        let etapes = blocs.filter { $0.genre == .etape }
+        // Les étapes dans l'ordre de l'itinéraire (celui du Programme), même quand leurs heures ne le suivent pas.
+        let ordre = voyage.etapes(du: jour)
+        let etapes = blocs.filter { $0.genre == .etape }.sorted { b1, b2 in
+            (ordre.firstIndex { $0 === b1.etape } ?? .max, b1.debut) < (ordre.firstIndex { $0 === b2.etape } ?? .max, b2.debut)
+        }
         let soirs = blocs.filter { $0.genre == .hotelSoir }
         let vise = etapes.last?.etape.flatMap { voyage.hebergementVise(depuis: $0, apres: jour) }
         let soir = soirs.first { $0.etape === vise } ?? soirs.first
@@ -559,7 +563,8 @@ struct ParcoursJour {
             let bloc = departs[i]
             var depart = bloc?.debut ?? arrets[i].heureDepart ?? t
             var arrivee = bloc?.fin ?? arrets[i + 1].heureArrivee ?? depart
-            depart = max(depart, t)
+            // Chaque arrêt a un peu de temps sur place, même si son heure est passée (étape placée avant une autre plus matinale).
+            depart = max(depart, i == 0 ? t : t + minimum)
             arrivee = max(arrivee, depart)
             // Pas de temps pour aller d'une étape à l'autre : un court trajet, pris sur la visite.
             if arrivee - depart < minimum {

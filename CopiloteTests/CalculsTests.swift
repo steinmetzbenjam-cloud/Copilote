@@ -771,4 +771,34 @@ struct CalculsTests {
         #expect(sejourA.first?.points.first?.latitude == 48.81)
         #expect(!sejourA.flatMap(\.points).contains { $0.latitude == 48.80 })
     }
+
+    @Test func leParcoursSuitLOrdreDeLItineraire() throws {
+        let cal = Calendar.current
+        let debut = cal.startOfDay(for: .now)
+        let jour = cal.date(byAdding: .day, value: 1, to: debut)!
+        let v = Voyage(titre: "Essai", debut: debut, fin: cal.date(byAdding: .day, value: 2, to: debut)!)
+        contexte.insert(v)
+        func etape(_ titre: String, _ lat: Double, ordre: Double, heure: Double) -> Etape {
+            let e = Etape(titre: titre, jour: jour)
+            e.latitude = lat; e.longitude = 2.35
+            e.voyage = v
+            e.ordre = ordre
+            e.heure = jour.addingTimeInterval(heure * 3600); e.duree = 60
+            contexte.insert(e)
+            return e
+        }
+        // L'itinéraire place le château avant le marché, mais le marché a une heure plus matinale.
+        _ = etape("Château", 48.80, ordre: 0, heure: 14)
+        _ = etape("Marché", 48.90, ordre: 1, heure: 10)
+        _ = etape("Musée", 48.85, ordre: 2, heure: 16)
+
+        let p = try #require(ParcoursJour.calculer(voyage: v, jour: jour))
+        #expect(p.arrets.map(\.titre) == ["Château", "Marché", "Musée"])
+        // L'icône passe au château, puis au marché, puis au musée.
+        func instant(_ lat: Double) -> Double? {
+            stride(from: p.debut, through: p.fin, by: 1).first { t in p.position(a: t).map { abs($0.latitude - lat) < 0.0001 } ?? false }
+        }
+        let chateau = try #require(instant(48.80)), marche = try #require(instant(48.90)), musee = try #require(instant(48.85))
+        #expect(chateau < marche && marche < musee)
+    }
 }
