@@ -505,6 +505,12 @@ struct ItineraireView: View {
             Button("Ajouter une étape", systemImage: "plus.circle.fill") { ajouterSansJour() }
                 .disabled(voyage.lectureSeule)
                 .buttonStyle(.borderless)
+            // L'itinéraire préparé par Claude : une étape à placer qui contient toutes les siennes, avec leurs transports.
+            BoutonImportClaude(voyage: voyage) { _ in
+                withAnimation(.snappy) { etapesAPlacerOuvertes = true }
+                Self.etapesAPlacerOuvertesSession = true
+            }
+            .buttonStyle(.borderless)
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
