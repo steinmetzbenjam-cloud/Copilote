@@ -31,9 +31,16 @@ struct PointageEtape: View {
     @State private var enCours: MomentPointe?
 
     var body: some View {
-        HStack(spacing: 10) {
-            bouton(.arrivee)
-            bouton(.depart)
+        // Côte à côte s'il y a la place pour lire les textes en entier, sinon l'un au-dessus de l'autre.
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                bouton(.arrivee)
+                bouton(.depart)
+            }
+            VStack(spacing: 8) {
+                bouton(.arrivee)
+                bouton(.depart)
+            }
         }
         .sheet(item: $enCours) { moment in
             ConfirmationPointage(etape: etape, moment: moment)

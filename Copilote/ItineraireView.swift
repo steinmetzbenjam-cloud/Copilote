@@ -10,6 +10,10 @@ struct ItineraireView: View {
     @State private var etapeEnEdition: Etape?
     /// Sous-étape ouverte dans la fiche de son étape : la carte se cadre sur elle.
     @State private var sousEtapeEnEdition: Etape?
+    /// Côtés par lesquels la fiche d'étape arrive et s'en va : par la gauche d'ordinaire ; en glissant vers l'étape voisine,
+    /// la nouvelle arrive du côté où l'on va.
+    @State private var entreeFiche: Edge = .leading
+    @State private var sortieFiche: Edge = .leading
     /// Sous-étape touchée sur la carte : la fiche de son étape s'ouvre directement sur elle.
     @State private var sousEtapeDemandee: Etape?
     @State private var nuitEnAjout: NuitAjout?
@@ -223,6 +227,11 @@ struct ItineraireView: View {
         .sheet(item: $jourEnEdition, onDismiss: nettoyerJours) { infos in
             JourEditView(jour: infos, voyage: voyage, numero: (voyage.jours.firstIndex { cal.isDate($0, inSameDayAs: infos.date) } ?? 0) + 1)
         }
+        #if os(iOS)
+        // Fiche d'étape ouverte : glisser vers la droite passe à l'étape précédente, et ne ramène pas à la liste des voyages
+        // (le retour depuis le bord de l'écran reste possible).
+        .background { if etapeEnEdition != nil { SansRetourParGlissement() } }
+        #endif
     }
 
     // MARK: Poignée entre la carte et la liste
@@ -429,11 +438,32 @@ struct ItineraireView: View {
                sousEtapeAOuvrir: sousEtapeDemandee, onSousEtape: { s in
                 sousEtapeEnEdition = s
                 if s == nil { sousEtapeDemandee = nil }
-            })
+            }, onEtapeVoisine: { ouvrirVoisine(de: etape, sens: $0) })
             .id(etape.uid)
             .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
             .modifier(FondDeCarte())
-            .transition(.move(edge: .leading).combined(with: .opacity))
+            .transition(.asymmetric(insertion: .move(edge: entreeFiche), removal: .move(edge: sortieFiche)).combined(with: .opacity))
+        }
+    }
+
+    /// L'étape voisine, dans l'ordre du Programme (étapes de chaque jour puis hébergement de la nuit) ;
+    /// pour une étape à placer, parmi les étapes à placer. Rien au bout de la liste.
+    private func ouvrirVoisine(de etape: Etape, sens: Int) {
+        let programme = voyage.elementsDuVoyage
+        let liste = programme.contains { $0 === etape } ? programme : voyage.etapesSansJour
+        guard let i = liste.firstIndex(where: { $0 === etape }), liste.indices.contains(i + sens) else { return }
+        let voisine = liste[i + sens]
+        entreeFiche = sens > 0 ? .trailing : .leading
+        sortieFiche = sens > 0 ? .leading : .trailing
+        // Les côtés sont pris en compte avant que la fiche change.
+        DispatchQueue.main.async {
+            nettoyer(sauf: voisine)
+            sousEtapeEnEdition = nil
+            sousEtapeDemandee = nil
+            withAnimation(.snappy) { etapeEnEdition = voisine } completion: {
+                entreeFiche = .leading
+                sortieFiche = .leading
+            }
         }
     }
 
@@ -463,8 +493,11 @@ struct ItineraireView: View {
     /// Les jours, les uns au-dessus des autres.
     private var listeDesJours: some View {
         LazyVStack(spacing: 12) {
-            ForEach(Array(voyage.jours.enumerated()), id: \.element) { index, jour in
+            // Chaque jour sert de repère pour revenir à l'endroit exact de la liste (voir `DefilementMemorise`) :
+            // le même identifiant pour l'élément du ForEach et pour le repère.
+            ForEach(Array(voyage.jours.enumerated()), id: \.element.repereDefilement) { index, jour in
                 carte(numero: index + 1, jour: jour)
+                    .repereDefilement(jour.repereDefilement)
                 nuit(apres: jour)
             }
             if !horsDates.isEmpty {
@@ -1166,3 +1199,34 @@ private struct HautCarteNotes: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
+
+#if os(iOS)
+/// Tant qu'elle est affichée, coupe le retour en glissant n'importe où sur l'écran (iOS 26) de la pile de navigation ;
+/// le retour depuis le bord gauche reste possible.
+struct SansRetourParGlissement: UIViewControllerRepresentable {
+    func makeUIViewController(context: Context) -> Controleur { Controleur() }
+    func updateUIViewController(_ controleur: Controleur, context: Context) {}
+    static func dismantleUIViewController(_ controleur: Controleur, coordinator: ()) { controleur.retablir() }
+
+    final class Controleur: UIViewController {
+        private weak var navigation: UINavigationController?
+
+        override func viewDidAppear(_ animated: Bool) {
+            super.viewDidAppear(animated)
+            navigation = navigationController
+            activer(false)
+        }
+
+        override func viewWillDisappear(_ animated: Bool) {
+            super.viewWillDisappear(animated)
+            retablir()
+        }
+
+        func retablir() { activer(true) }
+
+        private func activer(_ actif: Bool) {
+            if #available(iOS 26.0, *) { navigation?.interactiveContentPopGestureRecognizer?.isEnabled = actif }
+        }
+    }
+}
+#endif

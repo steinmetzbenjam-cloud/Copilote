@@ -18,6 +18,9 @@ struct EtapeEditView: View {
     var onSousEtape: ((Etape?) -> Void)? = nil
     /// Fiche d'une sous-étape affichée dans celle de son étape, elle-même dans une feuille (et non dans un cadre de l'Itinéraire).
     var imbriqueeDansFeuille = false
+    /// Glisser la fiche vers la gauche ou la droite : passer à l'étape suivante (+1) ou précédente (−1).
+    /// Quand une sous-étape est ouverte, on passe plutôt d'une sous-étape à l'autre.
+    var onEtapeVoisine: ((Int) -> Void)? = nil
     /// Petit message « Copie créée » après une duplication.
     @State private var copieFaite = false
     /// Le pays de l'étape est en cours de recherche pour la garder en favori.
@@ -35,6 +38,10 @@ struct EtapeEditView: View {
     @Environment(\.modelContext) private var contexte
     /// Sous-étape dont la fiche remplace celle de l'étape ; « OK » ramène à l'étape.
     @State private var sousEtapeOuverte: Etape?
+    /// Côtés par lesquels la fiche de sous-étape arrive et s'en va : par la droite à l'ouverture et à la fermeture ;
+    /// en glissant d'une sous-étape à l'autre, la nouvelle arrive du côté où l'on va.
+    @State private var entreeSousEtape: Edge = .trailing
+    @State private var sortieSousEtape: Edge = .trailing
     /// Transport entre deux sous-étapes, en cours de modification.
     @State private var transportSousEtapes: PaireSousEtapes?
     /// Étape glissée au-dessus de la liste des sous-étapes (uid de la sous-étape visée, ou "" pour la fin).
@@ -193,12 +200,14 @@ struct EtapeEditView: View {
                               onDupliquer: { ouvrirSousEtape($0) },
                               imbriqueeDansFeuille: !enCadre)
                     .id(sous.uid)
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
+                    .transition(.asymmetric(insertion: .move(edge: entreeSousEtape), removal: .move(edge: sortieSousEtape))
+                        .combined(with: .opacity))
             } else {
                 contenu
                     .transition(.move(edge: .leading).combined(with: .opacity))
             }
         }
+        .simultaneousGesture(glissement, including: onEtapeVoisine != nil || sousEtapeOuverte != nil ? .all : .subviews)
         .onAppear { if let s = sousEtapeAOuvrir { ouvrirSousEtape(s, anime: false) } }
         .onChange(of: sousEtapeAOuvrir?.uid) { if let s = sousEtapeAOuvrir { ouvrirSousEtape(s) } }
         .sheet(item: $transportSousEtapes) { TransportEditView(depart: $0.depart, arrivee: $0.arrivee) }
@@ -393,7 +402,7 @@ struct EtapeEditView: View {
         }
     }
 
-    /// En voyage, la catégorie, le jour et les horaires sont simplement rappelés, sans être modifiables.
+    /// En voyage, l'étape s'affiche dans l'ordre utile sur place (moment, pointage, sous-étapes…).
     private var enVoyage: Bool { etape.voyage?.mode == .voyage }
 
     /// Les réservations liées à l'étape (ou à l'hébergement) : un bouton ouvre chacune d'elles.
@@ -409,66 +418,32 @@ struct EtapeEditView: View {
         CadreSection("Catégorie", symbole: "square.grid.2x2", couleur: .purple) { tuilesCategories }
     }
 
-    private func texteDuree(_ minutes: Double) -> String {
-        let m = Int(minutes.rounded())
-        return m >= 60 ? "\(m / 60) h \(String(format: "%02d", m % 60))" : "\(m) min"
-    }
-
-    /// En voyage : la date, les horaires et la durée, en simple lecture, sans cadre ni titre.
-    private var sectionJourHoraireLecture: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            if let parente = etape.etapeParente {
-                Label("Dans « \(parente.titre.isEmpty ? "Sans titre" : parente.titre) »", systemImage: "point.3.connected.trianglepath.dotted")
-            }
-            if let jour = etape.jourEffectif {
-                if etape.categorie == .hebergement, etape.apresJour, !etape.estSousEtape {
-                    let lendemain = Calendar.current.date(byAdding: .day, value: 1, to: jour) ?? jour
-                    Label("Nuit du \(jour.formatted(.dateTime.day().month(.wide))) au \(lendemain.formatted(.dateTime.day().month(.wide)))",
-                          systemImage: "moon.stars")
-                } else {
-                    let date = jour.formatted(.dateTime.weekday(.wide).day().month(.wide))
-                    Label(date.prefix(1).uppercased() + date.dropFirst(), systemImage: "calendar")
-                }
-                if etape.heure != nil || etape.heureFin != nil {
-                    Label([etape.heure, etape.heureFin].map { $0?.formatted(date: .omitted, time: .shortened) ?? "--:--" }.joined(separator: " → "),
-                          systemImage: "clock")
-                        .monospacedDigit()
-                }
-            } else {
-                Label("Pas encore de jour", systemImage: "calendar").foregroundStyle(.secondary)
-            }
-            if let duree = etape.duree {
-                Label(texteDuree(duree), systemImage: "hourglass")
-            }
-        }
-        .font(.subheadline)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 4)
-    }
-
-    /// La catégorie puis le moment ; en voyage, avec à droite l'appareil photo (iPhone, iPad) et le bouton qui guide jusqu'à l'étape.
+    /// La catégorie puis le moment. En voyage, la catégorie est dans la barre de titre ; les boutons Arrivée et Départ,
+    /// l'appareil photo (iPhone, iPad) et le bouton qui guide jusqu'à l'étape viennent au-dessus de « Jour et horaire »,
+    /// qui reste modifiable pour suivre la journée.
     @ViewBuilder private var sectionCategorieEtMoment: some View {
         if enVoyage {
-            HStack(alignment: .center, spacing: 12) {
-                // La catégorie est dans la barre de titre, à gauche du nom.
-                sectionJourHoraire
+            HStack(spacing: 12) {
+                // Sur place : on note l'heure réelle d'arrivée et de départ, à gauche de la photo et de « Y aller ».
+                if etape.jourEffectif != nil {
+                    PointageEtape(etape: etape)
+                } else {
+                    Spacer(minLength: 0)
+                }
                 #if os(iOS)
                 // Une photo prise sur place va droit dans l'album de l'étape.
                 BoutonPhotoAlbum(etape: etape)
                 #endif
                 BoutonYAller(etape: etape)
             }
+            sectionJourHoraire
         } else {
             sectionCategorie
             sectionJourHoraire
         }
     }
 
-    @ViewBuilder private var sectionJourHoraire: some View {
-        if enVoyage { sectionJourHoraireLecture } else { sectionJourHoraireEdition }
-    }
-
-    private var sectionJourHoraireEdition: some View {
+    private var sectionJourHoraire: some View {
         CadreSection("Jour et horaire", symbole: "calendar", couleur: .blue) {
             if let parente = etape.etapeParente {
                 // Une sous-étape suit le jour de son étape.
@@ -638,8 +613,6 @@ struct EtapeEditView: View {
                 } else if enVoyage {
                     // En voyage : le moment (avec « Y aller »), les sous-étapes, les réservations, puis les infos du lieu avant les avis.
                     sectionCategorieEtMoment
-                    // Sur place : on note l'heure réelle d'arrivée et de départ.
-                    if etape.jourEffectif != nil { PointageEtape(etape: etape) }
                     sectionSousEtapes
                     sectionReservations
                     sectionAlbum
@@ -715,6 +688,34 @@ struct EtapeEditView: View {
     private func supprimerAvecSousEtapes() {
         for s in etape.sousEtapes { contexte.delete(s) }
         onSupprimer()
+    }
+
+    /// Un glissement franc vers la gauche ou la droite (pas un défilement vertical) : la fiche voisine.
+    private var glissement: some Gesture {
+        DragGesture(minimumDistance: 30).onEnded { v in
+            let dx = v.translation.width, dy = v.translation.height
+            guard abs(dx) > 80, abs(dx) > 2 * abs(dy) else { return }
+            passer(dx < 0 ? 1 : -1)
+        }
+    }
+
+    /// Vers la sous-étape voisine quand une sous-étape est ouverte, sinon vers l'étape voisine (rien au bout de la liste).
+    private func passer(_ sens: Int) {
+        guard let s = sousEtapeOuverte else { onEtapeVoisine?(sens); return }
+        let liste = etape.sousEtapes
+        guard let i = liste.firstIndex(where: { $0 === s }), liste.indices.contains(i + sens) else { return }
+        let voisine = liste[i + sens]
+        entreeSousEtape = sens > 0 ? .trailing : .leading
+        sortieSousEtape = sens > 0 ? .leading : .trailing
+        // Les côtés sont pris en compte avant que la fiche change.
+        DispatchQueue.main.async {
+            if s.sansContenu { contexte.delete(s) }
+            withAnimation(.snappy) { sousEtapeOuverte = voisine } completion: {
+                entreeSousEtape = .trailing
+                sortieSousEtape = .trailing
+            }
+            onSousEtape?(voisine)
+        }
     }
 
     private func ouvrirSousEtape(_ s: Etape, anime: Bool = true) {

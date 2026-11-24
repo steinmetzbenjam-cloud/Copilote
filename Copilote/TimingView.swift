@@ -380,12 +380,14 @@ struct TimingView: View {
                 // Les jours se suivent de haut en bas ; l'en-tête du jour reste collé en haut pendant qu'on le parcourt.
                 LazyVStack(spacing: 0, pinnedViews: [.sectionHeaders]) {
                     ligneExtremite(.aller)
-                    ForEach(Array(voyage.jours.enumerated()), id: \.offset) { i, jour in
+                    ForEach(Array(voyage.jours.enumerated()), id: \.element.repereDefilement) { i, jour in
                         Section {
                             colonne(i, jour)
                                 .overlay(alignment: .topLeading) {
                                     Color.clear.frame(width: 1, height: 1).offset(y: premiereHeure(jour) * hauteurHeure).id("ancre-\(i)")
                                 }
+                                // Repère pour revenir à l'endroit exact de l'agenda (voir `DefilementMemorise`).
+                                .repereDefilement(jour.repereDefilement)
                         } header: {
                             entete(i, jour)
                         }
