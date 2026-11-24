@@ -238,16 +238,24 @@ struct VoyageView: View {
             .minimumScaleFactor(0.55)
         return Group {
             if iPhone {
-                Button { infosOuvertes = true } label: {
-                    HStack(spacing: 4) {
-                        texte.foregroundStyle(.primary)
-                        Image(systemName: "info.circle").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                // Sous le nom, où en est la synchronisation iCloud.
+                VStack(spacing: 1) {
+                    Button { infosOuvertes = true } label: {
+                        HStack(spacing: 4) {
+                            texte.foregroundStyle(.primary)
+                            Image(systemName: "info.circle").font(.footnote.weight(.semibold)).foregroundStyle(.secondary)
+                        }
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityHint("Ouvre les infos du voyage")
+                    PastilleSynchro()
                 }
-                .buttonStyle(.plain)
-                .accessibilityHint("Ouvre les infos du voyage")
             } else {
-                texte.frame(maxWidth: largeur < 1000 ? 150 : 260, alignment: .leading)
+                // À côté du nom, où en est la synchronisation iCloud.
+                HStack(spacing: 8) {
+                    texte.frame(maxWidth: largeur < 1000 ? 150 : 260, alignment: .leading)
+                    PastilleSynchro().fixedSize()
+                }
             }
         }
     }

@@ -32,6 +32,9 @@ final class PartageCloud {
     /// Dernier échange réussi avec iCloud, et nombre de modifications locales qui attendent d'être envoyées.
     var derniereSynchro: Date?
     var enAttente = 0
+    /// La dernière vérification demandée (retour dans l'app, pastille touchée) a échoué : iCloud injoignable, par exemple.
+    /// Effacé au prochain échange réussi.
+    var echecSynchro: String?
 
     @ObservationIgnored var contexte: ModelContext?
 
@@ -48,6 +51,27 @@ final class PartageCloud {
         UserDefaults.standard.set(valeur, forKey: "iCloudActif")
         #if ICLOUD
         if valeur { demarrer() } else { arreter() }
+        #endif
+    }
+
+    /// Échange tout de suite avec iCloud : les modifications locales partent, les nouveautés des autres appareils arrivent.
+    /// Appelé au retour dans l'app et quand on touche la pastille de synchronisation.
+    func synchroniser() async {
+        #if ICLOUD
+        guard actif, moteurPrive != nil, Reseau.shared.enLigne else { return }
+        verifierChangementsLocaux()
+        do {
+            try await moteurPrive?.fetchChanges()
+            try await moteurPartage?.fetchChanges()
+            try await moteurPrive?.sendChanges()
+            try await moteurPartage?.sendChanges()
+            echecSynchro = nil
+            derniereSynchro = .now
+        } catch let erreur as CKError where erreur.code == .notAuthenticated {
+            echecSynchro = "tu n'es pas connecté à iCloud sur cet appareil"
+        } catch {
+            echecSynchro = error.localizedDescription
+        }
         #endif
     }
 
@@ -401,6 +425,7 @@ extension PartageCloud: CKSyncEngineDelegate {
         case .didFetchChanges, .didSendChanges:
             synchroEnCours = false
             derniereSynchro = .now
+            echecSynchro = nil
         default: break
         }
     }

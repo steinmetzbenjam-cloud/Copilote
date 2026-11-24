@@ -343,18 +343,5 @@ struct ApercuView: View {
         }
     }
 
-    private var etatSynchro: (titre: String, detail: String?, symbole: String, couleur: Color) {
-        if !reseau.enLigne {
-            let attente = cloud.actif && cloud.enAttente > 0 ? " \(cloud.enAttente) modification\(cloud.enAttente > 1 ? "s" : "") attend\(cloud.enAttente > 1 ? "ent" : "") le retour du réseau." : ""
-            return ("Hors ligne", "Tu peux continuer à travailler : tout est gardé sur l'appareil.\(attente)", "wifi.slash", .orange)
-        }
-        if !PartageCloud.disponible || !cloud.actif {
-            return ("Sur cet appareil seulement", "La synchronisation iCloud n'est pas activée : ce voyage n'est pas envoyé aux autres appareils ni au groupe.", "internaldrive", .gray)
-        }
-        if cloud.synchroEnCours || cloud.enAttente > 0 {
-            return ("Synchronisation en cours…", cloud.enAttente > 0 ? "\(cloud.enAttente) modification\(cloud.enAttente > 1 ? "s" : "") à envoyer." : nil, "arrow.triangle.2.circlepath.icloud", .blue)
-        }
-        let quand = cloud.derniereSynchro.map { "Dernier échange \($0.formatted(.relative(presentation: .named)))." }
-        return ("Synchronisé", quand ?? cloud.statut, "checkmark.icloud.fill", .green)
-    }
+    private var etatSynchro: EtatSynchro { EtatSynchro.actuel }
 }

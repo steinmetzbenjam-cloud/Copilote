@@ -161,7 +161,11 @@ struct ContentView: View {
             await Rappels.planifier(voyages)
         }
         .onChange(of: phase) { _, nouvelle in
-            if nouvelle == .active { Task { await Rappels.planifier(voyages) } }
+            if nouvelle == .active {
+                Task { await Rappels.planifier(voyages) }
+                // De retour dans l'app : on demande tout de suite à iCloud s'il y a du nouveau (la pastille dit alors « À jour »).
+                Task { await PartageCloud.shared.synchroniser() }
+            }
         }
         // Les notifications ne sont demandées qu'une fois un voyage en place (la veille du départ, les transports…) :
         // jamais au premier lancement, avant même le tutoriel.
